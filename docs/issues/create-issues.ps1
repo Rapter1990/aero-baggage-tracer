@@ -5,9 +5,10 @@ param(
 )
 # Splits GITHUB_ISSUES.md into issues: each "## #N Title" section up to the next "---".
 $text = Get-Content $File -Raw -Encoding UTF8
-$sections = [regex]::Matches($text, '(?ms)^## #\d+ (?<title>[^\r\n]+)\r?\n(?<body>.*?)(?=^---\s*$|\z)')
+$sections = [regex]::Matches($text, '(?ms)^## #(?<num>\d+) (?<title>[^\r\n]+)\r?\n(?<body>.*?)(?=^---\s*$|\z)')
 foreach ($s in $sections) {
-    $title = $s.Groups['title'].Value.Trim()
+    # Issue titles follow the "Issue #N : Title" convention (create-pr.ps1 relies on it).
+    $title = "Issue #$($s.Groups['num'].Value) : " + $s.Groups['title'].Value.Trim()
     $body  = $s.Groups['body'].Value.Trim()
     if ($DryRun) { Write-Host "[dry-run] $title"; continue }
     $tmp = New-TemporaryFile
