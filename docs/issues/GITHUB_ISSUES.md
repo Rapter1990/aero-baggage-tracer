@@ -1,0 +1,394 @@
+# AeroTrace – GitHub Issues Backlog
+
+Derived from `AeroTrace_Senior_Java_Microservices_Case_Study.pdf`. Each `##` section is one issue (title = heading).
+Suggested labels in `[brackets]`. Section numbers (§), BR-xx and AT-xx refer to the case study.
+
+**Suggested build order:** #1 → #2 → #3 → #4 → #5 → #6 → #7/#8/#9 (parallel) → #10/#11 → #12–#18 (cross-cutting, start early) → #19–#20.
+
+---
+
+## #1 Bootstrap Maven multi-module project (Java 25, Spring Boot)
+`[setup] [priority:p0]`
+
+**Description**
+Create the parent POM and module skeleton for all services so every other issue has a place to land.
+
+**Scope**
+- Parent `pom.xml` (packaging `pom`), Java 25, Spring Boot + Spring Cloud BOM, dependency/plugin management.
+- Modules: `common-module`, `discovery-server`, `config-server`, `api-gateway`, `identity-service`, `journey-service`, `risk-streams-service`, `recovery-service`, `capacity-service`, `search-service`, `notification-service`.
+- Formatter plugin (e.g. Spotless) + JaCoCo + Surefire/Failsafe config; `.editorconfig`, `.gitignore`.
+
+**Acceptance criteria**
+- [ ] `mvn -q verify` passes on an empty skeleton with Java 25.
+- [ ] Formatting check fails the build on violations.
+- [ ] No secrets in the repository.
+
+---
+
+## #2 Define Common Module
+`[module:common] [priority:p0]` · Depends on #1 · Spec §4
+
+**Description**
+Shared library with versioned contracts and security primitives. **Must not contain JPA entities.**
+
+**Scope**
+- RFC 7807 `ProblemDetail` error contract + shared `@RestControllerAdvice` base, stable error codes (e.g. `BAG_TAG_DUPLICATE`, `ILLEGAL_TRANSITION`, `CAPACITY_EXCEEDED`).
+- Event envelope record: `eventId, eventType, schemaVersion, aggregateId, occurredAt, publishedAt, correlationId, payload` + JSON (de)serialization config.
+- Event payload DTOs / topic-name constants for all topics in §8 (`baggage.scan.received.v1`, …).
+- Shared security primitives: roles enum (`PASSENGER, AGENT, DISPATCHER, ADMIN`), JWT claim names, issuer/audience validator, `SecurityContext` helper.
+- Correlation-ID support: `X-Correlation-Id` constant, servlet filter / MDC, `RestClient`/`@HttpExchange` interceptor for propagation.
+- Log-masking utilities (never log JWTs or passenger PII).
+
+**Acceptance criteria**
+- [ ] Published as an internal Maven artifact consumed by all services.
+- [ ] Envelope serialization round-trip and schema-version tests.
+- [ ] Unit tests ≥ 80% line coverage; no dependency on JPA/Hibernate.
+
+---
+
+## #3 Define Eureka Server (discovery-server)
+`[module:discovery] [priority:p0]` · Depends on #1 · Spec §4, §13
+
+**Description**
+Service registration and discovery for the development profile.
+
+**Scope**
+- Spring Cloud Netflix Eureka Server, standalone dev profile, health endpoint, Dockerfile.
+- Client config template for all services (instance id, lease renewal, health-check URL).
+- Document how discovery works in Compose (Eureka) vs Minikube (Kubernetes Services/DNS) and when each is used.
+
+**Acceptance criteria**
+- [ ] Services register and appear in the Eureka dashboard in Compose.
+- [ ] Health check usable by Compose `healthcheck`.
+- [ ] Short doc section comparing Compose vs Minikube discovery.
+
+---
+
+## #4 Define Config Server
+`[module:config] [priority:p1]` · Depends on #1
+
+**Description**
+Centralized, profile-based configuration (dev / compose / k8s). *Note: not in the case-study module list (§4); included as requested. Mark optional if K8s ConfigMaps/Secrets are deemed sufficient.*
+
+**Scope**
+- Spring Cloud Config Server (native or Git backend), per-service config files, profiles `dev`, `compose`, `k8s`.
+- Airport-specific thresholds (e.g. 20‑min risk threshold) and Kafka/Redis/DB endpoints externalized.
+- Secrets are **not** stored in the repo; use env vars / K8s Secrets.
+- Clients use `spring.config.import` with fail-fast and retry.
+
+**Acceptance criteria**
+- [ ] A service boots with config pulled from the server in Compose.
+- [ ] Refresh of a non-secret property works without restart (or documented limitation).
+- [ ] Decision recorded in an ADR (Config Server vs ConfigMaps).
+
+---
+
+## #5 Define API Gateway
+`[module:gateway] [priority:p0]` · Depends on #2, #3, #7 · Spec §4, §7, §11
+
+**Description**
+Single external entry point under `/api/v1`.
+
+**Scope**
+- Spring Cloud Gateway routes to all services via Eureka (`lb://`).
+- JWT verification (signature via JWKS from identity-service, `exp`, `iss`, `aud`); 401 for missing/invalid, 403 for forbidden.
+- Token forwarding to downstream services; Redis-backed rate limiting.
+- Generate/propagate `X-Correlation-Id`; pass `Idempotency-Key`.
+- ProblemDetail-formatted gateway errors; OpenTelemetry tracing + Micrometer metrics.
+
+**Acceptance criteria**
+- [ ] AT-16: expired JWT → 401; wrong role → 403.
+- [ ] Correlation ID present on every response and downstream request.
+- [ ] Rate-limit returns 429 with ProblemDetail.
+- [ ] Gateway token-forwarding integration test.
+
+---
+
+## #6 Define Identity Service
+`[module:identity] [security] [priority:p0]` · Depends on #2 · Spec §4, §11
+
+**Description**
+Issues signed JWT access tokens and owns users/roles.
+
+**Scope**
+- Seed test users for `PASSENGER`, `AGENT`, `DISPATCHER`, `ADMIN`; passenger ↔ pseudonymous `passengerRef` binding.
+- `POST /auth/token`, JWKS endpoint, asymmetric signing (RS256/ES256), **key rotation** (multiple active `kid`s).
+- Claims: `iss`, `aud`, `sub`, `roles`, `passengerRef`, `exp`.
+- Authorization policy definitions (who can transition cases, manage capacity, change risk policies).
+- Own Liquibase changelog + PostgreSQL schema; password hashing (BCrypt/Argon2); immutable audit of auth events.
+
+**Acceptance criteria**
+- [ ] Tokens validate at gateway and resource services; rotation does not invalidate unexpired tokens.
+- [ ] No JWT or credentials in logs.
+- [ ] Authorization matrix test (role × endpoint).
+- [ ] OpenAPI documents 401/403 examples.
+
+---
+
+## #7 Define Journey Service
+`[module:journey] [priority:p0]` · Depends on #2, #6 · Spec §5.1, §7, §9
+
+**Description**
+Baggage registration, itinerary snapshots, scan ingestion API and authoritative journey state.
+
+**Scope**
+- `POST /bags` (bagTag unique → 409 `BAG_TAG_DUPLICATE`), validate IATA codes, leg chronology, minimum connection time.
+- `GET /bags/{bagTag}/journey`: latest accepted state **and** immutable `scan_audit` history; passenger row-level ownership (AT-15).
+- `POST /scans` with `Idempotency-Key` → `202 QUEUED`; publish `baggage.scan.received.v1`.
+- **Factory Method** for versioned scan handlers per protocol; **Adapter** for barcode/RFID/conveyor payloads.
+- Normalize timestamps to UTC while retaining source timezone and device timestamp; flag `LATE_EVENT` beyond grace (BR-06).
+- Tables: `baggage, itinerary, itinerary_leg, scan_audit, outbox_event, processed_event`; durable dedupe on `event_id`.
+- Transactional outbox + scheduled relay (at-least-once).
+
+**Acceptance criteria**
+- [ ] AT-01, AT-02, AT-03, AT-04, AT-05, AT-15.
+- [ ] Two replicas run correctly (no double-publish side effects).
+- [ ] Liquibase V1–V3 (see #14).
+- [ ] ≥ 80% coverage of domain/application code.
+
+---
+
+## #8 Define Risk Streams Service (Kafka Streams)
+`[module:risk-streams] [kafka] [priority:p0]` · Depends on #2, #7 · Spec §5.2, §8
+
+**Description**
+Kafka Streams topology that computes connection risk and scan anomalies.
+
+**Scope**
+- Consume `baggage.scan.received.v1`; key/partition by `bagTag`.
+- State store / KTable: latest legitimate checkpoint per bag.
+- Risk: HIGH when departure < threshold (default 20 min, configurable per airport) and no loading confirmation (BR-02); downgrade/clear on valid confirmation (AT-08).
+- Detect impossible transitions without discarding raw history; 3 rejected transitions in a 5-min **event-time** window → `SCANNER_ANOMALY` (BR-03).
+- Document & test grace period, window boundaries, suppression, late-event behavior.
+- Publish `baggage.risk.changed.v1` (key `bagTag:legId`) and `baggage.scan.anomaly.v1`.
+- Retry / dead-letter / poison-message policy → `baggage.dead-letter.v1`; durable deduplication (EOS ≠ end-to-end idempotency).
+- Reproducible late / duplicate / out-of-order fixture datasets.
+
+**Acceptance criteria**
+- [ ] AT-06, AT-07, AT-08.
+- [ ] `TopologyTestDriver` tests incl. grace-boundary cases.
+- [ ] Metrics `stream_lag_seconds`, `baggage_risk_high`.
+
+---
+
+## #9 Define Recovery Service
+`[module:recovery] [priority:p0]` · Depends on #2, #8, #10 · Spec §5.3, §10
+
+**Description**
+Recovery case state machine, handler assignment and action orchestration.
+
+**Scope**
+- `POST /recovery-cases` (one active case per bag+leg; parallel requests produce one — BR-01, AT-09) via unique partial index + idempotent handling.
+- `PATCH /recovery-cases/{id}/transitions` with `expectedVersion` (optimistic lock); states `OPEN → ASSESSING → RESERVED → IN_TRANSIT → RESOLVED`, terminals `CLOSED_AS_UNRECOVERABLE`, `CANCELLED`; illegal move → 409 (AT-10); RESOLVED cannot reopen (BR-07).
+- **State pattern** with guard conditions; `state_transition` records who/when/why (BR-05).
+- **Strategy pattern** to choose action: expedited transfer / reroute to next flight / hold at service desk (airline policy, time left, capacity).
+- **Saga/compensation**: call capacity-service via typed `@HttpExchange` client (timeouts, correlation propagation, explicit fallback); release holds on timeout (AT-12); document failures between steps.
+- Consume `baggage.risk.changed.v1`, `baggage.scan.anomaly.v1`, `recovery.capacity.changed.v1`.
+- Transactional outbox → `recovery.case.changed.v1` (AT-14, AT-22).
+- RBAC: only AGENT/DISPATCHER may transition; ADMIN changes risk policy; Redis-cached policy with TTL + invalidation.
+
+**Acceptance criteria**
+- [ ] AT-09, AT-10, AT-12, AT-14, AT-22.
+- [ ] Unit tests for strategies, guards, compensation.
+- [ ] Redis outage does not allow duplicate cases.
+
+---
+
+## #10 Define Capacity Service
+`[module:capacity] [priority:p0]` · Depends on #2, #6 · Spec §5.3, BR-04
+
+**Description**
+Finite recovery cart / flight / bag-slot capacity with atomic reservations.
+
+**Scope**
+- `POST /capacity/reservations`, `DELETE /capacity/reservations/{id}` (release/compensation), admin-only resource management.
+- Atomic reservation in PostgreSQL (conditional `UPDATE … WHERE remaining > 0` or row lock); **DB is authoritative**, Redis only an optional cache/hint.
+- Reservation TTL / provisional hold expiry job.
+- Tables: `capacity_resource`, `capacity_reservation`, outbox; publish `recovery.capacity.changed.v1` (key `resourceId`).
+- Metric `capacity_reservation_conflicts_total`; idempotent reservations via `Idempotency-Key`.
+
+**Acceptance criteria**
+- [ ] AT-11: 50 concurrent requests for 10 slots → exactly 10 succeed (race test).
+- [ ] AT-19: Redis offline → no overbooking.
+- [ ] 409 conflict contract documented in OpenAPI.
+
+---
+
+## #11 Define Search Service (Elasticsearch)
+`[module:search] [priority:p1]` · Depends on #2, #7, #9 · Spec §5.4, §12
+
+**Description**
+Elasticsearch read models for journey and case search.
+
+**Scope**
+- Consume `recovery.case.changed.v1` (+ journey events); idempotent indexer (doc id = aggregate id, version check).
+- Filters: bagTag, airport, airline, flight, risk category, case state; deterministic sort; paging + `search_after` for deep pages.
+- Full backfill/reconciliation command (no duplicates, source untouched — AT-18).
+- Indexing lag exposed as a metric/endpoint.
+- `GET /reports/airport/{iata}?from=&to=` + hourly counts: risky bags, resolved recoveries, retries, mean resolution time.
+
+**Acceptance criteria**
+- [ ] AT-18 with Elasticsearch Testcontainer.
+- [ ] Lag visible in Grafana.
+- [ ] Rebuild via alias swap without downtime (preferred).
+
+---
+
+## #12 Define Notification Service
+`[module:notification] [priority:p2]` · Depends on #2, #9 · Spec BR-08, §10
+
+**Description**
+Idempotent in-app notifications and delivery status; external provider mocked.
+
+**Scope**
+- Consume `recovery.case.changed.v1` (**Observer / domain events**).
+- Unique `(recipient, eventId, template)` constraint (BR-08, AT-13); delivery status + retry with backoff.
+- Mock provider adapter; no PII in logs.
+- `GET` endpoints for a user's notifications (ownership enforced).
+
+**Acceptance criteria**
+- [ ] AT-13: repeated outbox publication → one notification.
+- [ ] Retry/DLQ behavior tested.
+
+---
+
+## #13 Kafka infrastructure, event contracts & replay fixtures
+`[kafka] [priority:p1]` · Depends on #2 · Spec §8
+
+**Scope**
+- Topic definitions (partitions, key, retention) for all six topics; Compose + K8s provisioning.
+- Retry/backoff, dead-letter publisher, poison-message policy; operator inspection tooling for `baggage.dead-letter.v1`.
+- Example replay dataset (late, duplicate, out-of-order) + replay script.
+- ADR: exactly-once business effects (outbox + `processed_event`).
+
+**Acceptance criteria**
+- [ ] AT-14: stop Kafka mid-transition, restart, committed event is replayed.
+- [ ] Contract/serialization compatibility tests.
+
+---
+
+## #14 Liquibase migrations & zero-data-loss demo
+`[database] [priority:p1]` · Spec §9
+
+**Scope**
+- One changelog per service/schema; safe to re-run; index choices documented.
+- **V1** base tables + seed; **V2** add nullable `scan_source` + backfill; **V3** enforce NOT NULL after validation.
+- Unique constraints: `bag_tag`, source `event_id`, active recovery case natural key; `version` columns.
+- Demo script: legacy rows → V2/V3 → compare checksums + row counts; document rollback strategy and limits for destructive changes.
+- ADR: data migration strategy.
+
+**Acceptance criteria**
+- [ ] AT-17 automated with Testcontainers PostgreSQL.
+- [ ] Rollback recipe documented.
+
+---
+
+## #15 Docker & Docker Compose runtime
+`[devops] [priority:p1]` · Spec §13
+
+**Scope**
+- Multi-stage Dockerfiles per service (non-root, layered jars, healthchecks).
+- `docker-compose.yml`: PostgreSQL, Kafka, Redis, Elasticsearch, Eureka, (Config Server), Gateway, all services, plus observability stack (see #17).
+- Sample seed data and one-command startup script.
+
+**Acceptance criteria**
+- [ ] `docker compose up` yields all-healthy stack.
+- [ ] Reviewer can seed a journey and generate duplicate/late scans.
+
+---
+
+## #16 Kubernetes / Minikube manifests (or Helm)
+`[devops] [k8s] [priority:p1]` · Depends on #15 · Spec §13
+
+**Scope**
+- Deployments, Services, ConfigMaps, Secrets (secret-management doc for Minikube), PVCs, probes, resource requests/limits.
+- journey-service with 2 replicas; correctness during pod restart and rolling update (AT-22).
+- Document port-forwarding, discovery and gateway routing in Minikube.
+
+**Acceptance criteria**
+- [ ] AT-22; rolling update with zero lost committed events.
+- [ ] `kubectl apply` / `helm install` documented end-to-end.
+
+---
+
+## #17 Observability: Prometheus, Grafana, Loki, Tempo
+`[observability] [priority:p1]` · Spec §14
+
+**Scope**
+- Micrometer metrics: `scan_ingest_total, scan_duplicates_total, baggage_risk_high, recovery_resolution_seconds, capacity_reservation_conflicts_total, stream_lag_seconds, outbox_pending_count`.
+- Grafana dashboard (scan throughput, high-risk bags, case states, P95 latency, error rate, Kafka lag, JVM).
+- Structured JSON logs → Loki with `traceId, spanId, correlationId, service, eventId` (no PII).
+- OpenTelemetry tracing across gateway → services → Kafka producers/consumers → Tempo; Grafana log↔trace links.
+- Alerts: high-risk surge, outbox backlog, prolonged stream lag, reservation conflicts.
+
+**Acceptance criteria**
+- [ ] AT-20, AT-21.
+- [ ] Dashboard JSON + alert rules committed.
+
+---
+
+## #18 GitHub Actions CI/CD & SonarQube
+`[ci-cd] [priority:p1]` · Spec §16
+
+**Scope**
+- PR workflow: Java 25 build, format check, unit + Testcontainers tests, JUnit/coverage publishing, SonarQube gate, Docker image build.
+- Main workflow (after gate): version tags, push to configurable registry, deploy to Minikube (self-hosted runner or manual runbook).
+- Dependency and image scanning; secret scanning; never deploy failing images.
+- Rollback recipe + post-deploy smoke test (gateway, scan processing, Grafana metrics).
+
+**Acceptance criteria**
+- [ ] AT-23: failed quality gate → no deployment.
+- [ ] AT-24: rollback + smoke test demonstrated.
+
+---
+
+## #19 Test strategy, security matrix & concurrency tests
+`[testing] [priority:p1]` · Spec §15, §18
+
+**Scope**
+- JUnit 5/Mockito Given-When-Then tests; Spring Boot + Testcontainers (PostgreSQL, Kafka, Redis, Elasticsearch).
+- Kafka Streams deterministic tests, grace-boundary tests.
+- Security authorization matrix; gateway token forwarding; `@HttpExchange` timeout/error tests.
+- Race tests: 50 parallel requests vs 10 slots; duplicate case creation race.
+- JaCoCo 80% gate on domain/application code (exclude test/generated code).
+- Traceability table mapping AT-01…AT-24 to tests.
+
+**Acceptance criteria**
+- [ ] Coverage report published in CI.
+- [ ] Every AT-xx mapped to an automated test or documented demo.
+
+---
+
+## #20 Performance benchmark (100 scans/s)
+`[performance] [priority:p2]` · Spec §17
+
+**Scope**
+- Load script: 100 scans/s sustained for 2 min; P95 read API < 400 ms after warm-up.
+- Record machine configuration and methodology; publish results.
+
+**Acceptance criteria**
+- [ ] Reproducible script + results in `docs/performance.md`.
+
+---
+
+## #21 Documentation & submission artifacts
+`[docs] [priority:p1]` · Spec §19, §22
+
+**Scope**
+- README (clone → run → seed → observe), architecture + sequence diagrams.
+- OpenAPI specs with success/validation/conflict/forbidden examples; curl happy/failure paths; Postman collection.
+- ADRs: state management, exactly-once business effects, Redis fallback/degraded mode, data migration, (Config Server).
+- Grafana exports/screenshots, tracing evidence, Kafka replay dataset.
+
+**Acceptance criteria**
+- [ ] Reviewer can reproduce the "definition of done" scenario in §22 from the README alone.
+
+---
+
+## #22 (Optional) Advanced challenges
+`[optional] [priority:p3]` · Spec §21
+
+- Misconfigured airport clocks with provenance + chronology rejection.
+- Multi-tenant airline isolation (gateway, service, index).
+- Blue/green event schema v1 → v2 migration.
+- Chaos experiment (Kafka outage / DB restart) with recovery timeline and integrity checks.
