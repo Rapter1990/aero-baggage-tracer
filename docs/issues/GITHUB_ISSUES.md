@@ -3,7 +3,7 @@
 Derived from `AeroTrace_Senior_Java_Microservices_Case_Study.pdf`. Each `##` section is one issue (title = heading).
 Suggested labels in `[brackets]`. Section numbers (§), BR-xx and AT-xx refer to the case study.
 
-**Suggested build order:** #1 → #2 → #3 → #4 → #5 → #6 → #7 → #8/#9/#10 (parallel) → #11/#12 → #13–#19 (cross-cutting, start early) → #20–#21.
+**Suggested build order:** #1 → #2 → #3 → #4 → #5 → #6 → #7 → #8 → #9/#10/#11 (parallel) → #12/#13 → #14–#20 (cross-cutting, start early) → #21–#22.
 
 ---
 
@@ -33,7 +33,7 @@ Define a roster of role-based Claude Code subagents and reusable skills so work 
 
 **Scope**
 - `.claude/agents/`: `product-owner`, `architect`, `principal-engineer` (delegation map), `api-contract-engineer`, `kafka-streams-engineer`, `database-reviewer`, `security-reviewer`, `code-reviewer`, `test-engineer`, `devops-engineer`, `manual-qa-tester`.
-- `.claude/skills/`: `analyze-case`, `architecture-review`, `implement-feature`, `run`, `verify-project`.
+- `.claude/skills/`: `analyze-case`, `architecture-review`, `implement-feature`, `run`, `verify-project`, `create-issues`, `create-pr`.
 - Each agent: single responsibility, minimal tool list, explicit model, project-specific rules (service-owned schemas, `ProblemDetail`, `*.v1` events, no JPA in `common-module`, no secrets).
 - Reviewer agents are read-only; only implementers may edit files.
 - Short "Agents" section in the README with the roster and delegation map.
@@ -46,7 +46,26 @@ Define a roster of role-based Claude Code subagents and reusable skills so work 
 
 ---
 
-## #3 Define Common Module
+## #3 Define GitHub automation scripts and skills (create-issues, create-pr)
+`[tooling] [docs] [priority:p1]` · Depends on #2
+
+**Description**
+Turn the two PowerShell scripts under `docs/issues/` into project skills so issues and pull requests are always created through one defined command, instead of ad-hoc `gh` calls.
+
+**Scope**
+- `.claude/skills/create-issues/SKILL.md` wrapping `docs/issues/create-issues.ps1` (`-DryRun`, `-Repo`, `-File`); issue titles follow `Issue #N : Title`.
+- `.claude/skills/create-pr/SKILL.md` wrapping `docs/issues/create-pr.ps1` (`-DryRun`, `-Draft`, `-Base`, `-Branch`); PR titles follow `PR#N : Title` and the body contains `Closes #<GitHub issue>`.
+- Skills run the dry run first and ask for confirmation before creating anything on GitHub.
+- `implement-feature` references `create-pr` for its PR step; README and `GITHUB_ISSUES.md` numbering updated (later issues shift by one).
+
+**Acceptance criteria**
+- [ ] Both skills have valid frontmatter (`name`, `description`) and name the exact command to run.
+- [ ] `-DryRun` of each script is documented as the mandatory first step.
+- [ ] Backlog numbering and all `Depends on` references are consistent after the shift.
+
+---
+
+## #4 Define Common Module
 `[module:common] [priority:p0]` · Depends on #1 · Spec §4
 
 **Description**
@@ -67,7 +86,7 @@ Shared library with versioned contracts and security primitives. **Must not cont
 
 ---
 
-## #4 Define Eureka Server (discovery-server)
+## #5 Define Eureka Server (discovery-server)
 `[module:discovery] [priority:p0]` · Depends on #1 · Spec §4, §13
 
 **Description**
@@ -85,7 +104,7 @@ Service registration and discovery for the development profile.
 
 ---
 
-## #5 Define Config Server
+## #6 Define Config Server
 `[module:config] [priority:p1]` · Depends on #1
 
 **Description**
@@ -104,8 +123,8 @@ Centralized, profile-based configuration (dev / compose / k8s). *Note: not in th
 
 ---
 
-## #6 Define API Gateway
-`[module:gateway] [priority:p0]` · Depends on #3, #4, #8 · Spec §4, §7, §11
+## #7 Define API Gateway
+`[module:gateway] [priority:p0]` · Depends on #4, #5, #9 · Spec §4, §7, §11
 
 **Description**
 Single external entry point under `/api/v1`.
@@ -125,8 +144,8 @@ Single external entry point under `/api/v1`.
 
 ---
 
-## #7 Define Identity Service
-`[module:identity] [security] [priority:p0]` · Depends on #3 · Spec §4, §11
+## #8 Define Identity Service
+`[module:identity] [security] [priority:p0]` · Depends on #4 · Spec §4, §11
 
 **Description**
 Issues signed JWT access tokens and owns users/roles.
@@ -146,8 +165,8 @@ Issues signed JWT access tokens and owns users/roles.
 
 ---
 
-## #8 Define Journey Service
-`[module:journey] [priority:p0]` · Depends on #3, #7 · Spec §5.1, §7, §9
+## #9 Define Journey Service
+`[module:journey] [priority:p0]` · Depends on #4, #8 · Spec §5.1, §7, §9
 
 **Description**
 Baggage registration, itinerary snapshots, scan ingestion API and authoritative journey state.
@@ -164,13 +183,13 @@ Baggage registration, itinerary snapshots, scan ingestion API and authoritative 
 **Acceptance criteria**
 - [ ] AT-01, AT-02, AT-03, AT-04, AT-05, AT-15.
 - [ ] Two replicas run correctly (no double-publish side effects).
-- [ ] Liquibase V1–V3 (see #15).
+- [ ] Liquibase V1–V3 (see #16).
 - [ ] ≥ 80% coverage of domain/application code.
 
 ---
 
-## #9 Define Risk Streams Service (Kafka Streams)
-`[module:risk-streams] [kafka] [priority:p0]` · Depends on #3, #8 · Spec §5.2, §8
+## #10 Define Risk Streams Service (Kafka Streams)
+`[module:risk-streams] [kafka] [priority:p0]` · Depends on #4, #9 · Spec §5.2, §8
 
 **Description**
 Kafka Streams topology that computes connection risk and scan anomalies.
@@ -192,8 +211,8 @@ Kafka Streams topology that computes connection risk and scan anomalies.
 
 ---
 
-## #10 Define Recovery Service
-`[module:recovery] [priority:p0]` · Depends on #3, #9, #11 · Spec §5.3, §10
+## #11 Define Recovery Service
+`[module:recovery] [priority:p0]` · Depends on #4, #10, #12 · Spec §5.3, §10
 
 **Description**
 Recovery case state machine, handler assignment and action orchestration.
@@ -215,8 +234,8 @@ Recovery case state machine, handler assignment and action orchestration.
 
 ---
 
-## #11 Define Capacity Service
-`[module:capacity] [priority:p0]` · Depends on #3, #7 · Spec §5.3, BR-04
+## #12 Define Capacity Service
+`[module:capacity] [priority:p0]` · Depends on #4, #8 · Spec §5.3, BR-04
 
 **Description**
 Finite recovery cart / flight / bag-slot capacity with atomic reservations.
@@ -235,8 +254,8 @@ Finite recovery cart / flight / bag-slot capacity with atomic reservations.
 
 ---
 
-## #12 Define Search Service (Elasticsearch)
-`[module:search] [priority:p1]` · Depends on #3, #8, #10 · Spec §5.4, §12
+## #13 Define Search Service (Elasticsearch)
+`[module:search] [priority:p1]` · Depends on #4, #9, #11 · Spec §5.4, §12
 
 **Description**
 Elasticsearch read models for journey and case search.
@@ -255,8 +274,8 @@ Elasticsearch read models for journey and case search.
 
 ---
 
-## #13 Define Notification Service
-`[module:notification] [priority:p2]` · Depends on #3, #10 · Spec BR-08, §10
+## #14 Define Notification Service
+`[module:notification] [priority:p2]` · Depends on #4, #11 · Spec BR-08, §10
 
 **Description**
 Idempotent in-app notifications and delivery status; external provider mocked.
@@ -273,8 +292,8 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 
 ---
 
-## #14 Kafka infrastructure, event contracts & replay fixtures
-`[kafka] [priority:p1]` · Depends on #3 · Spec §8
+## #15 Kafka infrastructure, event contracts & replay fixtures
+`[kafka] [priority:p1]` · Depends on #4 · Spec §8
 
 **Scope**
 - Topic definitions (partitions, key, retention) for all six topics; Compose + K8s provisioning.
@@ -288,7 +307,7 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 
 ---
 
-## #15 Liquibase migrations & zero-data-loss demo
+## #16 Liquibase migrations & zero-data-loss demo
 `[database] [priority:p1]` · Spec §9
 
 **Scope**
@@ -304,12 +323,12 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 
 ---
 
-## #16 Docker & Docker Compose runtime
+## #17 Docker & Docker Compose runtime
 `[devops] [priority:p1]` · Spec §13
 
 **Scope**
 - Multi-stage Dockerfiles per service (non-root, layered jars, healthchecks).
-- `docker-compose.yml`: PostgreSQL, Kafka, Redis, Elasticsearch, Eureka, (Config Server), Gateway, all services, plus observability stack (see #18).
+- `docker-compose.yml`: PostgreSQL, Kafka, Redis, Elasticsearch, Eureka, (Config Server), Gateway, all services, plus observability stack (see #19).
 - Sample seed data and one-command startup script.
 
 **Acceptance criteria**
@@ -318,8 +337,8 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 
 ---
 
-## #17 Kubernetes / Minikube manifests (or Helm)
-`[devops] [k8s] [priority:p1]` · Depends on #16 · Spec §13
+## #18 Kubernetes / Minikube manifests (or Helm)
+`[devops] [k8s] [priority:p1]` · Depends on #17 · Spec §13
 
 **Scope**
 - Deployments, Services, ConfigMaps, Secrets (secret-management doc for Minikube), PVCs, probes, resource requests/limits.
@@ -332,7 +351,7 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 
 ---
 
-## #18 Observability: Prometheus, Grafana, Loki, Tempo
+## #19 Observability: Prometheus, Grafana, Loki, Tempo
 `[observability] [priority:p1]` · Spec §14
 
 **Scope**
@@ -348,7 +367,7 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 
 ---
 
-## #19 GitHub Actions CI/CD & SonarQube
+## #20 GitHub Actions CI/CD & SonarQube
 `[ci-cd] [priority:p1]` · Spec §16
 
 **Scope**
@@ -363,7 +382,7 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 
 ---
 
-## #20 Test strategy, security matrix & concurrency tests
+## #21 Test strategy, security matrix & concurrency tests
 `[testing] [priority:p1]` · Spec §15, §18
 
 **Scope**
@@ -380,7 +399,7 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 
 ---
 
-## #21 Performance benchmark (100 scans/s)
+## #22 Performance benchmark (100 scans/s)
 `[performance] [priority:p2]` · Spec §17
 
 **Scope**
@@ -392,7 +411,7 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 
 ---
 
-## #22 Documentation & submission artifacts
+## #23 Documentation & submission artifacts
 `[docs] [priority:p1]` · Spec §19, §22
 
 **Scope**
@@ -406,7 +425,7 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 
 ---
 
-## #23 (Optional) Advanced challenges
+## #24 (Optional) Advanced challenges
 `[optional] [priority:p3]` · Spec §21
 
 - Misconfigured airport clocks with provenance + chronology rejection.

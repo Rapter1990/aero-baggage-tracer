@@ -45,7 +45,6 @@ if (-not $closes) { Write-Warning "No GitHub issue titled 'Issue #$n : ...' foun
 $commits = (git log "origin/$Base..HEAD" --no-merges --pretty="- %s") -join "`n"
 if (-not $commits) { $commits = "- (no commits ahead of $Base)" }
 
-$robot = [char]::ConvertFromUtf32(0x1F916)   # avoids source-encoding issues in Windows PowerShell 5.1
 $title = "PR#$n : $issueTitle"
 $closeLine = if ($closes) { "Closes #$closes" } else { "Related to backlog issue #$n" }
 $body = @"
@@ -59,9 +58,6 @@ $commits
 
 ## Acceptance criteria
 $criteria
-
----
-$robot Generated with [Claude Code](https://claude.com/claude-code)
 "@
 
 if ($DryRun) {
