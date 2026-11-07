@@ -12,7 +12,7 @@
 
     <artifactId>common-module</artifactId>
     <name>common-module</name>
-    <description>Shared contracts and security primitives. Must not depend on JPA/Hibernate (ADR-0001).</description>
+    <description>Shared contracts and security primitives. Must not depend on JPA/Hibernate.</description>
 
     <properties>
         <enforcer.version>3.5.0</enforcer.version>
@@ -38,7 +38,7 @@
         </dependency>
 
         <!--
-            Optional (ADR-0001): a consumer gets these only by declaring them itself, so the
+            Optional: a consumer gets these only by declaring them itself, so the
             reactive api-gateway never inherits Spring MVC or the servlet API from this jar.
             The servlet wiring in CommonServletAutoConfiguration is conditional on a servlet app.
         -->
@@ -87,7 +87,7 @@
                             <rules>
                                 <bannedDependencies>
                                     <searchTransitive>true</searchTransitive>
-                                    <message>common-module must stay free of persistence and of web starters (ADR-0001).</message>
+                                    <message>common-module must stay free of persistence and of web starters.</message>
                                     <excludes>
                                         <exclude>org.hibernate.orm:*</exclude>
                                         <exclude>org.hibernate:*</exclude>

@@ -13,9 +13,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.DispatcherServlet;
 
 /**
- * Servlet-only wiring (ADR-0001). Active only in a servlet web application with Spring MVC on the
- * classpath, so the reactive api-gateway, which only uses the contract types, is unaffected.
- * Everything backs off when the service defines its own bean.
+ * Servlet-only wiring. Active only in a servlet web application with Spring MVC on the classpath,
+ * so the reactive api-gateway, which only uses the contract types, is unaffected. Everything backs
+ * off when the service defines its own bean.
  */
 @AutoConfiguration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
