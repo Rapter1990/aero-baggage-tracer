@@ -24,6 +24,16 @@ public final class EventJson {
     return MAPPER.writeValueAsString(envelope);
   }
 
+  /**
+   * Reads only eventType and schemaVersion, without binding the payload. Consumers check the
+   * version here first so a newer payload shape cannot fail typed binding before the check.
+   */
+  public static Header readHeader(String json) {
+    return MAPPER.readValue(json, Header.class);
+  }
+
+  public record Header(String eventType, int schemaVersion) {}
+
   public static <T> EventEnvelope<T> read(String json, Class<T> payloadType) {
     JavaType type =
         MAPPER.getTypeFactory().constructParametricType(EventEnvelope.class, payloadType);

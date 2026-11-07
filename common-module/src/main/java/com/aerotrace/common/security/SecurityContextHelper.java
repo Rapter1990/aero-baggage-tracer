@@ -1,5 +1,7 @@
 package com.aerotrace.common.security;
 
+import com.aerotrace.common.error.ApiException;
+import com.aerotrace.common.error.ErrorCode;
 import java.util.Collection;
 import java.util.EnumSet;
 import java.util.Optional;
@@ -44,6 +46,18 @@ public final class SecurityContextHelper {
   }
 
   public static Optional<String> currentPassengerRef() {
-    return jwt().map(j -> j.getClaimAsString(JwtClaims.PASSENGER_REF));
+    // Fail closed: only a non-blank string claim counts, so ownership filters never match "".
+    return jwt()
+        .map(j -> j.getClaim(JwtClaims.PASSENGER_REF))
+        .filter(String.class::isInstance)
+        .map(String.class::cast)
+        .filter(s -> !s.isBlank());
+  }
+
+  /** Passenger ref for row-level ownership checks; denies access when it is absent. */
+  public static String requirePassengerRef() {
+    return currentPassengerRef()
+        .orElseThrow(
+            () -> new ApiException(ErrorCode.ACCESS_DENIED, "No passenger identity on the token."));
   }
 }

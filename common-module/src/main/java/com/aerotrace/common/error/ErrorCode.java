@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus;
 /** Stable, machine-readable error codes shared by all services. Never rename a released code. */
 public enum ErrorCode {
   VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "Request validation failed"),
+  REQUEST_REJECTED(HttpStatus.BAD_REQUEST, "Request rejected"),
   UNAUTHENTICATED(HttpStatus.UNAUTHORIZED, "Authentication required"),
   ACCESS_DENIED(HttpStatus.FORBIDDEN, "Access denied"),
   NOT_FOUND(HttpStatus.NOT_FOUND, "Resource not found"),
@@ -39,7 +40,7 @@ public enum ErrorCode {
       case 403 -> ACCESS_DENIED;
       case 404 -> NOT_FOUND;
       case 409 -> VERSION_CONFLICT;
-      default -> INTERNAL_ERROR;
+      default -> status >= 400 && status < 500 ? REQUEST_REJECTED : INTERNAL_ERROR;
     };
   }
 }
