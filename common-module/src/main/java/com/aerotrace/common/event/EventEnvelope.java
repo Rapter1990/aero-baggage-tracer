@@ -48,10 +48,15 @@ public record EventEnvelope<T>(
         payload);
   }
 
-  /** Consumers call this first; newer majors must go to the dead-letter topic, not be guessed. */
-  public void requireSchemaVersionAtMost(int maxSupported) {
-    if (schemaVersion > maxSupported) {
-      throw new UnsupportedSchemaVersionException(eventType, schemaVersion, maxSupported);
+  /**
+   * Versioning rule: the {@code .vN} topic suffix is the only breaking version (a breaking change
+   * means a new {@code .v2} topic). {@code schemaVersion} is an additive revision inside that
+   * topic, so consumers must accept higher values and may only demand a minimum, for example when
+   * they need a field that older revisions lack.
+   */
+  public void requireSchemaVersionAtLeast(int minRequired) {
+    if (schemaVersion < minRequired) {
+      throw new UnsupportedSchemaVersionException(eventType, schemaVersion, minRequired);
     }
   }
 }

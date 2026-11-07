@@ -3,6 +3,7 @@ package com.aerotrace.common.event;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JavaType;
 import tools.jackson.databind.cfg.DateTimeFeature;
+import tools.jackson.databind.cfg.EnumFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 /** JSON (de)serialization for event envelopes: ISO-8601 UTC timestamps, tolerant reader. */
@@ -12,6 +13,9 @@ public final class EventJson {
       JsonMapper.builder()
           .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
           .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+          // Enums on the wire are open: a constant added by a newer producer reads as null here,
+          // and consumers need a default branch that logs and skips it.
+          .enable(EnumFeature.READ_UNKNOWN_ENUM_VALUES_AS_NULL)
           .build();
 
   private EventJson() {}

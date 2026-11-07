@@ -65,8 +65,8 @@ class EventEnvelopeTest {
   }
 
   @Test
-  void rejectsSchemaVersionNewerThanSupported() {
-    var env =
+  void newerSchemaRevisionsAreAcceptedButTooOldOnesCanBeRejected() {
+    var v3 =
         EventEnvelope.create(
             Topics.CAPACITY_CHANGED,
             3,
@@ -75,10 +75,29 @@ class EventEnvelopeTest {
             OCCURRED,
             new CapacityChangedPayload("r1", 10, 4),
             CLOCK);
-    assertThatThrownBy(() -> env.requireSchemaVersionAtMost(2))
+    // additive revisions within a topic are never dead-lettered
+    v3.requireSchemaVersionAtLeast(1);
+    v3.requireSchemaVersionAtLeast(3);
+    assertThatThrownBy(() -> v3.requireSchemaVersionAtLeast(4))
         .isInstanceOf(UnsupportedSchemaVersionException.class)
-        .hasMessageContaining("3");
-    env.requireSchemaVersionAtMost(3);
+        .hasMessageContaining("3")
+        .hasMessageContaining("at least 4");
+  }
+
+  @Test
+  void unknownEnumValuesReadAsNullInsteadOfFailing() {
+    String json =
+        "{\"eventId\":\"e\",\"eventType\":\"baggage.risk.changed.v1\",\"schemaVersion\":2,"
+            + "\"aggregateId\":\"a\",\"occurredAt\":\"2026-11-03T09:00:00Z\","
+            + "\"publishedAt\":\"2026-11-03T09:00:01Z\",\"correlationId\":\"c\","
+            + "\"payload\":{\"bagTag\":\"AB123456\",\"legId\":\"LEG-2\","
+            + "\"previous\":\"LOW\",\"current\":\"CRITICAL\","
+            + "\"departureAt\":\"2026-11-03T11:05:00Z\"}}";
+
+    EventEnvelope<RiskChangedPayload> env = EventJson.read(json, RiskChangedPayload.class);
+
+    assertThat(env.payload().previous()).isEqualTo(RiskLevel.LOW);
+    assertThat(env.payload().current()).isNull();
   }
 
   @Test
