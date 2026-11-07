@@ -81,8 +81,8 @@ Shared library with versioned contracts and security primitives. **Must not cont
 
 **Acceptance criteria**
 - [ ] Published as an internal Maven artifact consumed by all services.
-- [ ] Envelope serialization round-trip and schema-version tests.
-- [ ] Unit tests ≥ 80% line coverage; no dependency on JPA/Hibernate.
+- [x] Envelope serialization round-trip and schema-version tests.
+- [x] Unit tests ≥ 80% line coverage; no dependency on JPA/Hibernate.
 
 ---
 
