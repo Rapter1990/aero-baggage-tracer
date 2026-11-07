@@ -11,15 +11,17 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 /**
- * Shared advice: every error leaves a service as RFC 7807 {@link ProblemDetail} with a stable
- * {@code errorCode}. Services import or extend it.
+ * Shared handler logic: every error leaves a service as RFC 7807 {@link ProblemDetail} with a
+ * stable {@code errorCode}. Servlet (Spring MVC) only.
+ *
+ * <p>Deliberately not annotated: {@code CommonServletAutoConfiguration} registers a default advice
+ * when a service has none. A service that needs extra handlers extends this class in its own
+ * {@code @RestControllerAdvice}; the default then backs off, so there is never a second advice.
  */
-@RestControllerAdvice
 public class BaseExceptionHandler extends ResponseEntityExceptionHandler {
 
   private static final Logger LOG = LoggerFactory.getLogger(BaseExceptionHandler.class);

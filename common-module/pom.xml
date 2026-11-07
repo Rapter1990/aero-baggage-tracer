@@ -12,12 +12,40 @@
 
     <artifactId>common-module</artifactId>
     <name>common-module</name>
-    <description>Shared contracts and security primitives. Must not depend on JPA/Hibernate.</description>
+    <description>Shared contracts and security primitives. Must not depend on JPA/Hibernate (ADR-0001).</description>
+
+    <properties>
+        <enforcer.version>3.5.0</enforcer.version>
+    </properties>
 
     <dependencies>
+        <!-- Always on the classpath: stack-neutral (servlet and reactive) contract types. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+
+        <!--
+            Optional (ADR-0001): a consumer gets these only by declaring them itself, so the
+            reactive api-gateway never inherits Spring MVC or the servlet API from this jar.
+            The servlet wiring in CommonServletAutoConfiguration is conditional on a servlet app.
+        -->
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-webmvc</artifactId>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>jakarta.servlet</groupId>
@@ -25,16 +53,14 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>tools.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-core</artifactId>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-oauth2-jose</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
+            <optional>true</optional>
         </dependency>
 
         <dependency>
@@ -43,4 +69,41 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>${enforcer.version}</version>
+                <executions>
+                    <execution>
+                        <id>enforce-common-module-boundaries</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <searchTransitive>true</searchTransitive>
+                                    <message>common-module must stay free of persistence and of web starters (ADR-0001).</message>
+                                    <excludes>
+                                        <exclude>org.hibernate.orm:*</exclude>
+                                        <exclude>org.hibernate:*</exclude>
+                                        <exclude>jakarta.persistence:*</exclude>
+                                        <exclude>org.springframework.data:spring-data-jpa</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-data-jpa</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-web</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-webmvc</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-webflux</exclude>
+                                    </excludes>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>
