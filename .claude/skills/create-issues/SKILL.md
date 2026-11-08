@@ -14,4 +14,4 @@ Issues are created only through `docs/issues/create-issues.ps1`, never by hand-w
    Options: `-Repo owner/name`, `-File <path to backlog>`.
 5. Report the created issue URLs. Note: GitHub issue numbers can differ from backlog numbers because PRs share the numbering; `create-pr` resolves the issue by its `Issue #N :` title.
 
-The script creates every section, so do not re-run it for issues that already exist.
+The script creates every section unless you pass `-Only <N>[,<N>...]` (backlog numbers), so use `-Only` for issues that are not yet on GitHub and never re-run it for ones that already exist.
