@@ -1,0 +1,25 @@
+# Local development: builds every image from the working tree.
+#   docker compose -f docker-compose-local.yml up --build
+services:
+  discovery-server:
+    build:
+      context: .
+      dockerfile: discovery-server/Dockerfile
+    image: aerotrace/discovery-server:local
+    container_name: discovery-server
+    environment:
+      EUREKA_HOSTNAME: discovery-server
+    ports:
+      - "8761:8761"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8761/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    networks:
+      - aerotrace
+
+networks:
+  aerotrace:
+    name: aerotrace
