@@ -14,7 +14,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
 class DiscoveryServerApplicationTest {
 
-  @LocalServerPort private int port;
+  @LocalServerPort
+  private int port;
 
   private HttpResponse<String> get(String path, String accept) throws Exception {
     HttpRequest request =
