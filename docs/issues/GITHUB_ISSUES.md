@@ -99,7 +99,7 @@ Service registration and discovery for the development profile.
 
 **Acceptance criteria**
 - [ ] Services register and appear in the Eureka dashboard in Compose.
-- [ ] Health check usable by Compose `healthcheck`.
+- [x] Health check usable by Compose `healthcheck`.
 - [ ] Short doc section comparing Compose vs Minikube discovery.
 
 ---
