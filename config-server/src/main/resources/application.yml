@@ -5,12 +5,13 @@ spring:
   application:
     name: config-server
   profiles:
-    active: native
+    # include (not active) so an extra SPRING_PROFILES_ACTIVE value cannot switch off the native backend.
+    include: native
   cloud:
     config:
       server:
         native:
-          search-locations: classpath:/config
+          search-locations: classpath:/config-repo/
 
 management:
   endpoints:
