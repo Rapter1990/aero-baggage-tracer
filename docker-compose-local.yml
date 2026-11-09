@@ -20,6 +20,23 @@ services:
     networks:
       - aerotrace
 
+  config-server:
+    build:
+      context: .
+      dockerfile: config-server/Dockerfile
+    image: aerotrace/config-server:local
+    container_name: config-server
+    ports:
+      - "8888:8888"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8888/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    networks:
+      - aerotrace
+
 networks:
   aerotrace:
     name: aerotrace

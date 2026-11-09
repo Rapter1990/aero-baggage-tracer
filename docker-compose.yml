@@ -19,6 +19,21 @@ services:
     networks:
       - aerotrace
 
+  config-server:
+    image: ${REGISTRY:-ghcr.io/rapter1990}/aerotrace-config-server:${TAG:-latest}
+    container_name: config-server
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8888/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    networks:
+      - aerotrace
+
 networks:
   aerotrace:
     name: aerotrace
