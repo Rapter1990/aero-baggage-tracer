@@ -1,5 +1,5 @@
 # Local development infrastructure only (matches the `dev` profile endpoints in config-server:
-# localhost:9092, localhost:6379, localhost:5432). Run services from the IDE or Maven.
+# localhost:9092, localhost:6379, localhost:5433). Run services from the IDE or Maven.
 #   docker compose -f docker-compose-local.yml up -d
 # Dev-only credentials; override via env vars. Never reuse them outside local development.
 services:
@@ -49,7 +49,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
       POSTGRES_DB: ${POSTGRES_DB:-aerotrace}
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres-data:/var/lib/postgresql
     healthcheck:

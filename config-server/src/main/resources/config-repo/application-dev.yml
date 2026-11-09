@@ -6,7 +6,7 @@ aerotrace:
     port: 6379
   db:
     host: localhost
-    port: 5432
+    port: 5433
 eureka:
   client:
     service-url:
