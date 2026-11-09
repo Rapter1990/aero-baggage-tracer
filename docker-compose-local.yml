@@ -18,7 +18,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
     ports:
-      - "127.0.0.1:9092:9092"
+      - "9092:9092"
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
       interval: 10s
@@ -32,7 +32,7 @@ services:
     image: redis:latest
     container_name: redis
     ports:
-      - "127.0.0.1:6379:6379"
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -49,7 +49,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
       POSTGRES_DB: ${POSTGRES_DB:-aerotrace}
     ports:
-      - "127.0.0.1:5433:5432"
+      - "5433:5432"
     volumes:
       - postgres-data:/var/lib/postgresql
     healthcheck:
