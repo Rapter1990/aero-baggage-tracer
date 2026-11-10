@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -15,7 +16,18 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public final class FakeEureka {
 
-  public record Call(String method, String path, String body) {}
+  public static final String USER = "eureka";
+  public static final String PASSWORD = "test-secret";
+
+  /**
+   * @param authorized whether the request carried the expected HTTP Basic credentials
+   */
+  public record Call(String method, String path, String body, boolean authorized) {}
+
+  private static final String EXPECTED_AUTHORIZATION =
+      "Basic "
+          + Base64.getEncoder()
+              .encodeToString((USER + ":" + PASSWORD).getBytes(StandardCharsets.UTF_8));
 
   private static final String EMPTY_REGISTRY =
       "{\"applications\":{\"versions__delta\":\"1\",\"apps__hashcode\":\"\",\"application\":[]}}";
@@ -35,9 +47,18 @@ public final class FakeEureka {
 
   private FakeEureka() {}
 
-  /** The service URL to set as {@code eureka.client.service-url.defaultZone}. */
+  /**
+   * The service URL to set as {@code eureka.client.service-url.defaultZone}, with the credentials
+   * embedded the way real deployments pass them.
+   */
   public static String serviceUrl() {
-    return "http://localhost:" + SERVER.getAddress().getPort() + "/eureka/";
+    return "http://"
+        + USER
+        + ":"
+        + PASSWORD
+        + "@localhost:"
+        + SERVER.getAddress().getPort()
+        + "/eureka/";
   }
 
   public static List<Call> calls() {
@@ -47,8 +68,14 @@ public final class FakeEureka {
   private static void handle(HttpExchange exchange) throws IOException {
     String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
     String method = exchange.getRequestMethod();
-    CALLS.add(new Call(method, exchange.getRequestURI().getPath(), body));
+    boolean authorized =
+        EXPECTED_AUTHORIZATION.equals(exchange.getRequestHeaders().getFirst("Authorization"));
+    CALLS.add(new Call(method, exchange.getRequestURI().getPath(), body, authorized));
 
+    if (!authorized) {
+      respond(exchange, 401, null);
+      return;
+    }
     switch (method) {
       case "GET" -> respond(exchange, 200, EMPTY_REGISTRY);
       case "POST" -> respond(exchange, 204, null);

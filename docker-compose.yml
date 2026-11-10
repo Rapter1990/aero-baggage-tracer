@@ -37,8 +37,11 @@ services:
     image: redis:latest
     container_name: redis
     restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-aerotrace}
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\""]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -69,6 +72,8 @@ services:
     restart: unless-stopped
     environment:
       EUREKA_HOSTNAME: discovery-server
+      EUREKA_USER: ${EUREKA_USER:-eureka}
+      EUREKA_PASSWORD: ${EUREKA_PASSWORD:-eureka-dev}
     ports:
       - "8761:8761"
     healthcheck:
@@ -85,7 +90,7 @@ services:
     container_name: config-server
     restart: unless-stopped
     environment:
-      EUREKA_URL: http://discovery-server:8761/eureka/
+      EUREKA_URL: http://${EUREKA_USER:-eureka}:${EUREKA_PASSWORD:-eureka-dev}@discovery-server:8761/eureka/
       EUREKA_INSTANCE_HOSTNAME: config-server
     depends_on:
       discovery-server:
@@ -106,9 +111,10 @@ services:
     container_name: api-gateway
     restart: unless-stopped
     environment:
-      EUREKA_URL: http://discovery-server:8761/eureka/
+      EUREKA_URL: http://${EUREKA_USER:-eureka}:${EUREKA_PASSWORD:-eureka-dev}@discovery-server:8761/eureka/
       EUREKA_INSTANCE_HOSTNAME: api-gateway
       REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-aerotrace}
       JWT_ISSUER: ${JWT_ISSUER:-http://identity-service:8081}
       JWK_SET_URI: ${JWK_SET_URI:-http://identity-service:8081/.well-known/jwks.json}
       # No collector in this stack yet; point at one to export traces.

@@ -13,7 +13,7 @@ import org.springframework.web.client.RestClient;
 
 @SpringBootTest(
     webEnvironment = WebEnvironment.RANDOM_PORT,
-    properties = "eureka.client.enabled=false")
+    properties = {"eureka.client.enabled=false", "EUREKA_PASSWORD=leaky-secret", "EUREKA_USER=svc"})
 class ConfigServerApplicationTest {
 
   @LocalServerPort private int port;
@@ -70,6 +70,20 @@ class ConfigServerApplicationTest {
     assertThat(resolve("journey-service", "compose", "aerotrace.kafka.bootstrap-servers"))
         .isEqualTo("kafka:9092");
     assertThat(resolve("journey-service", "k8s", "aerotrace.db.host")).isEqualTo("postgres");
+  }
+
+  @Test
+  void eurekaUrlsCarryCredentialPlaceholdersTheClientResolvesItself() {
+    // The registry needs HTTP Basic credentials. They must never be stored in the repo or resolved
+    // (and so sent over the wire) by the config server: the client fills them from its own env.
+    for (String profile : List.of("dev", "compose")) {
+      Object zone = resolve("journey-service", profile, "eureka.client.service-url.defaultZone");
+
+      assertThat(zone).as("profile %s", profile).isInstanceOf(String.class);
+      assertThat((String) zone)
+          .contains("${EUREKA_USER:eureka}:${EUREKA_PASSWORD}@")
+          .doesNotContain("leaky-secret");
+    }
   }
 
   @Test

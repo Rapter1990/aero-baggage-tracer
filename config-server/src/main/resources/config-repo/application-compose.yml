@@ -10,4 +10,4 @@ aerotrace:
 eureka:
   client:
     service-url:
-      defaultZone: http://discovery-server:8761/eureka/
+      defaultZone: http://${EUREKA_USER:eureka}:${EUREKA_PASSWORD}@discovery-server:8761/eureka/

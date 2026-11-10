@@ -95,11 +95,13 @@ Service registration and discovery for the development profile.
 **Scope**
 - Spring Cloud Netflix Eureka Server, standalone dev profile, health endpoint, Dockerfile.
 - Client config template for all services (instance id, lease renewal, health-check URL).
+- **Authenticated registry**: HTTP Basic (`EUREKA_USER` / `EUREKA_PASSWORD`, no default password) on the registry API and dashboard; only `/actuator/health` is open. Clients pass the credentials in the service URL (`http://user:password@host:8761/eureka/`), never stored in the repo. Without this anyone who can reach port 8761 could register a fake service and receive forwarded bearer tokens.
 - Document how discovery works in Compose (Eureka) vs Minikube (Kubernetes Services/DNS) and when each is used.
 
 **Acceptance criteria**
 - [ ] Services register and appear in the Eureka dashboard in Compose.
 - [x] Health check usable by Compose `healthcheck`.
+- [x] Registry reads and registrations are refused (401) without valid credentials; clients with credentials register (tested).
 - [ ] Short doc section comparing Compose vs Minikube discovery.
 
 ---
@@ -113,7 +115,7 @@ Centralized, profile-based configuration (dev / compose / k8s). *Note: not in th
 **Scope**
 - Spring Cloud Config Server (native or Git backend), per-service config files, profiles `dev`, `compose`, `k8s`.
 - Airport-specific thresholds (e.g. 20‑min risk threshold) and Kafka/Redis/DB endpoints externalized.
-- Secrets are **not** stored in the repo; use env vars / K8s Secrets.
+- Secrets are **not** stored in the repo; use env vars / K8s Secrets. Eureka URLs in the config repo carry `${EUREKA_USER}` / `${EUREKA_PASSWORD}` placeholders that each client resolves from its own environment (the config server never sees or sends the password).
 - Clients use `spring.config.import` with fail-fast and retry.
 
 **Acceptance criteria**
@@ -133,7 +135,7 @@ Single external entry point under `/api/v1`, built on the **servlet stack** (Spr
 - Spring Cloud Gateway **Server MVC** (`spring-cloud-starter-gateway-server-webmvc`) routes to all services via Eureka (`lb://`).
 - Registers itself with the Eureka server (discovery-server, #5) as `API-GATEWAY` (instance id `api-gateway:<host>:<port>`, 10 s lease renewal) and fetches the registry to resolve `lb://` routes. `EUREKA_URL` / `EUREKA_INSTANCE_HOSTNAME` select the server and the advertised host per environment.
 - JWT verification with Spring Security's servlet resource server: the signature is verified with the identity-service **public key** (`java.security.PublicKey`, obtained from its JWKS so several active `kid`s work), plus `exp`, `iss`, `aud`; 401 for missing/invalid, 403 for forbidden.
-- Token forwarding to downstream services; Redis-backed rate limiting as a servlet filter (blocking Spring Data Redis, token bucket).
+- Token forwarding to downstream services; Redis-backed rate limiting as a servlet filter (blocking Spring Data Redis, token bucket). Redis runs with a password (`REDIS_PASSWORD`, no default in the gateway) in both Compose files.
 - Generate/propagate `X-Correlation-Id`; pass `Idempotency-Key`. Reuse the servlet `CorrelationIdFilter` and `ProblemDetails` from `common-module`.
 - ProblemDetail-formatted gateway errors; OpenTelemetry tracing + Micrometer metrics.
 - Swagger UI (springdoc) at `/swagger-ui.html` with a "Select a definition" dropdown listing every service; each service's OpenAPI document is fetched through the gateway (`/service-docs/<service>` → the service's `/v3/api-docs`). Can be switched off with `DOCS_ENABLED=false`.
@@ -144,6 +146,7 @@ Single external entry point under `/api/v1`, built on the **servlet stack** (Spr
 - [x] AT-16: expired JWT → 401; wrong role → 403.
 - [x] Correlation ID present on every response and downstream request.
 - [x] Rate-limit returns 429 with ProblemDetail (verified against a real Redis).
+- [x] Redis requires a password: the rate limiter authenticates with it, and clients without or with a wrong password are refused (verified against a real Redis).
 - [x] Gateway token-forwarding integration test (real HTTP hop to a downstream stub).
 - [x] Servlet stack only: no WebFlux or Reactor Netty dependency in `api-gateway`; no `Mono`/`Flux` in its code.
 

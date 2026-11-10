@@ -48,6 +48,7 @@ class EurekaRegistrationTest extends GatewayTestBase {
         await(
             () ->
                 FakeEureka.calls().stream()
+                    .filter(FakeEureka.Call::authorized)
                     .filter(c -> c.method().equals("POST"))
                     .filter(c -> c.path().endsWith("/apps/API-GATEWAY"))
                     .findFirst());
@@ -68,6 +69,7 @@ class EurekaRegistrationTest extends GatewayTestBase {
         await(
             () ->
                 FakeEureka.calls().stream()
+                    .filter(FakeEureka.Call::authorized)
                     .filter(c -> c.method().equals("GET"))
                     .filter(c -> c.path().contains("/apps"))
                     .findFirst());
