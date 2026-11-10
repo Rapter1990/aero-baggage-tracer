@@ -32,11 +32,11 @@ WORKDIR /app
 COPY --from=build /src/config-server/target/config-server-*.jar app.jar
 
 # Step #10: Document the Config port.
-EXPOSE 8888
+EXPOSE 1111
 
 # Step #11: Mark the container healthy only when the actuator health endpoint answers.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=5 \
-  CMD curl -fsS http://localhost:8888/actuator/health || exit 1
+  CMD curl -fsS http://localhost:1111/actuator/health || exit 1
 
 # Step #12: Start the Config server.
 ENTRYPOINT ["java", "-jar", "app.jar"]
