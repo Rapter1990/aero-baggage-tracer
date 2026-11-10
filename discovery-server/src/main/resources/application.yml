@@ -4,6 +4,12 @@ server:
 spring:
   application:
     name: discovery-server
+  security:
+    user:
+      # Credentials every Eureka client and dashboard user must present (HTTP Basic). No default
+      # password: the server refuses to start without one rather than run open.
+      name: ${EUREKA_USER:eureka}
+      password: ${EUREKA_PASSWORD}
 
 eureka:
   instance:
