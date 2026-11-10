@@ -8,3 +8,8 @@ management:
     web:
       exposure:
         include: health,info,refresh
+eureka:
+  instance:
+    # Every service registers as <application>:<hostname>:<port>, e.g. journey-service:localhost:8082.
+    # The client fills in the placeholders; set EUREKA_INSTANCE_HOSTNAME per environment.
+    instance-id: ${spring.application.name}:${EUREKA_INSTANCE_HOSTNAME:localhost}:${server.port}

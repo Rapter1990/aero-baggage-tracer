@@ -87,6 +87,18 @@ class ConfigServerApplicationTest {
   }
 
   @Test
+  void sharedEurekaInstanceIdFollowsTheApplicationHostPortFormat() {
+    // Every service registers as <application>:<hostname>:<port>; the client fills the
+    // placeholders.
+    for (String profile : List.of("default", "dev", "compose", "k8s")) {
+      assertThat(resolve("journey-service", profile, "eureka.instance.instance-id"))
+          .as("profile %s", profile)
+          .isEqualTo(
+              "${spring.application.name}:${EUREKA_INSTANCE_HOSTNAME:localhost}:${server.port}");
+    }
+  }
+
+  @Test
   void profileOverridesWinOverSharedFile() {
     // Resolve with profile order dev,compose: the last profile is the most specific.
     assertThat(resolve("journey-service", "dev,compose", "aerotrace.kafka.bootstrap-servers"))
