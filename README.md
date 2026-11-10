@@ -41,11 +41,7 @@ Role-based Claude Code subagents live in [.claude/agents](.claude/agents); reusa
 
 ## Local configuration (`.env`)
 
-Passwords and a few endpoints come from environment variables, with no default password in the code. For local work, copy the template and adjust it:
-
-```bash
-cp .env.example .env
-```
+Passwords and a few endpoints come from environment variables, with no default password in the code. For local work, create a `.env` file in the repository root (one `KEY=value` per line) with the variables below.
 
 `.env` is git-ignored and never copied into Docker images. Docker Compose reads it automatically, and the Spring Boot services read it too when started from the IDE or Maven (they import `.env`, or `../.env` when started from a module folder). Real environment variables, such as IDE run-configuration values, take precedence over the file.
 
