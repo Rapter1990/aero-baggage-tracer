@@ -101,6 +101,35 @@ services:
     networks:
       - aerotrace
 
+  api-gateway:
+    image: ${REGISTRY:-ghcr.io/rapter1990}/aerotrace-api-gateway:${TAG:-latest}
+    container_name: api-gateway
+    restart: unless-stopped
+    environment:
+      EUREKA_URL: http://discovery-server:8761/eureka/
+      EUREKA_INSTANCE_HOSTNAME: api-gateway
+      REDIS_HOST: redis
+      JWT_ISSUER: ${JWT_ISSUER:-http://identity-service:8081}
+      JWK_SET_URI: ${JWK_SET_URI:-http://identity-service:8081/.well-known/jwks.json}
+      # No collector in this stack yet; point at one to export traces.
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-0.1}
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 40s
+    networks:
+      - aerotrace
+
 volumes:
   postgres-data:
 

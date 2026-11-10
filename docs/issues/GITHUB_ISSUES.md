@@ -137,10 +137,10 @@ Single external entry point under `/api/v1`.
 - ProblemDetail-formatted gateway errors; OpenTelemetry tracing + Micrometer metrics.
 
 **Acceptance criteria**
-- [ ] AT-16: expired JWT → 401; wrong role → 403.
-- [ ] Correlation ID present on every response and downstream request.
-- [ ] Rate-limit returns 429 with ProblemDetail.
-- [ ] Gateway token-forwarding integration test.
+- [x] AT-16: expired JWT → 401; wrong role → 403.
+- [x] Correlation ID present on every response and downstream request.
+- [x] Rate-limit returns 429 with ProblemDetail.
+- [x] Gateway token-forwarding integration test.
 
 ---
 
