@@ -36,6 +36,9 @@ services:
   redis:
     image: redis:latest
     container_name: redis
+    env_file:
+      - path: .env
+        required: false
     restart: unless-stopped
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-aerotrace}
@@ -51,6 +54,9 @@ services:
   postgres:
     image: postgres:latest
     container_name: postgres
+    env_file:
+      - path: .env
+        required: false
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-aerotrace}
@@ -69,6 +75,9 @@ services:
   discovery-server:
     image: ${REGISTRY:-ghcr.io/rapter1990}/aerotrace-discovery-server:${TAG:-latest}
     container_name: discovery-server
+    env_file:
+      - path: .env
+        required: false
     restart: unless-stopped
     environment:
       EUREKA_HOSTNAME: discovery-server
@@ -88,6 +97,9 @@ services:
   config-server:
     image: ${REGISTRY:-ghcr.io/rapter1990}/aerotrace-config-server:${TAG:-latest}
     container_name: config-server
+    env_file:
+      - path: .env
+        required: false
     restart: unless-stopped
     environment:
       EUREKA_URL: http://${EUREKA_USER:-eureka}:${EUREKA_PASSWORD:-eureka-dev}@discovery-server:8761/eureka/
@@ -109,6 +121,9 @@ services:
   api-gateway:
     image: ${REGISTRY:-ghcr.io/rapter1990}/aerotrace-api-gateway:${TAG:-latest}
     container_name: api-gateway
+    env_file:
+      - path: .env
+        required: false
     restart: unless-stopped
     environment:
       EUREKA_URL: http://${EUREKA_USER:-eureka}:${EUREKA_PASSWORD:-eureka-dev}@discovery-server:8761/eureka/

@@ -49,6 +49,8 @@ cp .env.example .env
 
 `.env` is git-ignored and never copied into Docker images. Docker Compose reads it automatically, and the Spring Boot services read it too when started from the IDE or Maven (they import `.env`, or `../.env` when started from a module folder). Real environment variables, such as IDE run-configuration values, take precedence over the file.
 
+In `docker-compose.yml` and `docker-compose-local.yml`, the services that need these settings (Redis, PostgreSQL, discovery-server, config-server, api-gateway) also load `.env` through `env_file` (optional: without the file the dev defaults apply). A service's explicit `environment:` entries win over `.env`, which is why the gateway container keeps the in-network identity-service URLs. Note that `env_file` passes every variable in the file to each of those containers, not only the ones the service uses.
+
 | Variable | Used by |
 |---|---|
 | `EUREKA_USER`, `EUREKA_PASSWORD` | discovery-server, and every client that registers with it |

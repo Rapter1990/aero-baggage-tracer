@@ -31,6 +31,9 @@ services:
   redis:
     image: redis:latest
     container_name: redis
+    env_file:
+      - path: .env
+        required: false
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-aerotrace}
     command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\""]
@@ -47,6 +50,9 @@ services:
   postgres:
     image: postgres:latest
     container_name: postgres
+    env_file:
+      - path: .env
+        required: false
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-aerotrace}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
