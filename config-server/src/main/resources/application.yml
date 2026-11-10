@@ -13,6 +13,13 @@ spring:
         native:
           search-locations: classpath:/config-repo/
 
+eureka:
+  instance:
+    hostname: ${EUREKA_INSTANCE_HOSTNAME:localhost}
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+
 management:
   endpoints:
     web:

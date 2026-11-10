@@ -11,7 +11,9 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.web.client.RestClient;
 
-@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+    webEnvironment = WebEnvironment.RANDOM_PORT,
+    properties = "eureka.client.enabled=false")
 class ConfigServerApplicationTest {
 
   @LocalServerPort private int port;

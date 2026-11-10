@@ -10,7 +10,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.web.client.RestClient;
 
 /** An operator-set SPRING_PROFILES_ACTIVE must not switch the native backend off. */
-@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+    webEnvironment = WebEnvironment.RANDOM_PORT,
+    properties = "eureka.client.enabled=false")
 @ActiveProfiles("compose")
 class ConfigServerExtraProfileTest {
 

@@ -84,6 +84,12 @@ services:
     image: ${REGISTRY:-ghcr.io/rapter1990}/aerotrace-config-server:${TAG:-latest}
     container_name: config-server
     restart: unless-stopped
+    environment:
+      EUREKA_URL: http://discovery-server:8761/eureka/
+      EUREKA_INSTANCE_HOSTNAME: config-server
+    depends_on:
+      discovery-server:
+        condition: service_healthy
     ports:
       - "1111:1111"
     healthcheck:
