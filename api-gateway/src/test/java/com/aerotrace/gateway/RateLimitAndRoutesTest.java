@@ -1,0 +1,96 @@
+package com.aerotrace.gateway;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.aerotrace.gateway.support.GatewayTestBase;
+import com.aerotrace.gateway.support.GatewayTestConfig;
+import com.aerotrace.gateway.support.TestJwks;
+import com.nimbusds.jose.jwk.RSAKey;
+import java.net.http.HttpResponse;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cloud.gateway.route.Route;
+import org.springframework.cloud.gateway.route.RouteLocator;
+import tools.jackson.databind.JsonNode;
+
+class RateLimitAndRoutesTest extends GatewayTestBase {
+
+  private static RSAKey key;
+
+  @Autowired private RouteLocator routeLocator;
+
+  @BeforeAll
+  static void publishKey() {
+    key = TestJwks.publish("kid-rl");
+  }
+
+  private static String tokenFor(String subject) {
+    return TestJwks.sign(key, TestJwks.claims(subject, List.of("AGENT")).build());
+  }
+
+  @Test
+  void exhaustedLimitReturns429ProblemDetail() {
+    String token = tokenFor("limited-" + UUID.randomUUID());
+
+    for (int i = 0; i < GatewayTestConfig.ALLOWED_PER_KEY; i++) {
+      assertThat(get("/api/v1/echo/ping", token).statusCode()).isEqualTo(200);
+    }
+    HttpResponse<String> limited = get("/api/v1/echo/ping", token);
+
+    assertThat(limited.statusCode()).isEqualTo(429);
+    assertThat(limited.headers().firstValue("Content-Type").orElse(""))
+        .startsWith("application/problem+json");
+    JsonNode body = json(limited);
+    assertThat(body.get("status").asInt()).isEqualTo(429);
+    assertThat(body.get("errorCode").asString()).isEqualTo("RATE_LIMITED");
+    assertThat(body.get("correlationId").asString())
+        .isEqualTo(limited.headers().firstValue("X-Correlation-Id").orElseThrow());
+    assertThat(limited.headers().firstValue("X-RateLimit-Remaining")).contains("0");
+  }
+
+  @Test
+  void limitsAreKeyedPerCallerSoOthersAreUnaffected() {
+    String noisy = tokenFor("noisy-" + UUID.randomUUID());
+    for (int i = 0; i <= GatewayTestConfig.ALLOWED_PER_KEY; i++) {
+      get("/api/v1/echo/ping", noisy);
+    }
+
+    assertThat(get("/api/v1/echo/ping", tokenFor("quiet-" + UUID.randomUUID())).statusCode())
+        .isEqualTo(200);
+  }
+
+  @Test
+  void realServiceRoutesRequireATokenButTokenIssuanceDoesNot() {
+    assertThat(get("/api/v1/bags/AB123456/journey", null).statusCode()).isEqualTo(401);
+    assertThat(get("/api/v1/recovery-cases/1", null).statusCode()).isEqualTo(401);
+
+    // No identity-service instance exists in this test, so the call fails after security passed.
+    int status = send("POST", "/api/v1/auth/token", null).statusCode();
+    assertThat(status).isNotIn(401, 403);
+  }
+
+  /** Routes are resolved through Eureka (lb://) rather than hard-coded hosts. */
+  @Test
+  void everyServiceIsRoutedThroughEurekaUnderApiV1() {
+    Map<String, Route> routes = routeLocator.getRoutes().collectMap(Route::getId).block();
+
+    Map<String, String> lbRoutes =
+        routes.values().stream()
+            .filter(route -> route.getUri().getScheme().equals("lb"))
+            .collect(Collectors.toMap(Route::getId, route -> route.getUri().getHost()));
+
+    assertThat(lbRoutes.values())
+        .containsExactlyInAnyOrder(
+            "identity-service",
+            "journey-service",
+            "journey-service",
+            "recovery-service",
+            "capacity-service",
+            "search-service");
+  }
+}

@@ -1,0 +1,93 @@
+server:
+  port: 8080
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+
+spring:
+  application:
+    name: api-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # Only the explicit routes below are exposed; no automatic route per Eureka service.
+          discovery:
+            locator:
+              enabled: false
+          httpclient:
+            connect-timeout: 2000
+            response-timeout: 30s
+          routes:
+            - id: identity-auth
+              uri: lb://identity-service
+              predicates:
+                - Path=/api/v1/auth/**
+            - id: journey-bags
+              uri: lb://journey-service
+              predicates:
+                - Path=/api/v1/bags/**
+            - id: journey-scans
+              uri: lb://journey-service
+              predicates:
+                - Path=/api/v1/scans/**
+            - id: recovery-cases
+              uri: lb://recovery-service
+              predicates:
+                - Path=/api/v1/recovery-cases/**
+            - id: capacity
+              uri: lb://capacity-service
+              predicates:
+                - Path=/api/v1/capacity/**
+            - id: reports
+              uri: lb://search-service
+              predicates:
+                - Path=/api/v1/reports/**
+
+aerotrace:
+  gateway:
+    # No defaults for the trust anchors: the gateway must fail at startup rather than guess.
+    issuer: ${JWT_ISSUER}
+    audience: ${JWT_AUDIENCE:aerotrace-api}
+    jwk-set-uri: ${JWK_SET_URI}
+    # Coarse edge authorization; resource services still enforce their own rules.
+    role-rules:
+      - pattern: /api/v1/admin/**
+        roles: ADMIN
+    rate-limit:
+      replenish-rate: ${RATE_LIMIT_REPLENISH_RATE:10}
+      burst-capacity: ${RATE_LIMIT_BURST_CAPACITY:20}
+
+eureka:
+  instance:
+    hostname: ${EUREKA_INSTANCE_HOSTNAME:localhost}
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
