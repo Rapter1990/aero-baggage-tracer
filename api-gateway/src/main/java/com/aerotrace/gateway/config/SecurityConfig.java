@@ -9,6 +9,7 @@ import com.aerotrace.gateway.ratelimit.RateLimitFilter;
 import com.aerotrace.gateway.ratelimit.RateLimiter;
 import java.time.Duration;
 import java.util.List;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
@@ -35,6 +36,7 @@ import org.springframework.web.client.RestTemplate;
  * missing/invalid tokens, 403 for a valid token without the required role.
  */
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties(GatewayProperties.class)
 class SecurityConfig {
 
   @Bean

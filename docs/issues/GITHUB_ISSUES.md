@@ -131,6 +131,7 @@ Single external entry point under `/api/v1`, built on the **servlet stack** (Spr
 
 **Scope**
 - Spring Cloud Gateway **Server MVC** (`spring-cloud-starter-gateway-server-webmvc`) routes to all services via Eureka (`lb://`).
+- Registers itself with the Eureka server (discovery-server, #5) as `API-GATEWAY` (instance id `api-gateway:<host>:<port>`, 10 s lease renewal) and fetches the registry to resolve `lb://` routes. `EUREKA_URL` / `EUREKA_INSTANCE_HOSTNAME` select the server and the advertised host per environment.
 - JWT verification with Spring Security's servlet resource server: the signature is verified with the identity-service **public key** (`java.security.PublicKey`, obtained from its JWKS so several active `kid`s work), plus `exp`, `iss`, `aud`; 401 for missing/invalid, 403 for forbidden.
 - Token forwarding to downstream services; Redis-backed rate limiting as a servlet filter (blocking Spring Data Redis, token bucket).
 - Generate/propagate `X-Correlation-Id`; pass `Idempotency-Key`. Reuse the servlet `CorrelationIdFilter` and `ProblemDetails` from `common-module`.
@@ -138,6 +139,7 @@ Single external entry point under `/api/v1`, built on the **servlet stack** (Spr
 - Swagger UI (springdoc) at `/swagger-ui.html` with a "Select a definition" dropdown listing every service; each service's OpenAPI document is fetched through the gateway (`/service-docs/<service>` → the service's `/v3/api-docs`). Can be switched off with `DOCS_ENABLED=false`.
 
 **Acceptance criteria**
+- [x] `API-GATEWAY` registers with Eureka and shows as `UP` (verified against a running discovery-server).
 - [x] Swagger UI at the gateway lists each service's endpoints through a dropdown (the services must expose `/v3/api-docs`).
 - [x] AT-16: expired JWT → 401; wrong role → 403.
 - [x] Correlation ID present on every response and downstream request.
