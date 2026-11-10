@@ -1,24 +1,67 @@
-# Local development: builds every image from the working tree.
-#   docker compose -f docker-compose-local.yml up --build
+# Local development infrastructure only (matches the `dev` profile endpoints in config-server:
+# localhost:9092, localhost:6379, localhost:5433). Run services from the IDE or Maven.
+#   docker compose -f docker-compose-local.yml up -d
+# Dev-only credentials; override via env vars. Never reuse them outside local development.
 services:
-  discovery-server:
-    build:
-      context: .
-      dockerfile: discovery-server/Dockerfile
-    image: aerotrace/discovery-server:local
-    container_name: discovery-server
+  kafka:
+    image: apache/kafka:latest
+    container_name: kafka
     environment:
-      EUREKA_HOSTNAME: discovery-server
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
     ports:
-      - "8761:8761"
+      - "9092:9092"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8761/actuator/health"]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - aerotrace
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
-      start_period: 30s
     networks:
       - aerotrace
+
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aerotrace}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
+      POSTGRES_DB: ${POSTGRES_DB:-aerotrace}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - aerotrace
+
+volumes:
+  postgres-data:
 
 networks:
   aerotrace:

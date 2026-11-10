@@ -1,0 +1,10 @@
+# Shared by every service and every profile. No secrets here: use env vars / K8s Secrets.
+aerotrace:
+  risk:
+    # Airport-specific risk threshold in minutes; override per airport or service as needed.
+    threshold-minutes: 20
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,refresh
