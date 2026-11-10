@@ -3,7 +3,7 @@
 Derived from `AeroTrace_Senior_Java_Microservices_Case_Study.pdf`. Each `##` section is one issue (title = heading).
 Suggested labels in `[brackets]`. Section numbers (§), BR-xx and AT-xx refer to the case study.
 
-**Suggested build order:** #1 → #2 → #3 → #4 → #5 → #6 → #7 → #8 → #9/#10/#11 (parallel) → #12/#13 → #14–#20 (cross-cutting, start early) → #21–#22.
+**Suggested build order:** #1 → #2 → #3 → #4 → #5 → #6 → #8 → #7 → #9/#10/#11 (parallel) → #12/#13 → #14–#20 (cross-cutting, start early) → #21–#22.
 
 ---
 
@@ -124,7 +124,7 @@ Centralized, profile-based configuration (dev / compose / k8s). *Note: not in th
 ---
 
 ## #7 Define API Gateway
-`[module:gateway] [priority:p0]` · Depends on #4, #5, #9 · Spec §4, §7, §11
+`[module:gateway] [priority:p0]` · Depends on #4, #5, #8 · Spec §4, §7, §11
 
 **Description**
 Single external entry point under `/api/v1`, built on the **servlet stack** (Spring Cloud Gateway Server MVC, Spring MVC, Spring Security). The module is blocking/imperative: **no WebFlux, no Reactor Netty, no `Mono`/`Flux`** in the gateway's own code or dependencies.
