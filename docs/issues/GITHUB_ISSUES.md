@@ -139,7 +139,7 @@ Single external entry point under `/api/v1`, built on the **servlet stack** (Spr
 - Swagger UI (springdoc) at `/swagger-ui.html` with a "Select a definition" dropdown listing every service; each service's OpenAPI document is fetched through the gateway (`/service-docs/<service>` → the service's `/v3/api-docs`). Can be switched off with `DOCS_ENABLED=false`.
 
 **Acceptance criteria**
-- [x] `API-GATEWAY` registers with Eureka and shows as `UP` (verified against a running discovery-server).
+- [x] `API-GATEWAY` registers with Eureka and shows as `UP` (automated test against a Eureka stub; also checked against a running discovery-server).
 - [x] Swagger UI at the gateway lists each service's endpoints through a dropdown (the services must expose `/v3/api-docs`).
 - [x] AT-16: expired JWT → 401; wrong role → 403.
 - [x] Correlation ID present on every response and downstream request.
