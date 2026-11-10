@@ -12,7 +12,11 @@
 
     <artifactId>api-gateway</artifactId>
     <name>api-gateway</name>
-    <description>Spring Cloud Gateway (reactive): single external entry point under /api/v1</description>
+    <description>Spring Cloud Gateway Server MVC (servlet, blocking): single external entry point under /api/v1</description>
+
+    <properties>
+        <enforcer.version>3.5.0</enforcer.version>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -21,8 +25,12 @@
         </dependency>
 
         <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-starter-gateway-server-webflux</artifactId>
+            <artifactId>spring-cloud-starter-gateway-server-webmvc</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.cloud</groupId>
@@ -35,11 +43,15 @@
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
         <dependency>
@@ -65,8 +77,8 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-test</artifactId>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -74,8 +86,42 @@
     <build>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>${enforcer.version}</version>
+                <executions>
+                    <execution>
+                        <id>enforce-servlet-stack</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <searchTransitive>true</searchTransitive>
+                                    <message>api-gateway is servlet-based: no WebFlux or Reactor Netty.</message>
+                                    <excludes>
+                                        <exclude>org.springframework:spring-webflux</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-webflux</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-webflux</exclude>
+                                        <exclude>org.springframework.cloud:spring-cloud-gateway-server-webflux</exclude>
+                                        <exclude>org.springframework.cloud:spring-cloud-starter-gateway-server-webflux</exclude>
+                                        <exclude>io.projectreactor.netty:*</exclude>
+                                    </excludes>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <!-- Keep the plain jar so Failsafe's integration tests see normal classes. -->
+                    <classifier>exec</classifier>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>

@@ -4,42 +4,53 @@ import com.aerotrace.common.error.ErrorCode;
 import com.aerotrace.common.security.AeroTraceJwtValidators;
 import com.aerotrace.common.security.JwtClaims;
 import com.aerotrace.common.security.Role;
-import com.aerotrace.gateway.problem.GatewayProblems;
+import com.aerotrace.gateway.problem.ProblemResponseWriter;
+import com.aerotrace.gateway.ratelimit.RateLimitFilter;
+import com.aerotrace.gateway.ratelimit.RateLimiter;
+import java.time.Duration;
 import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
-import org.springframework.security.config.web.server.ServerHttpSecurity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
-import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
-import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
-import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverter;
-import org.springframework.security.web.server.SecurityWebFilterChain;
-import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
-import org.springframework.security.web.server.authorization.ServerAccessDeniedHandler;
-import reactor.core.publisher.Flux;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.web.client.RestTemplate;
 
 /**
- * JWT resource-server security at the edge: signature (JWKS), exp, iss and aud are verified here;
- * 401 for missing/invalid tokens, 403 for a valid token without the required role.
+ * Servlet JWT resource-server security at the edge. The signature is checked with the public key
+ * identity-service publishes (JWKS), and exp, iss and aud are verified here; 401 for
+ * missing/invalid tokens, 403 for a valid token without the required role.
  */
 @Configuration(proxyBeanMethods = false)
-@EnableWebFluxSecurity
 class SecurityConfig {
 
   @Bean
-  ReactiveJwtDecoder jwtDecoder(GatewayProperties properties) {
-    NimbusReactiveJwtDecoder decoder =
-        NimbusReactiveJwtDecoder.withJwkSetUri(properties.jwkSetUri())
+  JwtDecoder jwtDecoder(GatewayProperties properties) {
+    SimpleClientHttpRequestFactory http = new SimpleClientHttpRequestFactory();
+    http.setConnectTimeout(Duration.ofSeconds(2));
+    http.setReadTimeout(Duration.ofSeconds(2));
+
+    NimbusJwtDecoder decoder =
+        NimbusJwtDecoder.withJwkSetUri(properties.jwkSetUri())
             .jwsAlgorithms(
                 algorithms -> {
                   algorithms.add(SignatureAlgorithm.RS256);
                   algorithms.add(SignatureAlgorithm.ES256);
                 })
+            .restOperations(new RestTemplate(http))
             .build();
     decoder.setJwtValidator(
         AeroTraceJwtValidators.create(properties.issuer(), properties.audience()));
@@ -47,33 +58,40 @@ class SecurityConfig {
   }
 
   @Bean
-  SecurityWebFilterChain securityWebFilterChain(
-      ServerHttpSecurity http, GatewayProperties properties, GatewayProblems problems) {
-    ServerAuthenticationEntryPoint unauthorized =
-        (exchange, ex) -> {
-          exchange.getResponse().getHeaders().set(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
-          return problems.write(exchange, ErrorCode.UNAUTHENTICATED, "Authentication required");
+  SecurityFilterChain securityFilterChain(
+      HttpSecurity http,
+      JwtDecoder jwtDecoder,
+      GatewayProperties properties,
+      ProblemResponseWriter problems,
+      RateLimiter rateLimiter)
+      throws Exception {
+    AuthenticationEntryPoint unauthorized =
+        (request, response, ex) -> {
+          response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
+          problems.write(response, ErrorCode.UNAUTHENTICATED, "Authentication required");
         };
-    ServerAccessDeniedHandler forbidden =
-        (exchange, ex) ->
-            problems.write(exchange, ErrorCode.ACCESS_DENIED, "Insufficient permissions");
+    AccessDeniedHandler forbidden =
+        (request, response, ex) ->
+            problems.write(response, ErrorCode.ACCESS_DENIED, "Insufficient permissions");
 
-    return http.csrf(ServerHttpSecurity.CsrfSpec::disable)
-        .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
-        .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
-        .authorizeExchange(
-            exchanges -> {
-              exchanges.pathMatchers("/actuator/health/**", "/actuator/info").permitAll();
-              exchanges.pathMatchers("/actuator/**").hasRole(Role.ADMIN.name());
+    http.csrf(AbstractHttpConfigurer::disable)
+        .httpBasic(AbstractHttpConfigurer::disable)
+        .formLogin(AbstractHttpConfigurer::disable)
+        .logout(AbstractHttpConfigurer::disable)
+        .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        .authorizeHttpRequests(
+            requests -> {
+              requests.requestMatchers("/actuator/health/**", "/actuator/info").permitAll();
+              requests.requestMatchers("/actuator/**").hasRole(Role.ADMIN.name());
               // Obtaining a token is the one unauthenticated API call.
-              exchanges.pathMatchers(HttpMethod.POST, "/api/v1/auth/token").permitAll();
+              requests.requestMatchers(HttpMethod.POST, "/api/v1/auth/token").permitAll();
               for (GatewayProperties.RoleRule rule : properties.roleRules()) {
-                exchanges
-                    .pathMatchers(rule.pattern())
+                requests
+                    .requestMatchers(rule.pattern())
                     .hasAnyRole(rule.roles().stream().map(Role::name).toArray(String[]::new));
               }
-              exchanges.pathMatchers("/api/v1/**").authenticated();
-              exchanges.anyExchange().denyAll();
+              requests.requestMatchers("/api/v1/**").authenticated();
+              requests.anyRequest().denyAll();
             })
         .exceptionHandling(
             handling ->
@@ -83,13 +101,17 @@ class SecurityConfig {
                 oauth
                     .authenticationEntryPoint(unauthorized)
                     .accessDeniedHandler(forbidden)
-                    .jwt(jwt -> jwt.jwtAuthenticationConverter(rolesConverter())))
-        .build();
+                    .jwt(
+                        jwt ->
+                            jwt.decoder(jwtDecoder).jwtAuthenticationConverter(rolesConverter())))
+        .addFilterAfter(
+            new RateLimitFilter(rateLimiter, problems), BearerTokenAuthenticationFilter.class);
+    return http.build();
   }
 
   /** Maps the {@code roles} claim to ROLE_ authorities; unknown role names grant nothing. */
-  private static ReactiveJwtAuthenticationConverter rolesConverter() {
-    ReactiveJwtAuthenticationConverter converter = new ReactiveJwtAuthenticationConverter();
+  private static JwtAuthenticationConverter rolesConverter() {
+    JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
     converter.setJwtGrantedAuthoritiesConverter(
         jwt -> {
           List<String> claim;
@@ -100,11 +122,12 @@ class SecurityConfig {
             claim = null;
           }
           if (claim == null) {
-            return Flux.empty();
+            return List.<GrantedAuthority>of();
           }
-          return Flux.fromIterable(claim)
-              .flatMapIterable(value -> Role.fromClaim(value).stream().toList())
-              .map(role -> (GrantedAuthority) new SimpleGrantedAuthority(role.authority()));
+          return claim.stream()
+              .flatMap(value -> Role.fromClaim(value).stream())
+              .<GrantedAuthority>map(role -> new SimpleGrantedAuthority(role.authority()))
+              .toList();
         });
     return converter;
   }

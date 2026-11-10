@@ -1,17 +1,18 @@
 package com.aerotrace.gateway.config;
 
-import org.springframework.cloud.gateway.filter.ratelimit.RedisRateLimiter;
+import com.aerotrace.gateway.ratelimit.RateLimiter;
+import com.aerotrace.gateway.ratelimit.RedisRateLimiter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 /** Redis-backed token bucket shared by all gateway instances. */
 @Configuration(proxyBeanMethods = false)
 class RateLimitConfig {
 
-  // Same bean name as the auto-configured one, which backs off; this one carries default limits.
   @Bean
-  RedisRateLimiter redisRateLimiter(GatewayProperties properties) {
+  RateLimiter redisRateLimiter(StringRedisTemplate redis, GatewayProperties properties) {
     return new RedisRateLimiter(
-        properties.rateLimit().replenishRate(), properties.rateLimit().burstCapacity());
+        redis, properties.rateLimit().replenishRate(), properties.rateLimit().burstCapacity());
   }
 }

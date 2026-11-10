@@ -127,20 +127,21 @@ Centralized, profile-based configuration (dev / compose / k8s). *Note: not in th
 `[module:gateway] [priority:p0]` · Depends on #4, #5, #9 · Spec §4, §7, §11
 
 **Description**
-Single external entry point under `/api/v1`.
+Single external entry point under `/api/v1`, built on the **servlet stack** (Spring Cloud Gateway Server MVC, Spring MVC, Spring Security). The module is blocking/imperative: **no WebFlux, no Reactor Netty, no `Mono`/`Flux`** in the gateway's own code or dependencies.
 
 **Scope**
-- Spring Cloud Gateway routes to all services via Eureka (`lb://`).
-- JWT verification (signature via JWKS from identity-service, `exp`, `iss`, `aud`); 401 for missing/invalid, 403 for forbidden.
-- Token forwarding to downstream services; Redis-backed rate limiting.
-- Generate/propagate `X-Correlation-Id`; pass `Idempotency-Key`.
+- Spring Cloud Gateway **Server MVC** (`spring-cloud-starter-gateway-server-webmvc`) routes to all services via Eureka (`lb://`).
+- JWT verification with Spring Security's servlet resource server: the signature is verified with the identity-service **public key** (`java.security.PublicKey`, obtained from its JWKS so several active `kid`s work), plus `exp`, `iss`, `aud`; 401 for missing/invalid, 403 for forbidden.
+- Token forwarding to downstream services; Redis-backed rate limiting as a servlet filter (blocking Spring Data Redis, token bucket).
+- Generate/propagate `X-Correlation-Id`; pass `Idempotency-Key`. Reuse the servlet `CorrelationIdFilter` and `ProblemDetails` from `common-module`.
 - ProblemDetail-formatted gateway errors; OpenTelemetry tracing + Micrometer metrics.
 
 **Acceptance criteria**
 - [x] AT-16: expired JWT → 401; wrong role → 403.
 - [x] Correlation ID present on every response and downstream request.
-- [x] Rate-limit returns 429 with ProblemDetail.
-- [x] Gateway token-forwarding integration test.
+- [x] Rate-limit returns 429 with ProblemDetail (verified against a real Redis).
+- [x] Gateway token-forwarding integration test (real HTTP hop to a downstream stub).
+- [x] No `spring-webflux` or `reactor-netty` dependency in `api-gateway` (enforced at build time); no `Mono`/`Flux` in its code.
 
 ---
 
@@ -152,7 +153,7 @@ Issues signed JWT access tokens and owns users/roles.
 
 **Scope**
 - Seed test users for `PASSENGER`, `AGENT`, `DISPATCHER`, `ADMIN`; passenger ↔ pseudonymous `passengerRef` binding.
-- `POST /auth/token`, JWKS endpoint, asymmetric signing (RS256/ES256), **key rotation** (multiple active `kid`s).
+- `POST /auth/token`, JWKS endpoint, asymmetric signing (RS256/ES256) with the JDK's `java.security` types: sign with a `PrivateKey`, publish the matching `PublicKey` (as JWK), **key rotation** (multiple active `kid`s). Servlet stack (Spring MVC), like the gateway.
 - Claims: `iss`, `aud`, `sub`, `roles`, `passengerRef`, `exp`.
 - Authorization policy definitions (who can transition cases, manage capacity, change risk policies).
 - Own Liquibase changelog + PostgreSQL schema; password hashing (BCrypt/Argon2); immutable audit of auth events.

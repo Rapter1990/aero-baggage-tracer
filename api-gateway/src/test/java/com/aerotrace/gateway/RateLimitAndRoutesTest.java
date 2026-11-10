@@ -10,19 +10,19 @@ import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.cloud.gateway.route.Route;
-import org.springframework.cloud.gateway.route.RouteLocator;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.core.env.Environment;
 import tools.jackson.databind.JsonNode;
 
 class RateLimitAndRoutesTest extends GatewayTestBase {
 
   private static RSAKey key;
 
-  @Autowired private RouteLocator routeLocator;
+  @Autowired private Environment environment;
 
   @BeforeAll
   static void publishKey() {
@@ -76,15 +76,23 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
 
   /** Routes are resolved through Eureka (lb://) rather than hard-coded hosts. */
   @Test
+  @SuppressWarnings("unchecked")
   void everyServiceIsRoutedThroughEurekaUnderApiV1() {
-    Map<String, Route> routes = routeLocator.getRoutes().collectMap(Route::getId).block();
+    List<Map<String, Object>> routes =
+        (List<Map<String, Object>>)
+            (List<?>)
+                Binder.get(environment)
+                    .bind("spring.cloud.gateway.server.webmvc.routes", Bindable.listOf(Map.class))
+                    .get();
 
-    Map<String, String> lbRoutes =
-        routes.values().stream()
-            .filter(route -> route.getUri().getScheme().equals("lb"))
-            .collect(Collectors.toMap(Route::getId, route -> route.getUri().getHost()));
+    List<String> lbHosts =
+        routes.stream()
+            .map(route -> String.valueOf(route.get("uri")))
+            .filter(uri -> uri.startsWith("lb://"))
+            .map(uri -> uri.substring("lb://".length()))
+            .toList();
 
-    assertThat(lbRoutes.values())
+    assertThat(lbHosts)
         .containsExactlyInAnyOrder(
             "identity-service",
             "journey-service",

@@ -29,7 +29,7 @@ USER gateway
 WORKDIR /app
 
 # Step #9: Copy the packaged jar from the build stage.
-COPY --from=build /src/api-gateway/target/api-gateway-*.jar app.jar
+COPY --from=build /src/api-gateway/target/api-gateway-*-exec.jar app.jar
 
 # Step #10: Document the gateway port.
 EXPOSE 8080

@@ -8,6 +8,9 @@ server:
 spring:
   application:
     name: api-gateway
+  threads:
+    virtual:
+      enabled: true
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -15,14 +18,11 @@ spring:
   cloud:
     gateway:
       server:
-        webflux:
-          # Only the explicit routes below are exposed; no automatic route per Eureka service.
-          discovery:
-            locator:
-              enabled: false
-          httpclient:
-            connect-timeout: 2000
-            response-timeout: 30s
+        webmvc:
+          http-client:
+            connect-timeout: 2s
+            read-timeout: 30s
+          # Only the explicit routes below are exposed; the gateway proxies blocking, on servlet threads.
           routes:
             - id: identity-auth
               uri: lb://identity-service
