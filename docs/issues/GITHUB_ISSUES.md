@@ -143,7 +143,7 @@ Single external entry point under `/api/v1`, built on the **servlet stack** (Spr
 - [x] Correlation ID present on every response and downstream request.
 - [x] Rate-limit returns 429 with ProblemDetail (verified against a real Redis).
 - [x] Gateway token-forwarding integration test (real HTTP hop to a downstream stub).
-- [x] No `spring-webflux` or `reactor-netty` dependency in `api-gateway` (enforced at build time); no `Mono`/`Flux` in its code.
+- [x] Servlet stack only: no WebFlux or Reactor Netty dependency in `api-gateway`; no `Mono`/`Flux` in its code.
 
 ---
 
