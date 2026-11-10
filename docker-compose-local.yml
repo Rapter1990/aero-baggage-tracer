@@ -35,7 +35,7 @@ services:
       - path: .env
         required: false
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-aerotrace}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis}
     command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\""]
     ports:
       - "6379:6379"
