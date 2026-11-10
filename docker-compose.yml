@@ -115,8 +115,8 @@ services:
       EUREKA_INSTANCE_HOSTNAME: api-gateway
       REDIS_HOST: redis
       REDIS_PASSWORD: ${REDIS_PASSWORD:-aerotrace}
-      JWT_ISSUER: ${JWT_ISSUER:-http://identity-service:8081}
-      JWK_SET_URI: ${JWK_SET_URI:-http://identity-service:8081/.well-known/jwks.json}
+      JWT_ISSUER: ${COMPOSE_JWT_ISSUER:-http://identity-service:8081}
+      JWK_SET_URI: ${COMPOSE_JWK_SET_URI:-http://identity-service:8081/.well-known/jwks.json}
       # No collector in this stack yet; point at one to export traces.
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
       TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-0.1}

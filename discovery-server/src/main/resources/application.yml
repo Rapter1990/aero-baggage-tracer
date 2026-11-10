@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: discovery-server
+  config:
+    # Optional local settings (see .env.example); real environment variables take precedence.
+    import: optional:file:.env[.properties],optional:file:../.env[.properties]
   security:
     user:
       # Credentials every Eureka client and dashboard user must present (HTTP Basic). No default

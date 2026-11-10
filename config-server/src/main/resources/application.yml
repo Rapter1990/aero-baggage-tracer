@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: config-server
+  config:
+    # Optional local settings (see .env.example); real environment variables take precedence.
+    import: optional:file:.env[.properties],optional:file:../.env[.properties]
   profiles:
     # include (not active) so an extra SPRING_PROFILES_ACTIVE value cannot switch off the native backend.
     include: native

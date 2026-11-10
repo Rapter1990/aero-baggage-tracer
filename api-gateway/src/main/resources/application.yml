@@ -8,6 +8,9 @@ server:
 spring:
   application:
     name: api-gateway
+  config:
+    # Optional local settings (see .env.example); real environment variables take precedence.
+    import: optional:file:.env[.properties],optional:file:../.env[.properties]
   threads:
     virtual:
       enabled: true

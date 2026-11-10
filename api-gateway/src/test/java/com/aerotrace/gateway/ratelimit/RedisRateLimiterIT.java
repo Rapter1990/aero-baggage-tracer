@@ -89,13 +89,13 @@ class RedisRateLimiterIT {
 
   @Test
   void refillsOverTime() throws InterruptedException {
-    RedisRateLimiter limiter = new RedisRateLimiter(template, 5, 1);
+    RedisRateLimiter limiter = new RedisRateLimiter(template, 1, 1);
     // The first call pays for connection setup; do that before timing the bucket.
     limiter.tryAcquire("warm-up");
 
     assertThat(limiter.tryAcquire("refill").allowed()).isTrue();
     assertThat(limiter.tryAcquire("refill").allowed()).isFalse();
-    Thread.sleep(400);
+    Thread.sleep(1200);
 
     assertThat(limiter.tryAcquire("refill").allowed()).isTrue();
   }
