@@ -14,6 +14,7 @@ public enum ErrorCode {
   VERSION_CONFLICT(HttpStatus.CONFLICT, "Version conflict"),
   DUPLICATE_RECOVERY_CASE(HttpStatus.CONFLICT, "Active recovery case already exists"),
   CAPACITY_EXCEEDED(HttpStatus.CONFLICT, "Capacity exceeded"),
+  RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "Rate limit exceeded"),
   INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Internal error");
 
   private final HttpStatus httpStatus;
@@ -40,6 +41,7 @@ public enum ErrorCode {
       case 403 -> ACCESS_DENIED;
       case 404 -> NOT_FOUND;
       case 409 -> VERSION_CONFLICT;
+      case 429 -> RATE_LIMITED;
       default -> status >= 400 && status < 500 ? REQUEST_REJECTED : INTERNAL_ERROR;
     };
   }
