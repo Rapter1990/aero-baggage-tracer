@@ -82,6 +82,13 @@ class SecurityConfig {
         .authorizeHttpRequests(
             requests -> {
               requests.requestMatchers("/actuator/health/**", "/actuator/info").permitAll();
+              if (properties.docs().enabled()) {
+                // API documentation only; the endpoints it describes still need a token.
+                requests
+                    .requestMatchers(
+                        "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**", "/service-docs/**")
+                    .permitAll();
+              }
               requests.requestMatchers("/actuator/**").hasRole(Role.ADMIN.name());
               // Obtaining a token is the one unauthenticated API call.
               requests.requestMatchers(HttpMethod.POST, "/api/v1/auth/token").permitAll();

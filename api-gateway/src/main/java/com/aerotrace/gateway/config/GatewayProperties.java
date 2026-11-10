@@ -21,7 +21,8 @@ public record GatewayProperties(
     String audience,
     String jwkSetUri,
     List<RoleRule> roleRules,
-    RateLimit rateLimit) {
+    RateLimit rateLimit,
+    Docs docs) {
 
   public GatewayProperties {
     Assert.hasText(issuer, "aerotrace.gateway.issuer must be set");
@@ -29,7 +30,11 @@ public record GatewayProperties(
     Assert.hasText(jwkSetUri, "aerotrace.gateway.jwk-set-uri must be set");
     roleRules = roleRules == null ? List.of() : List.copyOf(roleRules);
     rateLimit = rateLimit == null ? new RateLimit(10, 20) : rateLimit;
+    docs = docs == null ? new Docs(true) : docs;
   }
+
+  /** Whether Swagger UI and the proxied service definitions are reachable without a token. */
+  public record Docs(boolean enabled) {}
 
   /** Requests matching {@code pattern} need at least one of {@code roles}. */
   public record RoleRule(String pattern, Set<Role> roles) {}

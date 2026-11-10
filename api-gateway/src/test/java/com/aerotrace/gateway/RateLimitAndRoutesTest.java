@@ -99,6 +99,12 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
             "journey-service",
             "recovery-service",
             "capacity-service",
+            "search-service",
+            // OpenAPI definition routes (one per service for the Swagger UI dropdown).
+            "identity-service",
+            "journey-service",
+            "recovery-service",
+            "capacity-service",
             "search-service");
   }
 }

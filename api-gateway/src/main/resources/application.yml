@@ -48,6 +48,37 @@ spring:
               uri: lb://search-service
               predicates:
                 - Path=/api/v1/reports/**
+            # OpenAPI definitions of each service, fetched through the gateway for the Swagger UI.
+            - id: docs-identity
+              uri: lb://identity-service
+              predicates:
+                - Path=/service-docs/identity-service
+              filters:
+                - SetPath=/v3/api-docs
+            - id: docs-journey
+              uri: lb://journey-service
+              predicates:
+                - Path=/service-docs/journey-service
+              filters:
+                - SetPath=/v3/api-docs
+            - id: docs-recovery
+              uri: lb://recovery-service
+              predicates:
+                - Path=/service-docs/recovery-service
+              filters:
+                - SetPath=/v3/api-docs
+            - id: docs-capacity
+              uri: lb://capacity-service
+              predicates:
+                - Path=/service-docs/capacity-service
+              filters:
+                - SetPath=/v3/api-docs
+            - id: docs-search
+              uri: lb://search-service
+              predicates:
+                - Path=/service-docs/search-service
+              filters:
+                - SetPath=/v3/api-docs
 
 aerotrace:
   gateway:
@@ -59,6 +90,9 @@ aerotrace:
     role-rules:
       - pattern: /api/v1/admin/**
         roles: ADMIN
+    docs:
+      # Turn off outside development: Swagger UI and the definitions are served without a token.
+      enabled: ${DOCS_ENABLED:true}
     rate-limit:
       replenish-rate: ${RATE_LIMIT_REPLENISH_RATE:10}
       burst-capacity: ${RATE_LIMIT_BURST_CAPACITY:20}
@@ -91,3 +125,20 @@ management:
       export:
         otlp:
           endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    persist-authorization: true
+    # The "Select a definition" dropdown: one entry per service, served through this gateway.
+    urls:
+      - name: identity-service
+        url: /service-docs/identity-service
+      - name: journey-service
+        url: /service-docs/journey-service
+      - name: recovery-service
+        url: /service-docs/recovery-service
+      - name: capacity-service
+        url: /service-docs/capacity-service
+      - name: search-service
+        url: /service-docs/search-service
