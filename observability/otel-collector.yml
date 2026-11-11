@@ -1,0 +1,46 @@
+# OpenTelemetry Collector for local development.
+#   services --OTLP--> collector --> Prometheus (scrapes :8889) --> Grafana
+#
+# Services send traces and metrics to port 4318 (OTLP/HTTP); 4317 (OTLP/gRPC) is open too.
+#  - Metrics are exposed to Prometheus as they arrive.
+#  - Traces are turned into request-rate / error / latency metrics (span_metrics connector), and a
+#    one-line summary per batch is printed to the collector's log. There is no trace store here, so
+#    individual traces cannot be browsed; add one (e.g. Tempo) if you need that.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+connectors:
+  # Counts spans and records their duration per service, operation and status.
+  span_metrics:
+    namespace: traces.span.metrics
+    histogram:
+      explicit:
+        buckets: [10ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s]
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    # Keep the service name as a label on every metric (service_name).
+    resource_constant_labels:
+      included: [service.name]
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [span_metrics, debug]
+    metrics:
+      receivers: [otlp, span_metrics]
+      processors: [batch]
+      exporters: [prometheus]

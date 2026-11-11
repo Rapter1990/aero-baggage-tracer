@@ -144,6 +144,12 @@ management:
       export:
         otlp:
           endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+  otlp:
+    metrics:
+      export:
+        # Metrics go to the OpenTelemetry collector, which Prometheus scrapes (no token needed).
+        url: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:http://localhost:4318/v1/metrics}
+        step: ${METRICS_EXPORT_STEP:15s}
 
 springdoc:
   swagger-ui:

@@ -24,6 +24,7 @@ import tools.jackson.databind.json.JsonMapper;
       "aerotrace.gateway.audience=" + TestJwks.AUDIENCE,
       "spring.data.redis.password=unused-in-tests",
       "management.health.redis.enabled=false",
+      "management.otlp.metrics.export.enabled=false",
       "management.tracing.export.otlp.enabled=false"
     })
 @Import(GatewayTestConfig.class)
