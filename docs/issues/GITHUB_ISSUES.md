@@ -169,10 +169,12 @@ Issues signed JWT access tokens and owns users/roles.
 - Claims: `iss`, `aud`, `sub`, `roles`, `passengerRef`, `exp`.
 - Authorization policy definitions (who can transition cases, manage capacity, change risk policies).
 - Own Liquibase changelog + PostgreSQL schema; password hashing (BCrypt/Argon2); immutable audit of auth events.
+- Observability like the gateway, config server and discovery server: `spring-boot-starter-opentelemetry`, traces and OTLP metrics exported to the OpenTelemetry Collector (Tempo, Prometheus, Grafana) using the shared config-repo template settings; the compose services get the collector endpoints. Tokens, passwords and other credentials must never appear in span attributes or metric labels.
 
 **Acceptance criteria**
 - [ ] Tokens validate at gateway and resource services; rotation does not invalidate unexpired tokens.
 - [ ] No JWT or credentials in logs.
+- [ ] Traces and metrics of the identity-service reach Tempo and Prometheus (same checks as the gateway), and none contains a token or credential.
 - [ ] Authorization matrix test (role × endpoint).
 - [ ] OpenAPI documents 401/403 examples.
 
