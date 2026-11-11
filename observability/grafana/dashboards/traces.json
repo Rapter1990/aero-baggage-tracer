@@ -4,7 +4,7 @@
   "tags": ["aerotrace", "traces"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "10s",
   "time": { "from": "now-30m", "to": "now" },
   "links": [
@@ -57,19 +57,35 @@
       "id": 1,
       "type": "text",
       "title": "How to read this page",
-      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
       "options": {
         "mode": "markdown",
-        "content": "Pick one or more **services** and a minimum duration at the top. Each row is one step (a *span*) of a request; the **Open trace** link shows the whole request across services.\n\n* **Requests handled** - what the service received (HTTP method, route, status, outcome).\n* **Failed or slow** - errors and anything over 500 ms, for a quick look at problems.\n* **Calls to other services** - what the service sent out, without the Eureka chatter.\n* **Eureka registry traffic** - registrations, heartbeats (every 10 s per instance) and registry fetches, kept apart so they do not bury real traffic."
+        "content": "Pick one or more **services** and a minimum duration at the top. Each row is one step (a *span*) of a request. **Click the ID in the first column (Open trace)** to see the whole request across services.\n\n* **Requests handled** - what the service received (HTTP method, route, status, outcome).\n* **Failed requests** - only real failures: HTTP 4xx/5xx or an error. Empty means nothing failed in the time range.\n* **Slow requests** - 500 ms or more, whatever the status (a slow request can still be a 200).\n* **Calls to other services** - what the service sent out, without the Eureka chatter.\n* **Eureka registry traffic** - registrations, heartbeats (every 10 s per instance) and registry fetches, kept apart so they do not bury real traffic."
       }
     },
     {
       "id": 2,
       "type": "table",
       "title": "Requests handled (server spans)",
-      "description": "Requests the selected services received. Route is the matched path template; it reads UNKNOWN for Eureka's own endpoints, so the full URL is shown too.",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 4 },
+      "description": "Requests the selected services received. Route is the matched path template; it reads UNKNOWN for Eureka endpoints, so the full URL is shown too.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 6 },
       "datasource": { "type": "tempo", "uid": "tempo" },
+      "fieldConfig": {
+        "defaults": { "custom": { "minWidth": 80 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "Open trace" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Time" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Service" }, "properties": [ { "id": "custom.width", "value": 150 } ] },
+          { "matcher": { "id": "byName", "options": "Method" }, "properties": [ { "id": "custom.width", "value": 90 } ] },
+          { "matcher": { "id": "byName", "options": "Route" }, "properties": [ { "id": "custom.width", "value": 110 } ] },
+          { "matcher": { "id": "byName", "options": "URL" }, "properties": [ { "id": "custom.width", "value": 380 } ] },
+          { "matcher": { "id": "byName", "options": "HTTP status" }, "properties": [ { "id": "custom.width", "value": 110 } ] },
+          { "matcher": { "id": "byName", "options": "Outcome" }, "properties": [ { "id": "custom.width", "value": 120 } ] },
+          { "matcher": { "id": "byName", "options": "Duration" }, "properties": [ { "id": "custom.width", "value": 100 } ] }
+        ]
+      },
       "targets": [
         {
           "refId": "A",
@@ -81,59 +97,150 @@
         }
       ],
       "transformations": [
-        { "id": "organize", "options": {
-            "excludeByName": { "traceIdHidden": true, "Trace ID": true, "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
             "indexByName": {
-              "Start time": 0, "time": 0, "Service": 1, "service.name": 1, "Name": 2, "name": 2, "method": 3, "Method": 3,
-              "uri": 4, "http.url": 5, "status": 6, "outcome": 7, "Duration": 8, "duration": 8,
-              "Trace Name": 9, "traceName": 9, "Span ID": 10, "spanID": 10
+              "Span ID": 0, "spanID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "Name": 3, "name": 3,
+              "method": 4, "Method": 4, "uri": 5, "http.url": 6, "status": 7, "outcome": 8, "Duration": 9, "duration": 9,
+              "Trace Name": 10, "traceName": 10, "traceIdHidden": 11, "Trace ID": 11
             },
             "renameByName": {
-              "Start time": "Time", "time": "Time", "service.name": "Service", "Name": "Operation", "name": "Operation",
-              "method": "Method", "uri": "Route", "http.url": "URL", "status": "HTTP status", "outcome": "Outcome",
-              "Trace Name": "Trace starts with", "traceName": "Trace starts with", "Span ID": "Open trace", "spanID": "Open trace"
+              "Span ID": "Open trace", "spanID": "Open trace", "Start time": "Time", "time": "Time", "service.name": "Service",
+              "Name": "Operation", "name": "Operation", "method": "Method", "uri": "Route", "http.url": "URL",
+              "status": "HTTP status", "outcome": "Outcome", "Trace Name": "Trace starts with", "traceName": "Trace starts with"
             }
-          } }
+          }
+        }
       ]
     },
     {
       "id": 3,
       "type": "table",
-      "title": "Failed or slow (errors, 4xx/5xx or over 500 ms)",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+      "title": "Failed requests (HTTP 4xx/5xx or errors)",
+      "description": "Only failures. No rows means nothing failed in the selected time range.",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 16 },
       "datasource": { "type": "tempo", "uid": "tempo" },
+      "fieldConfig": {
+        "defaults": { "custom": { "minWidth": 80 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "Open trace" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Time" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Service" }, "properties": [ { "id": "custom.width", "value": 150 } ] },
+          { "matcher": { "id": "byName", "options": "Method" }, "properties": [ { "id": "custom.width", "value": 90 } ] },
+          { "matcher": { "id": "byName", "options": "Route" }, "properties": [ { "id": "custom.width", "value": 110 } ] },
+          { "matcher": { "id": "byName", "options": "URL" }, "properties": [ { "id": "custom.width", "value": 380 } ] },
+          { "matcher": { "id": "byName", "options": "HTTP status" }, "properties": [ { "id": "custom.width", "value": 110 } ] },
+          { "matcher": { "id": "byName", "options": "Outcome" }, "properties": [ { "id": "custom.width", "value": 120 } ] },
+          { "matcher": { "id": "byName", "options": "Duration" }, "properties": [ { "id": "custom.width", "value": 100 } ] }
+        ]
+      },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "tempo", "uid": "tempo" },
           "queryType": "traceql",
-          "query": "{ resource.service.name =~ \"${service:regex}\" && kind = server && (status = error || span.outcome =~ \".*ERROR\" || duration > 500ms) } | select(span.method, span.uri, span.http.url, span.status, span.outcome)",
+          "query": "{ resource.service.name =~ \"${service:regex}\" && kind = server && (status = error || span.outcome =~ \".*ERROR\" || span.status =~ \"[45][0-9][0-9]\") } | select(span.method, span.uri, span.http.url, span.status, span.outcome)",
           "limit": 50,
           "tableType": "spans"
         }
       ],
       "transformations": [
-        { "id": "organize", "options": {
-            "excludeByName": { "traceIdHidden": true, "Trace ID": true, "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
             "indexByName": {
-              "Start time": 0, "time": 0, "Service": 1, "service.name": 1, "Name": 2, "name": 2, "method": 3, "Method": 3,
-              "uri": 4, "http.url": 5, "status": 6, "outcome": 7, "Duration": 8, "duration": 8,
-              "Trace Name": 9, "traceName": 9, "Span ID": 10, "spanID": 10
+              "Span ID": 0, "spanID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "Name": 3, "name": 3,
+              "method": 4, "Method": 4, "uri": 5, "http.url": 6, "status": 7, "outcome": 8, "Duration": 9, "duration": 9,
+              "Trace Name": 10, "traceName": 10, "traceIdHidden": 11, "Trace ID": 11
             },
             "renameByName": {
-              "Start time": "Time", "time": "Time", "service.name": "Service", "Name": "Operation", "name": "Operation",
-              "method": "Method", "uri": "Route", "http.url": "URL", "status": "HTTP status", "outcome": "Outcome",
-              "Trace Name": "Trace starts with", "traceName": "Trace starts with", "Span ID": "Open trace", "spanID": "Open trace"
+              "Span ID": "Open trace", "spanID": "Open trace", "Start time": "Time", "time": "Time", "service.name": "Service",
+              "Name": "Operation", "name": "Operation", "method": "Method", "uri": "Route", "http.url": "URL",
+              "status": "HTTP status", "outcome": "Outcome", "Trace Name": "Trace starts with", "traceName": "Trace starts with"
             }
-          } }
+          }
+        }
       ]
     },
     {
       "id": 4,
       "type": "table",
-      "title": "Calls to other services (client spans, without Eureka)",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
+      "title": "Slow requests (500 ms or more)",
+      "description": "Requests that took 500 ms or longer, whatever their status.",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 23 },
       "datasource": { "type": "tempo", "uid": "tempo" },
+      "fieldConfig": {
+        "defaults": { "custom": { "minWidth": 80 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "Open trace" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Time" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Service" }, "properties": [ { "id": "custom.width", "value": 150 } ] },
+          { "matcher": { "id": "byName", "options": "Method" }, "properties": [ { "id": "custom.width", "value": 90 } ] },
+          { "matcher": { "id": "byName", "options": "Route" }, "properties": [ { "id": "custom.width", "value": 110 } ] },
+          { "matcher": { "id": "byName", "options": "URL" }, "properties": [ { "id": "custom.width", "value": 380 } ] },
+          { "matcher": { "id": "byName", "options": "HTTP status" }, "properties": [ { "id": "custom.width", "value": 110 } ] },
+          { "matcher": { "id": "byName", "options": "Outcome" }, "properties": [ { "id": "custom.width", "value": 120 } ] },
+          { "matcher": { "id": "byName", "options": "Duration" }, "properties": [ { "id": "custom.width", "value": 100 } ] }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "query": "{ resource.service.name =~ \"${service:regex}\" && kind = server && duration >= 500ms } | select(span.method, span.uri, span.http.url, span.status, span.outcome)",
+          "limit": 50,
+          "tableType": "spans"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
+            "indexByName": {
+              "Span ID": 0, "spanID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "Name": 3, "name": 3,
+              "method": 4, "Method": 4, "uri": 5, "http.url": 6, "status": 7, "outcome": 8, "Duration": 9, "duration": 9,
+              "Trace Name": 10, "traceName": 10, "traceIdHidden": 11, "Trace ID": 11
+            },
+            "renameByName": {
+              "Span ID": "Open trace", "spanID": "Open trace", "Start time": "Time", "time": "Time", "service.name": "Service",
+              "Name": "Operation", "name": "Operation", "method": "Method", "uri": "Route", "http.url": "URL",
+              "status": "HTTP status", "outcome": "Outcome", "Trace Name": "Trace starts with", "traceName": "Trace starts with"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Calls to other services (client spans, without Eureka)",
+      "description": "Calls the selected services make to other services.",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 30 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "fieldConfig": {
+        "defaults": { "custom": { "minWidth": 80 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "Open trace" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Time" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Service" }, "properties": [ { "id": "custom.width", "value": 150 } ] },
+          { "matcher": { "id": "byName", "options": "Method" }, "properties": [ { "id": "custom.width", "value": 90 } ] },
+          { "matcher": { "id": "byName", "options": "Calls" }, "properties": [ { "id": "custom.width", "value": 520 } ] },
+          { "matcher": { "id": "byName", "options": "HTTP status" }, "properties": [ { "id": "custom.width", "value": 110 } ] },
+          { "matcher": { "id": "byName", "options": "Outcome" }, "properties": [ { "id": "custom.width", "value": 120 } ] },
+          { "matcher": { "id": "byName", "options": "Duration" }, "properties": [ { "id": "custom.width", "value": 100 } ] }
+        ]
+      },
       "targets": [
         {
           "refId": "A",
@@ -145,27 +252,46 @@
         }
       ],
       "transformations": [
-        { "id": "organize", "options": {
-            "excludeByName": { "traceIdHidden": true, "Trace ID": true, "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
             "indexByName": {
-              "Start time": 0, "time": 0, "Service": 1, "service.name": 1, "Name": 2, "name": 2, "method": 3, "Method": 3,
-              "http.url": 4, "status": 5, "outcome": 6, "Duration": 7, "duration": 7,
-              "Trace Name": 8, "traceName": 8, "Span ID": 9, "spanID": 9
+              "Span ID": 0, "spanID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "Name": 3, "name": 3,
+              "method": 4, "Method": 4, "http.url": 5, "status": 6, "outcome": 7, "Duration": 8, "duration": 8,
+              "Trace Name": 9, "traceName": 9, "traceIdHidden": 10, "Trace ID": 10
             },
             "renameByName": {
-              "Start time": "Time", "time": "Time", "service.name": "Service", "Name": "Operation", "name": "Operation",
-              "method": "Method", "http.url": "Calls", "status": "HTTP status", "outcome": "Outcome",
-              "Trace Name": "Trace starts with", "traceName": "Trace starts with", "Span ID": "Open trace", "spanID": "Open trace"
+              "Span ID": "Open trace", "spanID": "Open trace", "Start time": "Time", "time": "Time", "service.name": "Service",
+              "Name": "Operation", "name": "Operation", "method": "Method", "http.url": "Calls", "status": "HTTP status",
+              "outcome": "Outcome", "Trace Name": "Trace starts with", "traceName": "Trace starts with"
             }
-          } }
+          }
+        }
       ]
     },
     {
-      "id": 5,
+      "id": 6,
       "type": "table",
       "title": "Eureka registry traffic (client spans: registrations, heartbeats, fetches)",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 30 },
+      "description": "Calls to the Eureka registry, kept apart from real traffic.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 37 },
       "datasource": { "type": "tempo", "uid": "tempo" },
+      "fieldConfig": {
+        "defaults": { "custom": { "minWidth": 80 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "Open trace" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Time" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Service" }, "properties": [ { "id": "custom.width", "value": 150 } ] },
+          { "matcher": { "id": "byName", "options": "Method" }, "properties": [ { "id": "custom.width", "value": 90 } ] },
+          { "matcher": { "id": "byName", "options": "Registry call" }, "properties": [ { "id": "custom.width", "value": 560 } ] },
+          { "matcher": { "id": "byName", "options": "HTTP status" }, "properties": [ { "id": "custom.width", "value": 110 } ] },
+          { "matcher": { "id": "byName", "options": "Outcome" }, "properties": [ { "id": "custom.width", "value": 120 } ] },
+          { "matcher": { "id": "byName", "options": "Duration" }, "properties": [ { "id": "custom.width", "value": 100 } ] }
+        ]
+      },
       "targets": [
         {
           "refId": "A",
@@ -177,17 +303,20 @@
         }
       ],
       "transformations": [
-        { "id": "organize", "options": {
-            "excludeByName": { "traceIdHidden": true, "Trace ID": true, "traceService": true, "Trace Service": true, "kind": true, "Kind": true, "Name": true, "name": true, "Trace Name": true, "traceName": true },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "traceService": true, "Trace Service": true, "kind": true, "Kind": true, "Name": true, "name": true, "Trace Name": true, "traceName": true },
             "indexByName": {
-              "Start time": 0, "time": 0, "Service": 1, "service.name": 1, "method": 2, "Method": 2,
-              "http.url": 3, "status": 4, "outcome": 5, "Duration": 6, "duration": 6, "Span ID": 7, "spanID": 7
+              "Span ID": 0, "spanID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "method": 3, "Method": 3,
+              "http.url": 4, "status": 5, "outcome": 6, "Duration": 7, "duration": 7, "traceIdHidden": 8, "Trace ID": 8
             },
             "renameByName": {
-              "Start time": "Time", "time": "Time", "service.name": "Service", "method": "Method", "http.url": "Registry call",
-              "status": "HTTP status", "outcome": "Outcome", "Span ID": "Open trace", "spanID": "Open trace"
+              "Span ID": "Open trace", "spanID": "Open trace", "Start time": "Time", "time": "Time", "service.name": "Service",
+              "method": "Method", "http.url": "Registry call", "status": "HTTP status", "outcome": "Outcome"
             }
-          } }
+          }
+        }
       ]
     }
   ]
