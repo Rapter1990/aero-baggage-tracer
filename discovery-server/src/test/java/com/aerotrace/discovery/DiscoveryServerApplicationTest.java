@@ -15,7 +15,12 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 
 @SpringBootTest(
     webEnvironment = WebEnvironment.RANDOM_PORT,
-    properties = {"spring.security.user.name=eureka", "spring.security.user.password=test-secret"})
+    properties = {
+      "spring.security.user.name=eureka",
+      "spring.security.user.password=test-secret",
+      "management.otlp.metrics.export.enabled=false",
+      "management.tracing.export.otlp.enabled=false"
+    })
 class DiscoveryServerApplicationTest {
 
   private static final String VALID = basic("eureka", "test-secret");

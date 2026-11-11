@@ -96,6 +96,7 @@ Service registration and discovery for the development profile.
 - Spring Cloud Netflix Eureka Server, standalone dev profile, health endpoint, Dockerfile.
 - Client config template for all services (instance id, lease renewal, health-check URL).
 - **Authenticated registry**: HTTP Basic (`EUREKA_USER` / `EUREKA_PASSWORD`, no default password) on the registry API and dashboard; only `/actuator/health` is open. Clients pass the credentials in the service URL (`http://user:password@host:8761/eureka/`), never stored in the repo. Without this anyone who can reach port 8761 could register a fake service and receive forwarded bearer tokens.
+- The registry exports traces and metrics over OTLP to the OpenTelemetry Collector (Tempo, Prometheus, Grafana), like every other service; its traces are mostly the Eureka protocol (registrations, heartbeats, fetches).
 - Document how discovery works in Compose (Eureka) vs Minikube (Kubernetes Services/DNS) and when each is used.
 
 **Acceptance criteria**
@@ -367,7 +368,7 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 `[observability] [priority:p1]` · Spec §14
 
 **Scope**
-- Already in place from #7: OpenTelemetry Collector (`observability/otel-collector.yml`) → Tempo (traces) and Prometheus (metrics) → Grafana in both Compose files, with the gateway and the config server exporting traces and metrics over OTLP and a provisioned services dashboard. Still open here: tracing across Kafka producers/consumers and the other services, service metrics/dashboards, Loki and log↔trace links, alerts.
+- Already in place from #7: OpenTelemetry Collector (`observability/otel-collector.yml`) → Tempo (traces) and Prometheus (metrics) → Grafana in both Compose files, with the gateway, the config server and the discovery server exporting traces and metrics over OTLP and a provisioned services dashboard. Still open here: tracing across Kafka producers/consumers and the other services, service metrics/dashboards, Loki and log↔trace links, alerts.
 - Micrometer metrics: `scan_ingest_total, scan_duplicates_total, baggage_risk_high, recovery_resolution_seconds, capacity_reservation_conflicts_total, stream_lag_seconds, outbox_pending_count`.
 - Grafana dashboard (scan throughput, high-risk bags, case states, P95 latency, error rate, Kafka lag, JVM).
 - Structured JSON logs → Loki with `traceId, spanId, correlationId, service, eventId` (no PII).
