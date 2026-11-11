@@ -18,6 +18,12 @@ spring:
   threads:
     virtual:
       enabled: true
+  http:
+    clients:
+      # Calls to downstream services (and other Boot-built HTTP clients): give up on a service that
+      # does not connect or answer instead of holding a gateway thread.
+      connect-timeout: 2s
+      read-timeout: 30s
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -28,9 +34,6 @@ spring:
     gateway:
       server:
         webmvc:
-          http-client:
-            connect-timeout: 2s
-            read-timeout: 30s
           # Only the explicit routes below are exposed; the gateway proxies blocking, on servlet threads.
           routes:
             - id: identity-auth

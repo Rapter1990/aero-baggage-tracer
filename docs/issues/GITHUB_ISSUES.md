@@ -137,7 +137,7 @@ Single external entry point under `/api/v1`, built on the **servlet stack** (Spr
 - JWT verification with Spring Security's servlet resource server: the signature is verified with the identity-service **public key** (`java.security.PublicKey`, obtained from its JWKS so several active `kid`s work), plus `exp`, `iss`, `aud`; 401 for missing/invalid, 403 for forbidden.
 - Token forwarding to downstream services; Redis-backed rate limiting as a servlet filter (blocking Spring Data Redis, token bucket). Redis runs with a password (`REDIS_PASSWORD`, no default in the gateway) in both Compose files.
 - Generate/propagate `X-Correlation-Id`; pass `Idempotency-Key`. Reuse the servlet `CorrelationIdFilter` and `ProblemDetails` from `common-module`.
-- ProblemDetail-formatted gateway errors; OpenTelemetry tracing + Micrometer metrics.
+- ProblemDetail-formatted gateway errors; OpenTelemetry tracing (W3C `traceparent` continued and propagated to downstream services, OTLP export) + Micrometer metrics (Prometheus). Downstream calls time out (2 s connect, 30 s read) instead of holding gateway threads.
 - Swagger UI (springdoc) at `/swagger-ui.html` with a "Select a definition" dropdown listing every service; each service's OpenAPI document is fetched through the gateway (`/service-docs/<service>` → the service's `/v3/api-docs`). Can be switched off with `DOCS_ENABLED=false`.
 
 **Acceptance criteria**
@@ -145,6 +145,7 @@ Single external entry point under `/api/v1`, built on the **servlet stack** (Spr
 - [x] Swagger UI at the gateway lists each service's endpoints through a dropdown (the services must expose `/v3/api-docs`).
 - [x] AT-16: expired JWT → 401; wrong role → 403.
 - [x] Correlation ID present on every response and downstream request.
+- [x] A trace context is started or continued at the gateway and sent downstream; a slow downstream is cut off at the read timeout (both tested).
 - [x] Rate-limit returns 429 with ProblemDetail (verified against a real Redis).
 - [x] Redis requires a password: the rate limiter authenticates with it, and clients without or with a wrong password are refused (verified against a real Redis).
 - [x] Gateway token-forwarding integration test (real HTTP hop to a downstream stub).

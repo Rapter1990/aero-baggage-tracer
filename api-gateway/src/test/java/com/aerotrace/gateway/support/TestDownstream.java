@@ -27,13 +27,23 @@ public final class TestDownstream {
             put(seen, "authorization", exchange.getRequestHeaders().getFirst("Authorization"));
             put(seen, "correlationId", exchange.getRequestHeaders().getFirst("X-Correlation-Id"));
             put(seen, "idempotencyKey", exchange.getRequestHeaders().getFirst("Idempotency-Key"));
+            put(seen, "traceparent", exchange.getRequestHeaders().getFirst("traceparent"));
             put(seen, "path", exchange.getRequestURI().getPath());
+            if (exchange.getRequestURI().getPath().startsWith("/api/v1/slow")) {
+              try {
+                Thread.sleep(3000);
+              } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+              }
+            }
             byte[] body = JSON.writeValueAsBytes(seen);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();
           });
+      // The slow endpoint must not block other requests.
+      SERVER.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
       SERVER.start();
     } catch (IOException e) {
       throw new ExceptionInInitializerError(e);

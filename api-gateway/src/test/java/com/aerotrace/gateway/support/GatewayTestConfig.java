@@ -32,6 +32,15 @@ public class GatewayTestConfig {
         .build();
   }
 
+  /** Answers after 3 seconds, to test the gateway's downstream timeouts. */
+  @Bean
+  RouterFunction<ServerResponse> testSlowRoute() {
+    return route("test-slow")
+        .route(RequestPredicates.path("/api/v1/slow/**"), http())
+        .before(uri(TestDownstream.uri()))
+        .build();
+  }
+
   @Bean
   RouterFunction<ServerResponse> testAdminRoute() {
     return route("test-admin")
