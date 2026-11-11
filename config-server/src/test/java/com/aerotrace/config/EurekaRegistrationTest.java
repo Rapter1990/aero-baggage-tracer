@@ -28,7 +28,11 @@ import tools.jackson.databind.json.JsonMapper;
  */
 @SpringBootTest(
     webEnvironment = WebEnvironment.RANDOM_PORT,
-    properties = {"EUREKA_PASSWORD=test-secret"})
+    properties = {
+      "EUREKA_PASSWORD=test-secret",
+      "management.otlp.metrics.export.enabled=false",
+      "management.tracing.export.otlp.enabled=false"
+    })
 class EurekaRegistrationTest {
 
   private static final JsonMapper JSON = JsonMapper.builder().build();

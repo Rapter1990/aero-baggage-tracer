@@ -12,7 +12,11 @@ import org.springframework.web.client.RestClient;
 /** An operator-set SPRING_PROFILES_ACTIVE must not switch the native backend off. */
 @SpringBootTest(
     webEnvironment = WebEnvironment.RANDOM_PORT,
-    properties = "eureka.client.enabled=false")
+    properties = {
+      "eureka.client.enabled=false",
+      "management.otlp.metrics.export.enabled=false",
+      "management.tracing.export.otlp.enabled=false"
+    })
 @ActiveProfiles("compose")
 class ConfigServerExtraProfileTest {
 

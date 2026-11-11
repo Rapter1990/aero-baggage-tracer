@@ -20,6 +20,8 @@ connectors:
   # Counts spans and records their duration per service, operation and status.
   span_metrics:
     namespace: traces.span.metrics
+    # Default is 60s, which makes dashboards lag behind; 15s matches the Prometheus scrape interval.
+    metrics_flush_interval: 15s
     histogram:
       explicit:
         buckets: [10ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s]

@@ -13,7 +13,13 @@ import org.springframework.web.client.RestClient;
 
 @SpringBootTest(
     webEnvironment = WebEnvironment.RANDOM_PORT,
-    properties = {"eureka.client.enabled=false", "EUREKA_PASSWORD=leaky-secret", "EUREKA_USER=svc"})
+    properties = {
+      "eureka.client.enabled=false",
+      "EUREKA_PASSWORD=leaky-secret",
+      "EUREKA_USER=svc",
+      "management.otlp.metrics.export.enabled=false",
+      "management.tracing.export.otlp.enabled=false"
+    })
 class ConfigServerApplicationTest {
 
   @LocalServerPort private int port;
@@ -83,6 +89,25 @@ class ConfigServerApplicationTest {
       assertThat((String) zone)
           .contains("${EUREKA_USER:eureka}:${EUREKA_PASSWORD}@")
           .doesNotContain("leaky-secret");
+    }
+  }
+
+  @Test
+  void sharedTelemetrySettingsPointEveryServiceAtTheCollector() {
+    for (String profile : List.of("default", "dev", "compose", "k8s")) {
+      assertThat(resolve("journey-service", profile, "management.otlp.metrics.export.url"))
+          .as("metrics url, profile %s", profile)
+          .isEqualTo("${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:http://localhost:4318/v1/metrics}");
+      assertThat(
+              resolve(
+                  "journey-service",
+                  profile,
+                  "management.opentelemetry.tracing.export.otlp.endpoint"))
+          .as("traces endpoint, profile %s", profile)
+          .isEqualTo("${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}");
+      assertThat(resolve("journey-service", profile, "management.tracing.sampling.probability"))
+          .as("sampling, profile %s", profile)
+          .isEqualTo("${TRACING_SAMPLING_PROBABILITY:1.0}");
     }
   }
 

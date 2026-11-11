@@ -116,6 +116,7 @@ Centralized, profile-based configuration (dev / compose / k8s). *Note: not in th
 - Spring Cloud Config Server (native or Git backend), per-service config files, profiles `dev`, `compose`, `k8s`.
 - Airport-specific thresholds (e.g. 20‑min risk threshold) and Kafka/Redis/DB endpoints externalized.
 - Secrets are **not** stored in the repo; use env vars / K8s Secrets. Eureka URLs in the config repo carry `${EUREKA_USER}` / `${EUREKA_PASSWORD}` placeholders that each client resolves from its own environment (the config server never sees or sends the password).
+- The config server itself exports traces and metrics over OTLP to the OpenTelemetry Collector (Tempo, Prometheus, Grafana), and the shared config-repo template gives every service the same OTLP, sampling and metric-tag settings (placeholders the client resolves).
 - Clients use `spring.config.import` with fail-fast and retry.
 
 **Acceptance criteria**
@@ -137,7 +138,7 @@ Single external entry point under `/api/v1`, built on the **servlet stack** (Spr
 - JWT verification with Spring Security's servlet resource server: the signature is verified with the identity-service **public key** (`java.security.PublicKey`, obtained from its JWKS so several active `kid`s work), plus `exp`, `iss`, `aud`; 401 for missing/invalid, 403 for forbidden.
 - Token forwarding to downstream services; Redis-backed rate limiting as a servlet filter (blocking Spring Data Redis, token bucket). Redis runs with a password (`REDIS_PASSWORD`, no default in the gateway) in both Compose files.
 - Generate/propagate `X-Correlation-Id`; pass `Idempotency-Key`. Reuse the servlet `CorrelationIdFilter` and `ProblemDetails` from `common-module`.
-- ProblemDetail-formatted gateway errors; OpenTelemetry tracing (W3C `traceparent` continued and propagated to downstream services) and Micrometer metrics, both exported over OTLP to an OpenTelemetry Collector: metrics are scraped by Prometheus (no admin token needed) and traces are stored in Tempo; Grafana shows a provisioned gateway dashboard with a recent-traces table (`observability/`, started by both Compose files). Downstream calls time out (2 s connect, 30 s read) instead of holding gateway threads.
+- ProblemDetail-formatted gateway errors; OpenTelemetry tracing (W3C `traceparent` continued and propagated to downstream services) and Micrometer metrics, both exported over OTLP to an OpenTelemetry Collector: metrics are scraped by Prometheus (no admin token needed) and traces are stored in Tempo; Grafana shows a provisioned services dashboard (pick the service) with a recent-traces table (`observability/`, started by both Compose files). Downstream calls time out (2 s connect, 30 s read) instead of holding gateway threads.
 - Swagger UI (springdoc) at `/swagger-ui.html` with a "Select a definition" dropdown listing every service; each service's OpenAPI document is fetched through the gateway (`/service-docs/<service>` → the service's `/v3/api-docs`). Can be switched off with `DOCS_ENABLED=false`.
 
 **Acceptance criteria**
@@ -366,7 +367,7 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 `[observability] [priority:p1]` · Spec §14
 
 **Scope**
-- Already in place from #7: OpenTelemetry Collector (`observability/otel-collector.yml`) → Tempo (traces) and Prometheus (metrics) → Grafana in both Compose files, with the gateway exporting traces and metrics over OTLP and a provisioned gateway dashboard. Still open here: tracing across Kafka producers/consumers and the other services, service metrics/dashboards, Loki and log↔trace links, alerts.
+- Already in place from #7: OpenTelemetry Collector (`observability/otel-collector.yml`) → Tempo (traces) and Prometheus (metrics) → Grafana in both Compose files, with the gateway and the config server exporting traces and metrics over OTLP and a provisioned services dashboard. Still open here: tracing across Kafka producers/consumers and the other services, service metrics/dashboards, Loki and log↔trace links, alerts.
 - Micrometer metrics: `scan_ingest_total, scan_duplicates_total, baggage_risk_high, recovery_resolution_seconds, capacity_reservation_conflicts_total, stream_lag_seconds, outbox_pending_count`.
 - Grafana dashboard (scan throughput, high-risk bags, case states, P95 latency, error rate, Kafka lag, JVM).
 - Structured JSON logs → Loki with `traceId, spanId, correlationId, service, eventId` (no PII).
