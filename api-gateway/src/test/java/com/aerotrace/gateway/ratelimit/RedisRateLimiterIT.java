@@ -2,47 +2,32 @@ package com.aerotrace.gateway.ratelimit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import com.aerotrace.gateway.support.AbstractTestContainerConfiguration;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.testcontainers.DockerClientFactory;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.utility.DockerImageName;
 
 /** Runs the real Lua token bucket against a real Redis. Skipped when Docker is unavailable. */
-class RedisRateLimiterIT {
+class RedisRateLimiterIT extends AbstractTestContainerConfiguration {
 
-  private static final String PASSWORD = "test-redis-secret";
-
-  private static GenericContainer<?> redis;
   private static LettuceConnectionFactory connections;
   private static StringRedisTemplate template;
 
   @BeforeAll
-  static void startRedis() {
-    assumeTrue(DockerClientFactory.instance().isDockerAvailable(), "Docker is not available");
-    redis =
-        new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
-            .withCommand("redis-server", "--requirepass", PASSWORD)
-            .withExposedPorts(6379);
-    redis.start();
-    connections = connect(redis.getHost(), redis.getMappedPort(6379), PASSWORD);
+  static void connectToRedis() {
+    connections = connect(redisHost(), redisPort(), REDIS_PASSWORD);
     template = new StringRedisTemplate(connections);
     template.afterPropertiesSet();
   }
 
   @AfterAll
-  static void stopRedis() {
+  static void disconnect() {
     if (connections != null) {
       connections.destroy();
-    }
-    if (redis != null) {
-      redis.stop();
     }
   }
 
@@ -103,8 +88,7 @@ class RedisRateLimiterIT {
   @Test
   void redisRefusesClientsWithoutTheCorrectPassword() {
     for (String password : new String[] {null, "wrong-password"}) {
-      LettuceConnectionFactory factory =
-          connect(redis.getHost(), redis.getMappedPort(6379), password);
+      LettuceConnectionFactory factory = connect(redisHost(), redisPort(), password);
       try {
         StringRedisTemplate unauthenticated = new StringRedisTemplate(factory);
         unauthenticated.afterPropertiesSet();
@@ -120,8 +104,7 @@ class RedisRateLimiterIT {
 
   @Test
   void aWrongPasswordMakesTheLimiterFailOpenInsteadOfBlockingTraffic() {
-    LettuceConnectionFactory factory =
-        connect(redis.getHost(), redis.getMappedPort(6379), "wrong-password");
+    LettuceConnectionFactory factory = connect(redisHost(), redisPort(), "wrong-password");
     try {
       StringRedisTemplate wrong = new StringRedisTemplate(factory);
       wrong.afterPropertiesSet();

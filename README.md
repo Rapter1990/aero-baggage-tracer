@@ -72,3 +72,7 @@ docker compose -f docker-compose-local.yml up -d otel-collector prometheus grafa
 The api-gateway sends its traces and metrics to the collector over OTLP (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`; the defaults point at `localhost:4318`), so Prometheus never has to call the gateway or present a token. The collector keeps no traces: they only become request metrics and a summary line in its log, so individual traces cannot be browsed yet (that needs a trace store such as Tempo).
 
 If you add the dashboard file while Grafana is already running, restart Grafana (`docker restart grafana`) to load it.
+
+## Running the tests
+
+`mvn verify` runs unit tests (`*Test`) and integration tests (`*IT`). The gateway's integration tests use Testcontainers: `AbstractTestContainerConfiguration` starts a password-protected Redis in Docker and points `spring.data.redis.*` at it, so they need Docker running. They are skipped, not failed, when Docker is not available, and the JaCoCo coverage check includes them.
