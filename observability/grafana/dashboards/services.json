@@ -6,6 +6,16 @@
   "schemaVersion": 39,
   "version": 1,
   "refresh": "10s",
+  "links": [
+    {
+      "title": "Other AeroTrace dashboards",
+      "type": "dashboards",
+      "tags": ["aerotrace"],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
   "time": { "from": "now-15m", "to": "now" },
   "templating": {
     "list": [
@@ -119,24 +129,6 @@
       "targets": [
         { "refId": "A", "expr": "max(process_cpu_usage{service_name=\"$service\"})", "legendFormat": "cpu" },
         { "refId": "B", "expr": "max(jvm_threads_live{service_name=\"$service\"})", "legendFormat": "threads" }
-      ]
-    },
-    {
-      "id": 7,
-      "type": "table",
-      "title": "Recent traces (Tempo)",
-      "description": "Click a trace ID to open it. Spans come from the collector via Tempo.",
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 24 },
-      "datasource": { "type": "tempo", "uid": "tempo" },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "tempo", "uid": "tempo" },
-          "queryType": "traceql",
-          "query": "{ resource.service.name = \"$service\" }",
-          "limit": 20,
-          "tableType": "traces"
-        }
       ]
     }
   ]

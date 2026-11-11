@@ -1,0 +1,194 @@
+{
+  "uid": "aerotrace-traces",
+  "title": "AeroTrace - Traces",
+  "tags": ["aerotrace", "traces"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "links": [
+    {
+      "title": "Other AeroTrace dashboards",
+      "type": "dashboards",
+      "tags": ["aerotrace"],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(jvm_threads_live, service_name)", "refId": "service" },
+        "definition": "label_values(jvm_threads_live, service_name)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": { "selected": true, "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "min_duration",
+        "label": "Slower than",
+        "type": "custom",
+        "query": "0ms,10ms,50ms,100ms,250ms,500ms,1s,5s",
+        "options": [
+          { "text": "0ms", "value": "0ms", "selected": true },
+          { "text": "10ms", "value": "10ms", "selected": false },
+          { "text": "50ms", "value": "50ms", "selected": false },
+          { "text": "100ms", "value": "100ms", "selected": false },
+          { "text": "250ms", "value": "250ms", "selected": false },
+          { "text": "500ms", "value": "500ms", "selected": false },
+          { "text": "1s", "value": "1s", "selected": false },
+          { "text": "5s", "value": "5s", "selected": false }
+        ],
+        "current": { "selected": true, "text": "0ms", "value": "0ms" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "How to read this page",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "Pick one or more **services** and a minimum duration at the top. Each row is one step (a *span*) of a request; the **Open trace** link shows the whole request across services.\n\n* **Requests handled** - what the service received (HTTP method, route, status, outcome).\n* **Failed or slow** - errors and anything over 500 ms, for a quick look at problems.\n* **Calls to other services** - what the service sent out, without the Eureka chatter.\n* **Eureka registry traffic** - registrations, heartbeats (every 10 s per instance) and registry fetches, kept apart so they do not bury real traffic."
+      }
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Requests handled (server spans)",
+      "description": "Requests the selected services received. Route is the matched path template; it reads UNKNOWN for Eureka's own endpoints, so the full URL is shown too.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "query": "{ resource.service.name =~ \"${service:regex}\" && kind = server && duration >= ${min_duration} } | select(span.method, span.uri, span.http.url, span.status, span.outcome)",
+          "limit": 50,
+          "tableType": "spans"
+        }
+      ],
+      "transformations": [
+        { "id": "organize", "options": {
+            "excludeByName": { "traceIdHidden": true, "Trace ID": true, "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
+            "indexByName": {
+              "Start time": 0, "time": 0, "Service": 1, "service.name": 1, "Name": 2, "name": 2, "method": 3, "Method": 3,
+              "uri": 4, "http.url": 5, "status": 6, "outcome": 7, "Duration": 8, "duration": 8,
+              "Trace Name": 9, "traceName": 9, "Span ID": 10, "spanID": 10
+            },
+            "renameByName": {
+              "Start time": "Time", "time": "Time", "service.name": "Service", "Name": "Operation", "name": "Operation",
+              "method": "Method", "uri": "Route", "http.url": "URL", "status": "HTTP status", "outcome": "Outcome",
+              "Trace Name": "Trace starts with", "traceName": "Trace starts with", "Span ID": "Open trace", "spanID": "Open trace"
+            }
+          } }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Failed or slow (errors, 4xx/5xx or over 500 ms)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "query": "{ resource.service.name =~ \"${service:regex}\" && kind = server && (status = error || span.outcome =~ \".*ERROR\" || duration > 500ms) } | select(span.method, span.uri, span.http.url, span.status, span.outcome)",
+          "limit": 50,
+          "tableType": "spans"
+        }
+      ],
+      "transformations": [
+        { "id": "organize", "options": {
+            "excludeByName": { "traceIdHidden": true, "Trace ID": true, "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
+            "indexByName": {
+              "Start time": 0, "time": 0, "Service": 1, "service.name": 1, "Name": 2, "name": 2, "method": 3, "Method": 3,
+              "uri": 4, "http.url": 5, "status": 6, "outcome": 7, "Duration": 8, "duration": 8,
+              "Trace Name": 9, "traceName": 9, "Span ID": 10, "spanID": 10
+            },
+            "renameByName": {
+              "Start time": "Time", "time": "Time", "service.name": "Service", "Name": "Operation", "name": "Operation",
+              "method": "Method", "uri": "Route", "http.url": "URL", "status": "HTTP status", "outcome": "Outcome",
+              "Trace Name": "Trace starts with", "traceName": "Trace starts with", "Span ID": "Open trace", "spanID": "Open trace"
+            }
+          } }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Calls to other services (client spans, without Eureka)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "query": "{ resource.service.name =~ \"${service:regex}\" && kind = client && span.http.url !~ \".*/eureka/.*\" && duration >= ${min_duration} } | select(span.method, span.http.url, span.status, span.outcome)",
+          "limit": 50,
+          "tableType": "spans"
+        }
+      ],
+      "transformations": [
+        { "id": "organize", "options": {
+            "excludeByName": { "traceIdHidden": true, "Trace ID": true, "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
+            "indexByName": {
+              "Start time": 0, "time": 0, "Service": 1, "service.name": 1, "Name": 2, "name": 2, "method": 3, "Method": 3,
+              "http.url": 4, "status": 5, "outcome": 6, "Duration": 7, "duration": 7,
+              "Trace Name": 8, "traceName": 8, "Span ID": 9, "spanID": 9
+            },
+            "renameByName": {
+              "Start time": "Time", "time": "Time", "service.name": "Service", "Name": "Operation", "name": "Operation",
+              "method": "Method", "http.url": "Calls", "status": "HTTP status", "outcome": "Outcome",
+              "Trace Name": "Trace starts with", "traceName": "Trace starts with", "Span ID": "Open trace", "spanID": "Open trace"
+            }
+          } }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Eureka registry traffic (client spans: registrations, heartbeats, fetches)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 30 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "query": "{ resource.service.name =~ \"${service:regex}\" && kind = client && span.http.url =~ \".*/eureka/.*\" && duration >= ${min_duration} } | select(span.method, span.http.url, span.status, span.outcome)",
+          "limit": 30,
+          "tableType": "spans"
+        }
+      ],
+      "transformations": [
+        { "id": "organize", "options": {
+            "excludeByName": { "traceIdHidden": true, "Trace ID": true, "traceService": true, "Trace Service": true, "kind": true, "Kind": true, "Name": true, "name": true, "Trace Name": true, "traceName": true },
+            "indexByName": {
+              "Start time": 0, "time": 0, "Service": 1, "service.name": 1, "method": 2, "Method": 2,
+              "http.url": 3, "status": 4, "outcome": 5, "Duration": 6, "duration": 6, "Span ID": 7, "spanID": 7
+            },
+            "renameByName": {
+              "Start time": "Time", "time": "Time", "service.name": "Service", "method": "Method", "http.url": "Registry call",
+              "status": "HTTP status", "outcome": "Outcome", "Span ID": "Open trace", "spanID": "Open trace"
+            }
+          } }
+      ]
+    }
+  ]
+}
