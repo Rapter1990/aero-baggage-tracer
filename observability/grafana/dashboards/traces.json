@@ -4,7 +4,7 @@
   "tags": ["aerotrace", "traces"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "10s",
   "time": { "from": "now-30m", "to": "now" },
   "links": [
@@ -60,7 +60,7 @@
       "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
       "options": {
         "mode": "markdown",
-        "content": "Pick one or more **services** and a minimum duration at the top. Each row is one step (a *span*) of a request. **Click the ID in the first column (Open trace)** to see the whole request across services.\n\n* **Requests handled** - what the service received (HTTP method, route, status, outcome).\n* **Failed requests** - only real failures: HTTP 4xx/5xx or an error. Empty means nothing failed in the time range.\n* **Slow requests** - 500 ms or more, whatever the status (a slow request can still be a 200).\n* **Calls to other services** - what the service sent out, without the Eureka chatter.\n* **Eureka registry traffic** - registrations, heartbeats (every 10 s per instance) and registry fetches, kept apart so they do not bury real traffic."
+        "content": "Pick one or more **services** and a minimum duration at the top. Each row is one step (a *span*) of a request. **Click the Trace ID in the first column** to open the whole request across services (you can also copy it into Explore > Trace ID).\n\n* **Requests handled** - what the service received (HTTP method, route, status, outcome).\n* **Failed requests** - only real failures: HTTP 4xx/5xx or an error. Empty means nothing failed in the time range.\n* **Slow requests** - 500 ms or more, whatever the status (a slow request can still be a 200).\n* **Calls to other services** - what the service sent out, without the Eureka chatter.\n* **Eureka registry traffic** - registrations, heartbeats (every 10 s per instance) and registry fetches, kept apart so they do not bury real traffic."
       }
     },
     {
@@ -73,9 +73,20 @@
       "fieldConfig": {
         "defaults": { "custom": { "minWidth": 80 } },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
-          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
-          { "matcher": { "id": "byName", "options": "Open trace" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "Span ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "spanID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
           { "matcher": { "id": "byName", "options": "Time" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
           { "matcher": { "id": "byName", "options": "Service" }, "properties": [ { "id": "custom.width", "value": 150 } ] },
           { "matcher": { "id": "byName", "options": "Method" }, "properties": [ { "id": "custom.width", "value": 90 } ] },
@@ -102,12 +113,12 @@
           "options": {
             "excludeByName": { "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
             "indexByName": {
-              "Span ID": 0, "spanID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "Name": 3, "name": 3,
+              "traceIdHidden": 0, "Trace ID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "Name": 3, "name": 3,
               "method": 4, "Method": 4, "uri": 5, "http.url": 6, "status": 7, "outcome": 8, "Duration": 9, "duration": 9,
-              "Trace Name": 10, "traceName": 10, "traceIdHidden": 11, "Trace ID": 11
+              "Trace Name": 10, "traceName": 10, "Span ID": 11, "spanID": 11
             },
             "renameByName": {
-              "Span ID": "Open trace", "spanID": "Open trace", "Start time": "Time", "time": "Time", "service.name": "Service",
+              "traceIdHidden": "Trace ID", "Start time": "Time", "time": "Time", "service.name": "Service",
               "Name": "Operation", "name": "Operation", "method": "Method", "uri": "Route", "http.url": "URL",
               "status": "HTTP status", "outcome": "Outcome", "Trace Name": "Trace starts with", "traceName": "Trace starts with"
             }
@@ -125,9 +136,20 @@
       "fieldConfig": {
         "defaults": { "custom": { "minWidth": 80 } },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
-          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
-          { "matcher": { "id": "byName", "options": "Open trace" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "Span ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "spanID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
           { "matcher": { "id": "byName", "options": "Time" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
           { "matcher": { "id": "byName", "options": "Service" }, "properties": [ { "id": "custom.width", "value": 150 } ] },
           { "matcher": { "id": "byName", "options": "Method" }, "properties": [ { "id": "custom.width", "value": 90 } ] },
@@ -154,12 +176,12 @@
           "options": {
             "excludeByName": { "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
             "indexByName": {
-              "Span ID": 0, "spanID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "Name": 3, "name": 3,
+              "traceIdHidden": 0, "Trace ID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "Name": 3, "name": 3,
               "method": 4, "Method": 4, "uri": 5, "http.url": 6, "status": 7, "outcome": 8, "Duration": 9, "duration": 9,
-              "Trace Name": 10, "traceName": 10, "traceIdHidden": 11, "Trace ID": 11
+              "Trace Name": 10, "traceName": 10, "Span ID": 11, "spanID": 11
             },
             "renameByName": {
-              "Span ID": "Open trace", "spanID": "Open trace", "Start time": "Time", "time": "Time", "service.name": "Service",
+              "traceIdHidden": "Trace ID", "Start time": "Time", "time": "Time", "service.name": "Service",
               "Name": "Operation", "name": "Operation", "method": "Method", "uri": "Route", "http.url": "URL",
               "status": "HTTP status", "outcome": "Outcome", "Trace Name": "Trace starts with", "traceName": "Trace starts with"
             }
@@ -177,9 +199,20 @@
       "fieldConfig": {
         "defaults": { "custom": { "minWidth": 80 } },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
-          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
-          { "matcher": { "id": "byName", "options": "Open trace" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "Span ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "spanID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
           { "matcher": { "id": "byName", "options": "Time" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
           { "matcher": { "id": "byName", "options": "Service" }, "properties": [ { "id": "custom.width", "value": 150 } ] },
           { "matcher": { "id": "byName", "options": "Method" }, "properties": [ { "id": "custom.width", "value": 90 } ] },
@@ -206,12 +239,12 @@
           "options": {
             "excludeByName": { "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
             "indexByName": {
-              "Span ID": 0, "spanID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "Name": 3, "name": 3,
+              "traceIdHidden": 0, "Trace ID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "Name": 3, "name": 3,
               "method": 4, "Method": 4, "uri": 5, "http.url": 6, "status": 7, "outcome": 8, "Duration": 9, "duration": 9,
-              "Trace Name": 10, "traceName": 10, "traceIdHidden": 11, "Trace ID": 11
+              "Trace Name": 10, "traceName": 10, "Span ID": 11, "spanID": 11
             },
             "renameByName": {
-              "Span ID": "Open trace", "spanID": "Open trace", "Start time": "Time", "time": "Time", "service.name": "Service",
+              "traceIdHidden": "Trace ID", "Start time": "Time", "time": "Time", "service.name": "Service",
               "Name": "Operation", "name": "Operation", "method": "Method", "uri": "Route", "http.url": "URL",
               "status": "HTTP status", "outcome": "Outcome", "Trace Name": "Trace starts with", "traceName": "Trace starts with"
             }
@@ -229,9 +262,20 @@
       "fieldConfig": {
         "defaults": { "custom": { "minWidth": 80 } },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
-          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
-          { "matcher": { "id": "byName", "options": "Open trace" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "Span ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "spanID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
           { "matcher": { "id": "byName", "options": "Time" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
           { "matcher": { "id": "byName", "options": "Service" }, "properties": [ { "id": "custom.width", "value": 150 } ] },
           { "matcher": { "id": "byName", "options": "Method" }, "properties": [ { "id": "custom.width", "value": 90 } ] },
@@ -257,12 +301,12 @@
           "options": {
             "excludeByName": { "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
             "indexByName": {
-              "Span ID": 0, "spanID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "Name": 3, "name": 3,
+              "traceIdHidden": 0, "Trace ID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "Name": 3, "name": 3,
               "method": 4, "Method": 4, "http.url": 5, "status": 6, "outcome": 7, "Duration": 8, "duration": 8,
-              "Trace Name": 9, "traceName": 9, "traceIdHidden": 10, "Trace ID": 10
+              "Trace Name": 9, "traceName": 9, "Span ID": 10, "spanID": 10
             },
             "renameByName": {
-              "Span ID": "Open trace", "spanID": "Open trace", "Start time": "Time", "time": "Time", "service.name": "Service",
+              "traceIdHidden": "Trace ID", "Start time": "Time", "time": "Time", "service.name": "Service",
               "Name": "Operation", "name": "Operation", "method": "Method", "http.url": "Calls", "status": "HTTP status",
               "outcome": "Outcome", "Trace Name": "Trace starts with", "traceName": "Trace starts with"
             }
@@ -280,9 +324,20 @@
       "fieldConfig": {
         "defaults": { "custom": { "minWidth": 80 } },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
-          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
-          { "matcher": { "id": "byName", "options": "Open trace" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "Span ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "spanID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
           { "matcher": { "id": "byName", "options": "Time" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
           { "matcher": { "id": "byName", "options": "Service" }, "properties": [ { "id": "custom.width", "value": 150 } ] },
           { "matcher": { "id": "byName", "options": "Method" }, "properties": [ { "id": "custom.width", "value": 90 } ] },
@@ -308,11 +363,11 @@
           "options": {
             "excludeByName": { "traceService": true, "Trace Service": true, "kind": true, "Kind": true, "Name": true, "name": true, "Trace Name": true, "traceName": true },
             "indexByName": {
-              "Span ID": 0, "spanID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "method": 3, "Method": 3,
-              "http.url": 4, "status": 5, "outcome": 6, "Duration": 7, "duration": 7, "traceIdHidden": 8, "Trace ID": 8
+              "traceIdHidden": 0, "Trace ID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "method": 3, "Method": 3,
+              "http.url": 4, "status": 5, "outcome": 6, "Duration": 7, "duration": 7, "Span ID": 8, "spanID": 8
             },
             "renameByName": {
-              "Span ID": "Open trace", "spanID": "Open trace", "Start time": "Time", "time": "Time", "service.name": "Service",
+              "traceIdHidden": "Trace ID", "Start time": "Time", "time": "Time", "service.name": "Service",
               "method": "Method", "http.url": "Registry call", "status": "HTTP status", "outcome": "Outcome"
             }
           }
