@@ -55,21 +55,22 @@ In `docker-compose.yml` and `docker-compose-local.yml`, the services that need t
 | `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD` | Grafana (optional, defaults `admin` / `grafana`) |
 | `JWT_ISSUER`, `JWT_AUDIENCE`, `JWK_SET_URI` | api-gateway started outside Docker (inside Compose it uses `COMPOSE_JWT_ISSUER` / `COMPOSE_JWK_SET_URI`) |
 
-## Observability (OpenTelemetry Collector, Prometheus, Grafana)
+## Observability (OpenTelemetry Collector, Tempo, Prometheus, Grafana)
 
-Both compose files start an OpenTelemetry Collector, Prometheus and Grafana next to the infrastructure:
+Both compose files start an OpenTelemetry Collector, Tempo, Prometheus and Grafana next to the infrastructure:
 
 ```bash
-docker compose -f docker-compose-local.yml up -d otel-collector prometheus grafana
+docker compose -f docker-compose-local.yml up -d otel-collector tempo prometheus grafana
 ```
 
 | Service | Where | What it does |
 |---|---|---|
-| OpenTelemetry Collector | OTLP/HTTP on `localhost:4318`, OTLP/gRPC on `localhost:4317` (local compose; internal in `docker-compose.yml`) | Receives traces and metrics from the services, derives request-rate, error and latency metrics from the traces, and exposes everything to Prometheus |
+| OpenTelemetry Collector | OTLP/HTTP on `localhost:4318`, OTLP/gRPC on `localhost:4317` (local compose; internal in `docker-compose.yml`) | Receives traces and metrics from the services, forwards the traces to Tempo, derives request-rate, error and latency metrics from them, and exposes the metrics to Prometheus |
+| Tempo | internal (`tempo:3200`, no host port) | Stores the traces; Grafana queries it (TraceQL). Traces live in the `tempo-data` volume and are dropped after 24 hours |
 | Prometheus | http://localhost:9090 | Scrapes the collector |
-| Grafana | http://localhost:3000 (`admin` / `grafana`, see `GRAFANA_ADMIN_*`) | Prometheus data source and the "AeroTrace - API Gateway" dashboard, provisioned from `observability/grafana` |
+| Grafana | http://localhost:3000 (`admin` / `grafana`, see `GRAFANA_ADMIN_*`) | Prometheus and Tempo data sources and the "AeroTrace - API Gateway" dashboard (metrics plus a "Recent traces" table), provisioned from `observability/grafana`; open a trace from the table or via *Explore* > *Tempo* |
 
-The api-gateway sends its traces and metrics to the collector over OTLP (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`; the defaults point at `localhost:4318`), so Prometheus never has to call the gateway or present a token. The collector keeps no traces: they only become request metrics and a summary line in its log, so individual traces cannot be browsed yet (that needs a trace store such as Tempo).
+The api-gateway sends its traces and metrics to the collector over OTLP (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`; the defaults point at `localhost:4318`), so Prometheus never has to call the gateway or present a token. From a trace in Grafana you can jump to the same service's request rate and p95 latency in Prometheus. Tempo 3 logs "no jobs found" at error level while idle; that is its background compaction worker finding nothing to do, not a fault.
 
 If you add the dashboard file while Grafana is already running, restart Grafana (`docker restart grafana`) to load it.
 

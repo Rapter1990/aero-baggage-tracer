@@ -151,6 +151,17 @@ services:
     networks:
       - aerotrace
 
+  tempo:
+    image: grafana/tempo:latest
+    container_name: tempo
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./observability/tempo.yml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    networks:
+      - aerotrace
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
     container_name: otel-collector
@@ -158,6 +169,8 @@ services:
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
       - ./observability/otel-collector.yml:/etc/otelcol/config.yaml:ro
+    depends_on:
+      - tempo
     networks:
       - aerotrace
 
@@ -205,6 +218,7 @@ services:
 
 volumes:
   postgres-data:
+  tempo-data:
 
 networks:
   aerotrace:

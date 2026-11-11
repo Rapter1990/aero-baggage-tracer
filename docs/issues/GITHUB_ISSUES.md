@@ -137,7 +137,7 @@ Single external entry point under `/api/v1`, built on the **servlet stack** (Spr
 - JWT verification with Spring Security's servlet resource server: the signature is verified with the identity-service **public key** (`java.security.PublicKey`, obtained from its JWKS so several active `kid`s work), plus `exp`, `iss`, `aud`; 401 for missing/invalid, 403 for forbidden.
 - Token forwarding to downstream services; Redis-backed rate limiting as a servlet filter (blocking Spring Data Redis, token bucket). Redis runs with a password (`REDIS_PASSWORD`, no default in the gateway) in both Compose files.
 - Generate/propagate `X-Correlation-Id`; pass `Idempotency-Key`. Reuse the servlet `CorrelationIdFilter` and `ProblemDetails` from `common-module`.
-- ProblemDetail-formatted gateway errors; OpenTelemetry tracing (W3C `traceparent` continued and propagated to downstream services) and Micrometer metrics, both exported over OTLP to an OpenTelemetry Collector that Prometheus scrapes (no admin token needed); Grafana shows a provisioned gateway dashboard (`observability/`, started by both Compose files). Downstream calls time out (2 s connect, 30 s read) instead of holding gateway threads.
+- ProblemDetail-formatted gateway errors; OpenTelemetry tracing (W3C `traceparent` continued and propagated to downstream services) and Micrometer metrics, both exported over OTLP to an OpenTelemetry Collector: metrics are scraped by Prometheus (no admin token needed) and traces are stored in Tempo; Grafana shows a provisioned gateway dashboard with a recent-traces table (`observability/`, started by both Compose files). Downstream calls time out (2 s connect, 30 s read) instead of holding gateway threads.
 - Swagger UI (springdoc) at `/swagger-ui.html` with a "Select a definition" dropdown listing every service; each service's OpenAPI document is fetched through the gateway (`/service-docs/<service>` → the service's `/v3/api-docs`). Can be switched off with `DOCS_ENABLED=false`.
 
 **Acceptance criteria**
@@ -147,6 +147,7 @@ Single external entry point under `/api/v1`, built on the **servlet stack** (Spr
 - [x] Correlation ID present on every response and downstream request.
 - [x] A trace context is started or continued at the gateway and sent downstream; a slow downstream is cut off at the read timeout (both tested).
 - [x] Gateway metrics and span-derived request metrics reach Prometheus through the collector, and the Grafana dashboard queries them (verified with real containers).
+- [x] Gateway traces are stored in Tempo and can be found by TraceQL in Grafana, including a trace the caller started (verified with real containers).
 - [x] Rate-limit returns 429 with ProblemDetail (verified against a real Redis).
 - [x] Redis requires a password: the rate limiter authenticates with it, and clients without or with a wrong password are refused (verified against a real Redis).
 - [x] Gateway token-forwarding integration test (real HTTP hop to a downstream stub).
@@ -365,7 +366,7 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 `[observability] [priority:p1]` · Spec §14
 
 **Scope**
-- Already in place from #7: OpenTelemetry Collector (`observability/otel-collector.yml`) → Prometheus → Grafana in both Compose files, with the gateway exporting traces and metrics over OTLP and a provisioned gateway dashboard. Still open here: service metrics/dashboards, Loki, Tempo (the collector has no trace store yet), alerts.
+- Already in place from #7: OpenTelemetry Collector (`observability/otel-collector.yml`) → Tempo (traces) and Prometheus (metrics) → Grafana in both Compose files, with the gateway exporting traces and metrics over OTLP and a provisioned gateway dashboard. Still open here: tracing across Kafka producers/consumers and the other services, service metrics/dashboards, Loki and log↔trace links, alerts.
 - Micrometer metrics: `scan_ingest_total, scan_duplicates_total, baggage_risk_high, recovery_resolution_seconds, capacity_reservation_conflicts_total, stream_lag_seconds, outbox_pending_count`.
 - Grafana dashboard (scan throughput, high-risk bags, case states, P95 latency, error rate, Kafka lag, JVM).
 - Structured JSON logs → Loki with `traceId, spanId, correlationId, service, eventId` (no PII).
