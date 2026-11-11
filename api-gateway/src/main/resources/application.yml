@@ -1,13 +1,17 @@
 server:
   port: 8080
-  error:
-    include-message: never
-    include-stacktrace: never
-    include-binding-errors: never
 
 spring:
   application:
     name: api-gateway
+  web:
+    error:
+      # Never put exception messages, stack traces or binding details into error responses.
+      # (Spring Boot 4 moved these from server.error.* to spring.web.error.*.)
+      include-message: never
+      include-stacktrace: never
+      include-binding-errors: never
+      include-exception: false
   config:
     # Optional local settings (see the .env section of the README); real environment variables take precedence.
     import: optional:file:.env[.properties],optional:file:../.env[.properties]
