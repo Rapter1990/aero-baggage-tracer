@@ -156,8 +156,8 @@ public class AuthService {
   }
 
   /**
-   * Starts a password reset. The answer is the same whether or not the account exists. The token is
-   * only part of it when {@link AuthProperties#passwordResetReturnToken()} is on (development).
+   * Starts a password reset. The reset token is returned in the answer. The message is the same
+   * whether or not the account exists, but only an existing account gets a token.
    */
   @Transactional
   public ForgotPasswordResponse forgotPassword(ForgotPasswordRequest request) {
@@ -181,9 +181,7 @@ public class AuthService {
     audit.record(
         AuthEventType.PASSWORD_RESET_REQUESTED, AuthOutcome.SUCCESS, user.username(), user.id());
 
-    return properties.passwordResetReturnToken()
-        ? new ForgotPasswordResponse(ApiMessages.PASSWORD_RESET_STARTED, token, expiresAt)
-        : new ForgotPasswordResponse(ApiMessages.PASSWORD_RESET_STARTED, null, null);
+    return new ForgotPasswordResponse(ApiMessages.PASSWORD_RESET_STARTED, token, expiresAt);
   }
 
   /** Sets a new password with a reset token (once) and ends every session of the user. */

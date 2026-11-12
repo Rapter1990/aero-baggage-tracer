@@ -11,7 +11,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.TestPropertySource;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -19,7 +18,6 @@ import tools.jackson.databind.JsonNode;
  * contains a token or credential. Everything the service exports while handling registration,
  * sign-in, refresh, password reset and sign-out is inspected.
  */
-@TestPropertySource(properties = "aerotrace.identity.auth.password-reset-return-token=true")
 class TelemetryHasNoSecretsTest extends AbstractIntegrationTest {
 
   private static final StubCollector TRACES = new StubCollector("/v1/traces");

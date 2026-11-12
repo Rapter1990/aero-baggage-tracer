@@ -83,11 +83,6 @@ public class UserService {
     return found.map(mapper::toDomain);
   }
 
-  @Transactional(readOnly = true)
-  public long countWithRole(Role role) {
-    return users.countWithRole(role);
-  }
-
   /**
    * Checks a password for a sign-in. An unknown account, a disabled one and a password BCrypt would
    * silently cut short (so "right prefix plus junk" would pass) all fail, after the same amount of

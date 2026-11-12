@@ -1,7 +1,6 @@
 package com.aerotrace.identity.config;
 
 import com.aerotrace.identity.auth.AuthProperties;
-import com.aerotrace.identity.auth.BootstrapProperties;
 import com.aerotrace.identity.security.jwt.JwtProperties;
 import java.time.Clock;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,11 +11,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties({
-  AuthProperties.class,
-  BootstrapProperties.class,
-  JwtProperties.class
-})
+@EnableConfigurationProperties({AuthProperties.class, JwtProperties.class})
 class IdentityConfiguration {
 
   /** Passwords are stored as salted BCrypt hashes; the cost is raised over time, never lowered. */

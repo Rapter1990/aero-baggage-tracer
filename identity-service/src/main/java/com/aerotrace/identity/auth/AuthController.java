@@ -168,9 +168,8 @@ class AuthController {
   @Operation(
       summary = "Start a password reset",
       description =
-          "The answer is the same whether or not the account exists. The reset token is not "
-              + "returned unless the service is run with "
-              + "`aerotrace.identity.auth.password-reset-return-token=true` (development only).",
+          "Returns the reset token for an existing account; an unknown account gets only the "
+              + "message. Send the token to reset-password.",
       security = {})
   @ApiResponses({
     @io.swagger.v3.oas.annotations.responses.ApiResponse(

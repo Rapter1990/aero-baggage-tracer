@@ -8,7 +8,6 @@ import lombok.NoArgsConstructor;
 public final class AuthConstants {
 
   public static final String PROPERTY_PREFIX = "aerotrace.identity.auth";
-  public static final String BOOTSTRAP_PROPERTY_PREFIX = "aerotrace.identity.bootstrap-admin";
 
   public static final String DEFAULT_REFRESH_TOKEN_TTL = "7d";
   public static final String DEFAULT_PASSWORD_RESET_TTL = "15m";
@@ -20,6 +19,4 @@ public final class AuthConstants {
 
   public static final String STATUS_ACTIVE = "ACTIVE";
   public static final String STATUS_DISABLED = "DISABLED";
-
-  public static final String BOOTSTRAP_ADMIN_FULL_NAME = "Administrator";
 }

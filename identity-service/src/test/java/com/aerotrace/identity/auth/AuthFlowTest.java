@@ -2,28 +2,23 @@ package com.aerotrace.identity.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.aerotrace.common.security.Role;
 import com.aerotrace.identity.base.AbstractIntegrationTest;
 import com.aerotrace.identity.security.jwt.JwtTokenService;
+import com.aerotrace.identity.user.UserService;
 import io.jsonwebtoken.Claims;
 import java.net.http.HttpResponse;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.test.context.TestPropertySource;
 import tools.jackson.databind.JsonNode;
 
 /**
  * The whole authentication API over HTTP against a real database: register, login, refresh-token,
- * forgot-password, reset-password and logout, and the first administrator created at start-up.
+ * forgot-password, reset-password and logout and logout.
  */
-@TestPropertySource(
-    properties = {
-      "aerotrace.identity.auth.password-reset-return-token=true",
-      "aerotrace.identity.bootstrap-admin.username=Root-Admin",
-      "aerotrace.identity.bootstrap-admin.password=bootstrap-admin-password",
-      "aerotrace.identity.bootstrap-admin.email=root@example.com"
-    })
 class AuthFlowTest extends AbstractIntegrationTest {
 
   private static final String REGISTER = "/api/v1/auth/register";
@@ -35,13 +30,17 @@ class AuthFlowTest extends AbstractIntegrationTest {
 
   @Autowired private JwtTokenService tokens;
   @Autowired private JdbcClient jdbc;
+  @Autowired private UserService users;
 
   private HttpResponse<String> refresh(String refreshToken) {
     return postJson(REFRESH, body("refreshToken", refreshToken));
   }
 
   private String adminToken() {
-    return login("root-admin", "bootstrap-admin-password").get("accessToken").asString();
+    // Staff accounts cannot be registered without an admin, so the first one is made directly.
+    String name = "admin-" + unique();
+    users.create(name, name + "@example.com", "Administrator", PASSWORD, Set.of(Role.ADMIN));
+    return login(name, PASSWORD).get("accessToken").asString();
   }
 
   // ---- register ----
@@ -155,18 +154,6 @@ class AuthFlowTest extends AbstractIntegrationTest {
     // Staff carry no passenger reference.
     assertThat(tokens.parseClaims(staffTokens.get("accessToken").asString()).get("passengerRef"))
         .isNull();
-  }
-
-  @Test
-  void createsTheBootstrapAdministratorOnceAndTheyCanSignIn() {
-    JsonNode admin = login("ROOT@example.com", "bootstrap-admin-password");
-
-    assertThat(admin.get("roles")).extracting(JsonNode::asString).containsExactly("ADMIN");
-    assertThat(
-            jdbc.sql("select count(*) from identity.app_user where username = 'root-admin'")
-                .query(Integer.class)
-                .single())
-        .isEqualTo(1);
   }
 
   // ---- login ----

@@ -149,14 +149,6 @@ services:
       # with a bind mount or a secret.
       IDENTITY_JWT_PRIVATE_KEY_LOCATION: ${IDENTITY_JWT_PRIVATE_KEY_LOCATION:-}
       IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-}
-      # The first administrator, created at start-up if none exists (public registration only
-      # creates passengers). Leave the username empty to create nothing; the password needs at
-      # least 12 characters.
-      IDENTITY_BOOTSTRAP_ADMIN_USERNAME: ${IDENTITY_BOOTSTRAP_ADMIN_USERNAME:-}
-      IDENTITY_BOOTSTRAP_ADMIN_PASSWORD: ${IDENTITY_BOOTSTRAP_ADMIN_PASSWORD:-}
-      IDENTITY_BOOTSTRAP_ADMIN_EMAIL: ${IDENTITY_BOOTSTRAP_ADMIN_EMAIL:-}
-      # Development only: return the password reset token in the forgot-password response.
-      IDENTITY_PASSWORD_RESET_RETURN_TOKEN: ${IDENTITY_PASSWORD_RESET_RETURN_TOKEN:-false}
       DOCS_ENABLED: ${DOCS_ENABLED:-false}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}

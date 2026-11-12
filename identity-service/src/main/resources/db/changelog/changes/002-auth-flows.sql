@@ -2,7 +2,7 @@
 
 --changeset identity:002-user-profile
 -- Registration collects an email address and a full name. Both are optional in the table so users
--- created before registration existed (and the bootstrap admin) stay valid; the API requires them
+-- created before registration existed stay valid; the API requires them
 -- for self-registration. Emails are stored lower-case and are unique.
 ALTER TABLE identity.app_user ADD COLUMN email     varchar(150);
 ALTER TABLE identity.app_user ADD COLUMN full_name varchar(150);

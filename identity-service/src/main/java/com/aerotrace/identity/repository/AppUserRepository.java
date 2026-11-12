@@ -1,6 +1,5 @@
 package com.aerotrace.identity.repository;
 
-import com.aerotrace.common.security.Role;
 import com.aerotrace.identity.model.entity.AppUserEntity;
 import java.util.Optional;
 import java.util.UUID;
@@ -17,7 +16,4 @@ public interface AppUserRepository extends JpaRepository<AppUserEntity, UUID> {
 
   @Query("select u from AppUserEntity u left join fetch u.roles where u.email = :email")
   Optional<AppUserEntity> findByEmail(@Param("email") String email);
-
-  @Query("select count(u) from AppUserEntity u join u.roles r where r = :role")
-  long countWithRole(@Param("role") Role role);
 }

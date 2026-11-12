@@ -70,7 +70,7 @@ class AuthServiceTest extends AbstractBaseServiceTest {
 
   @BeforeEach
   void setUp() {
-    properties = new AuthProperties(Duration.ofDays(7), Duration.ofMinutes(15), false);
+    properties = new AuthProperties(Duration.ofDays(7), Duration.ofMinutes(15));
     service = newService(properties);
     UUID id = UUID.randomUUID();
     jane =
@@ -313,37 +313,23 @@ class AuthServiceTest extends AbstractBaseServiceTest {
   }
 
   @Test
-  void shouldStoreOnlyTheHashAndNotReturnTheTokenByDefault() {
+  void shouldReturnTheTokenAndStoreOnlyItsHash() {
     when(users.findByUsernameOrEmail("jane")).thenReturn(Optional.of(jane));
 
     ForgotPasswordResponse response = service.forgotPassword(new ForgotPasswordRequest("jane"));
 
-    assertThat(response.resetToken()).isNull();
-    assertThat(response.expiresAt()).isNull();
+    assertThat(response.resetToken()).hasSize(64);
+    assertThat(response.expiresAt()).isEqualTo(NOW.plus(Duration.ofMinutes(15)));
     ArgumentCaptor<PasswordResetTokenEntity> stored =
         ArgumentCaptor.forClass(PasswordResetTokenEntity.class);
     verify(resetTokens).invalidateAllForUser(jane.id(), NOW);
     verify(resetTokens).save(stored.capture());
-    assertThat(stored.getValue().getTokenHash()).hasSize(64);
+    assertThat(stored.getValue().getTokenHash())
+        .isEqualTo(TokenHashUtils.sha256(response.resetToken()))
+        .isNotEqualTo(response.resetToken());
     assertThat(stored.getValue().getExpiresAt()).isEqualTo(NOW.plus(Duration.ofMinutes(15)));
     verify(audit)
         .record(AuthEventType.PASSWORD_RESET_REQUESTED, AuthOutcome.SUCCESS, "jane", jane.id());
-  }
-
-  @Test
-  void shouldReturnTheTokenOnlyWhenTheDevelopmentSwitchIsOn() {
-    service = newService(new AuthProperties(Duration.ofDays(7), Duration.ofMinutes(15), true));
-    when(users.findByUsernameOrEmail("jane")).thenReturn(Optional.of(jane));
-
-    ForgotPasswordResponse response = service.forgotPassword(new ForgotPasswordRequest("jane"));
-
-    assertThat(response.resetToken()).isNotBlank();
-    assertThat(response.expiresAt()).isEqualTo(NOW.plus(Duration.ofMinutes(15)));
-    ArgumentCaptor<PasswordResetTokenEntity> stored =
-        ArgumentCaptor.forClass(PasswordResetTokenEntity.class);
-    verify(resetTokens).save(stored.capture());
-    assertThat(stored.getValue().getTokenHash())
-        .isEqualTo(TokenHashUtils.sha256(response.resetToken()));
   }
 
   @Test

@@ -213,13 +213,6 @@ class UserServiceTest extends AbstractBaseServiceTest {
   }
 
   @Test
-  void shouldPassOnTheAdministratorCount() {
-    when(repository.countWithRole(Role.ADMIN)).thenReturn(2L);
-
-    assertThat(service.countWithRole(Role.ADMIN)).isEqualTo(2L);
-  }
-
-  @Test
   void shouldStoreWhatItIsGiven() {
     ArgumentCaptor<AppUserEntity> captor = ArgumentCaptor.forClass(AppUserEntity.class);
 

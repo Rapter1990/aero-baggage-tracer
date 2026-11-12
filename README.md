@@ -57,8 +57,6 @@ In `docker-compose.yml` and `docker-compose-local.yml`, the services that need t
 | `DB_PASSWORD` (also `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`; defaults `localhost`, `5433`, `aerotrace`, `aerotrace`) | identity-service started outside Docker (inside Compose it takes the `POSTGRES_*` values) |
 | `IDENTITY_ISSUER` | identity-service, no default. Must equal the gateway's `JWT_ISSUER` |
 | `IDENTITY_JWT_PRIVATE_KEY_LOCATION`, `IDENTITY_JWT_PUBLIC_KEY_LOCATION` (or the PEM text itself in `IDENTITY_JWT_PRIVATE_KEY`, `IDENTITY_JWT_PUBLIC_KEY`) | identity-service: the RSA key pair (PEM; the private key in PKCS#8, `BEGIN PRIVATE KEY`) that signs and verifies the access tokens. A location is a Spring resource (`file:/run/secrets/private.pem`, `classpath:...`) or a file path; inline text wins over a location. Unset, the development pair in `identity-service/src/main/resources/keys` is used, **whose private key is in this repository** |
-| `IDENTITY_BOOTSTRAP_ADMIN_USERNAME`, `IDENTITY_BOOTSTRAP_ADMIN_PASSWORD`, `IDENTITY_BOOTSTRAP_ADMIN_EMAIL` | identity-service: the first administrator, created at start-up when a username is set and no administrator exists yet (password at least 12 characters, no default). Public registration only creates passengers, so this is how the first staff account appears. Leave the username empty to create nothing |
-| `IDENTITY_PASSWORD_RESET_RETURN_TOKEN` | identity-service, development only (default `false`): put the password reset token in the forgot-password response. There is no mail service yet; with this off the token is not returned to the caller at all |
 | `IDENTITY_REFRESH_TOKEN_TTL`, `IDENTITY_PASSWORD_RESET_TTL` | identity-service: lifetime of a refresh token (default `7d`) and of a password reset token (default `15m`) |
 | `DOCS_ENABLED` | api-gateway and identity-service: serve the OpenAPI definitions and Swagger UI (default `false`, because they map every endpoint without a token) |
 
@@ -66,13 +64,17 @@ In `docker-compose.yml` and `docker-compose-local.yml`, the services that need t
 
 `docker compose up -d` starts the stack. The gateway listens on `127.0.0.1:8080` only; put a reverse proxy with TLS in front of it to expose it further.
 
-Anyone can register a passenger. To get staff accounts, create the first administrator in `.env` (see the table above), and optionally switch on the API docs:
+Anyone can register a passenger. Staff accounts (`AGENT`, `DISPATCHER`, `ADMIN`) can only be created by an administrator through `POST /register` with an ADMIN access token, so the first administrator is made once by hand. Optionally switch on the API docs in `.env`:
 
 ```
-IDENTITY_BOOTSTRAP_ADMIN_USERNAME=admin
-IDENTITY_BOOTSTRAP_ADMIN_PASSWORD=choose-at-least-12-characters
-IDENTITY_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 DOCS_ENABLED=true
+```
+
+To create the first administrator, register a passenger, then give that user the role in the database:
+
+```sql
+INSERT INTO identity.user_role (user_id, role)
+SELECT id, 'ADMIN' FROM identity.app_user WHERE username = 'your-username';
 ```
 
 The authentication API (all under `http://localhost:8080/api/v1/auth`, answers wrapped as `{"success":true,"data":...,"timestamp":...}`):
@@ -104,7 +106,7 @@ Every service answers with the same two envelopes from `common-module`: `ApiResp
 ## Known limitations of the identity-service
 
 - No per-account lockout or backoff and no cap on concurrent password hashing; the gateway's per-address rate limit is the only brake today.
-- Reset tokens have no delivery channel yet (no mail service): in production nobody receives one until that exists. `IDENTITY_PASSWORD_RESET_RETURN_TOKEN` is for development, and while it is on the forgot-password answer reveals which accounts exist.
+- `forgot-password` returns the reset token in its response, because there is no mail service yet. Anyone who knows a username or email can therefore reset that account's password and take it over, and the answer reveals which accounts exist. Do not expose this service to untrusted callers until the token is delivered out of band.
 - Access tokens cannot be revoked (logout and password reset revoke refresh tokens only); a token stays valid until it expires (15 minutes plus a minute of clock skew).
 - The audit trail's immutability is enforced by database triggers, but the service connects as the schema owner and could drop them; use a restricted runtime role where that matters.
 - The signing key pair is one static pair read at start-up. There is no automatic rotation and no second key id: replacing the pair means restarting identity-service, and tokens signed with the old pair stop verifying (at most 15 minutes of tokens, plus the gateway's key cache of about a minute).
