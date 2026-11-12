@@ -126,6 +126,48 @@ services:
     networks:
       - aerotrace
 
+  identity-service:
+    image: ${REGISTRY:-ghcr.io/rapter1990}/aerotrace-identity-service:${TAG:-latest}
+    container_name: identity-service
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+    environment:
+      EUREKA_URL: http://${EUREKA_USER:-eureka}:${EUREKA_PASSWORD:-eureka}@discovery-server:8761/eureka/
+      EUREKA_INSTANCE_HOSTNAME: identity-service
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-aerotrace}
+      DB_USER: ${POSTGRES_USER:-aerotrace}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
+      # Must equal what the gateway expects (JWT_ISSUER above).
+      IDENTITY_ISSUER: ${COMPOSE_JWT_ISSUER:-http://identity-service:8081}
+      # Dev-only key that encrypts the signing keys in the database: generate your own with
+      # `openssl rand -base64 32` for anything but a throwaway stack.
+      IDENTITY_KEY_ENCRYPTION_KEY: ${IDENTITY_KEY_ENCRYPTION_KEY:-ZGV2LW9ubHktaWRlbnRpdHkta2V5LWVuY3J5cHQtMDE=}
+      # Dev-only test users: passenger, passenger2, agent, dispatcher, admin share this password.
+      IDENTITY_SEED_ENABLED: ${IDENTITY_SEED_ENABLED:-true}
+      IDENTITY_SEED_PASSWORD: ${IDENTITY_SEED_PASSWORD:-aerotrace-dev-password}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-1.0}
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    # No host port: clients reach it through the gateway (/api/v1/auth/**).
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 40s
+    networks:
+      - aerotrace
+
   api-gateway:
     image: ${REGISTRY:-ghcr.io/rapter1990}/aerotrace-api-gateway:${TAG:-latest}
     container_name: api-gateway
@@ -148,6 +190,8 @@ services:
       discovery-server:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      identity-service:
         condition: service_healthy
     ports:
       - "8080:8080"
