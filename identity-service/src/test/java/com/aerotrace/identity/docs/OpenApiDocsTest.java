@@ -24,8 +24,7 @@ import tools.jackson.databind.json.JsonMapper;
 class OpenApiDocsTest extends IdentityTestBase {
 
   private static final JsonMapper JSON = JsonMapper.builder().build();
-  private static final List<String> PROBLEM_FIELDS =
-      List.of("type", "title", "status", "detail", "errorCode");
+  private static final List<String> PROBLEM_FIELDS = List.of("code", "message", "status", "path");
 
   private JsonNode docs() {
     HttpResponse<String> response = get("/v3/api-docs");
@@ -44,7 +43,7 @@ class OpenApiDocsTest extends IdentityTestBase {
             .get("responses")
             .get(status)
             .get("content")
-            .get("application/problem+json")
+            .get("application/json")
             .get("examples");
     assertThat(examples).as(method + " " + path + " " + status + " examples").isNotNull();
     JsonNode value = examples.values().iterator().next().get("value");
@@ -118,10 +117,10 @@ class OpenApiDocsTest extends IdentityTestBase {
           {"/api/v1/auth/policy", "get"},
           {"/api/v1/auth/keys/rotate", "post"}
         }) {
-      assertThat(example(docs, secured[0], secured[1], "401").get("errorCode").asString())
+      assertThat(example(docs, secured[0], secured[1], "401").get("code").asString())
           .as(secured[0])
           .isEqualTo("UNAUTHENTICATED");
-      assertThat(example(docs, secured[0], secured[1], "403").get("errorCode").asString())
+      assertThat(example(docs, secured[0], secured[1], "403").get("code").asString())
           .as(secured[0])
           .isEqualTo("ACCESS_DENIED");
     }

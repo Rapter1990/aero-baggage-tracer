@@ -4,39 +4,33 @@ import org.springframework.http.HttpStatus;
 
 /** Stable, machine-readable error codes shared by all services. Never rename a released code. */
 public enum ErrorCode {
-  VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "Request validation failed"),
-  REQUEST_REJECTED(HttpStatus.BAD_REQUEST, "Request rejected"),
-  UNAUTHENTICATED(HttpStatus.UNAUTHORIZED, "Authentication required"),
-  ACCESS_DENIED(HttpStatus.FORBIDDEN, "Access denied"),
-  NOT_FOUND(HttpStatus.NOT_FOUND, "Resource not found"),
-  BAG_TAG_DUPLICATE(HttpStatus.CONFLICT, "Bag tag already registered"),
-  ILLEGAL_TRANSITION(HttpStatus.CONFLICT, "Illegal state transition"),
-  VERSION_CONFLICT(HttpStatus.CONFLICT, "Version conflict"),
-  DUPLICATE_RECOVERY_CASE(HttpStatus.CONFLICT, "Active recovery case already exists"),
-  CAPACITY_EXCEEDED(HttpStatus.CONFLICT, "Capacity exceeded"),
-  RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "Rate limit exceeded"),
-  INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Internal error");
+  VALIDATION_ERROR(HttpStatus.BAD_REQUEST),
+  REQUEST_REJECTED(HttpStatus.BAD_REQUEST),
+  UNAUTHENTICATED(HttpStatus.UNAUTHORIZED),
+  ACCESS_DENIED(HttpStatus.FORBIDDEN),
+  NOT_FOUND(HttpStatus.NOT_FOUND),
+  BAG_TAG_DUPLICATE(HttpStatus.CONFLICT),
+  ILLEGAL_TRANSITION(HttpStatus.CONFLICT),
+  VERSION_CONFLICT(HttpStatus.CONFLICT),
+  DUPLICATE_RECOVERY_CASE(HttpStatus.CONFLICT),
+  CAPACITY_EXCEEDED(HttpStatus.CONFLICT),
+  RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS),
+  INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR);
 
   private final HttpStatus httpStatus;
-  private final String title;
 
-  ErrorCode(HttpStatus httpStatus, String title) {
+  ErrorCode(HttpStatus httpStatus) {
     this.httpStatus = httpStatus;
-    this.title = title;
   }
 
   public HttpStatus httpStatus() {
     return httpStatus;
   }
 
-  public String title() {
-    return title;
-  }
-
   /** Best-effort mapping for framework-generated errors that carry only an HTTP status. */
   public static ErrorCode fromStatus(int status) {
     return switch (status) {
-      case 400 -> VALIDATION_FAILED;
+      case 400 -> VALIDATION_ERROR;
       case 401 -> UNAUTHENTICATED;
       case 403 -> ACCESS_DENIED;
       case 404 -> NOT_FOUND;

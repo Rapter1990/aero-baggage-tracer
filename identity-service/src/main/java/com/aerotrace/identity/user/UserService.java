@@ -89,6 +89,6 @@ public class UserService {
   }
 
   private static ApiException invalid(String detail) {
-    return new ApiException(ErrorCode.VALIDATION_FAILED, detail);
+    return new ApiException(ErrorCode.VALIDATION_ERROR, detail);
   }
 }

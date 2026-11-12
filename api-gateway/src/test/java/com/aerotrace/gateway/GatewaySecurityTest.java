@@ -32,10 +32,10 @@ class GatewaySecurityTest extends GatewayTestBase {
   private void assertProblem(HttpResponse<String> response, int status, String errorCode) {
     assertThat(response.statusCode()).isEqualTo(status);
     assertThat(response.headers().firstValue("Content-Type").orElse(""))
-        .startsWith("application/problem+json");
+        .startsWith("application/json");
     JsonNode body = json(response);
     assertThat(body.get("status").asInt()).isEqualTo(status);
-    assertThat(body.get("errorCode").asString()).isEqualTo(errorCode);
+    assertThat(body.get("code").asString()).isEqualTo(errorCode);
     assertThat(body.get("correlationId").asString())
         .isEqualTo(response.headers().firstValue("X-Correlation-Id").orElseThrow());
   }
@@ -46,7 +46,7 @@ class GatewaySecurityTest extends GatewayTestBase {
   }
 
   @Test
-  void missingTokenIs401ProblemDetail() {
+  void missingTokenIs401ApiError() {
     assertProblem(get("/api/v1/echo/ping", null), 401, "UNAUTHENTICATED");
   }
 
@@ -118,7 +118,7 @@ class GatewaySecurityTest extends GatewayTestBase {
 
   /** AT-16: a valid token without the required role is rejected with 403. */
   @Test
-  void wrongRoleIs403ProblemDetail() {
+  void wrongRoleIs403ApiError() {
     assertProblem(get("/api/v1/admin/x", token("PASSENGER")), 403, "ACCESS_DENIED");
   }
 

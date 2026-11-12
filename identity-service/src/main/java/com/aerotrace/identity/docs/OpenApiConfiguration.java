@@ -1,11 +1,14 @@
 package com.aerotrace.identity.docs;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.swagger.v3.core.util.Json;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.examples.Example;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.media.Content;
+import io.swagger.v3.oas.models.media.MapSchema;
 import io.swagger.v3.oas.models.media.MediaType;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.media.StringSchema;
@@ -24,21 +27,24 @@ import org.springframework.context.annotation.Configuration;
 class OpenApiConfiguration {
 
   static final String BEARER = "bearerAuth";
-  static final String PROBLEM_JSON = "application/problem+json";
 
   @Bean
   OpenAPI identityOpenApi() {
-    Schema<Object> problem =
+    Schema<Object> apiError =
         new Schema<>()
             .type("object")
-            .description("RFC 7807 problem details with a stable errorCode.")
-            .addProperty("type", new StringSchema().example("urn:aerotrace:problem:ACCESS_DENIED"))
-            .addProperty("title", new StringSchema().example("Access denied"))
+            .description("The error shape every service returns, with a stable code.")
+            .addProperty("code", new StringSchema().example("ACCESS_DENIED"))
+            .addProperty("message", new StringSchema().example("Insufficient permissions"))
             .addProperty("status", new Schema<Integer>().type("integer").example(403))
-            .addProperty("detail", new StringSchema().example("Insufficient permissions"))
-            .addProperty("errorCode", new StringSchema().example("ACCESS_DENIED"))
-            .addProperty("correlationId", new StringSchema())
-            .addProperty("timestamp", new StringSchema().format("date-time"));
+            .addProperty("path", new StringSchema().example("/api/v1/auth/keys/rotate"))
+            .addProperty(
+                "validationErrors",
+                new MapSchema()
+                    .additionalProperties(new StringSchema())
+                    .description("Field name to rule, for validation failures; otherwise empty."))
+            .addProperty("timestamp", new StringSchema().format("date-time"))
+            .addProperty("correlationId", new StringSchema().description("Absent when unknown."));
     return new OpenAPI()
         .info(
             new Info()
@@ -47,10 +53,12 @@ class OpenApiConfiguration {
                 .description(
                     "Issues signed JWT access tokens, publishes the keys to verify them and owns "
                         + "users and roles. Tokens are RS256 or ES256; verify them with the JWKS "
-                        + "at /.well-known/jwks.json (several key ids can be live at once)."))
+                        + "at /.well-known/jwks.json (several key ids can be live at once). "
+                        + "Successful responses are wrapped as {success, data, timestamp}, except "
+                        + "the JWKS, whose format is fixed by standard."))
         .components(
             new Components()
-                .addSchemas("Problem", problem)
+                .addSchemas("ApiError", apiError)
                 .addSecuritySchemes(
                     BEARER,
                     new SecurityScheme()
@@ -65,9 +73,8 @@ class OpenApiConfiguration {
     return openApi ->
         openApi
             .getPaths()
-            .values()
             .forEach(
-                path ->
+                (pathName, path) ->
                     path.readOperations()
                         .forEach(
                             operation -> {
@@ -79,32 +86,36 @@ class OpenApiConfiguration {
                                   .getResponses()
                                   .addApiResponse(
                                       "401",
-                                      problem(
+                                      error(
                                           "No token, or a token that is invalid, expired or "
                                               + "meant for another audience.",
-                                          ProblemExamples.UNAUTHENTICATED));
+                                          ApiExamples.UNAUTHENTICATED,
+                                          pathName));
                               operation
                                   .getResponses()
                                   .addApiResponse(
                                       "403",
-                                      problem(
+                                      error(
                                           "A valid token whose roles do not allow this call.",
-                                          ProblemExamples.ACCESS_DENIED));
+                                          ApiExamples.ACCESS_DENIED,
+                                          pathName));
                             }));
   }
 
-  private static ApiResponse problem(String description, String example) {
+  /** The shared example, with the path of the operation it is documented on. */
+  private static ApiResponse error(String description, String example, String pathName) {
     try {
+      JsonNode parsed = Json.mapper().readTree(example);
+      ((ObjectNode) parsed).put("path", pathName);
       return new ApiResponse()
           .description(description)
           .content(
               new Content()
                   .addMediaType(
-                      PROBLEM_JSON,
+                      "application/json",
                       new MediaType()
-                          .schema(new Schema<>().$ref("#/components/schemas/Problem"))
-                          .addExamples(
-                              "default", new Example().value(Json.mapper().readTree(example)))));
+                          .schema(new Schema<>().$ref("#/components/schemas/ApiError"))
+                          .addExamples("default", new Example().value(parsed))));
     } catch (java.io.IOException e) {
       throw new IllegalStateException("Invalid OpenAPI example", e);
     }

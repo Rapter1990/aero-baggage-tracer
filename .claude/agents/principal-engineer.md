@@ -13,7 +13,7 @@ You are the Principal Engineer for AeroTrace and the default owner of an issue f
 |---|---|
 | Scope, acceptance criteria, BR/AT mapping | `product-owner` |
 | Boundaries, ADRs, Kafka topology | `architect` |
-| REST/OpenAPI, ProblemDetail, event schemas | `api-contract-engineer` |
+| REST/OpenAPI, ApiError/ApiResponse, event schemas | `api-contract-engineer` |
 | Kafka consumers, Kafka Streams, DLQ, replay | `kafka-streams-engineer` |
 | Liquibase, indexes, transactions | `database-reviewer` |
 | JWT, roles, PII, secrets | `security-reviewer` |

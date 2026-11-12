@@ -34,7 +34,7 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
   }
 
   @Test
-  void exhaustedLimitReturns429ProblemDetail() {
+  void exhaustedLimitReturns429ApiError() {
     String token = tokenFor("limited-" + UUID.randomUUID());
 
     for (int i = 0; i < GatewayTestConfig.ALLOWED_PER_KEY; i++) {
@@ -44,10 +44,10 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
 
     assertThat(limited.statusCode()).isEqualTo(429);
     assertThat(limited.headers().firstValue("Content-Type").orElse(""))
-        .startsWith("application/problem+json");
+        .startsWith("application/json");
     JsonNode body = json(limited);
     assertThat(body.get("status").asInt()).isEqualTo(429);
-    assertThat(body.get("errorCode").asString()).isEqualTo("RATE_LIMITED");
+    assertThat(body.get("code").asString()).isEqualTo("RATE_LIMITED");
     assertThat(body.get("correlationId").asString())
         .isEqualTo(limited.headers().firstValue("X-Correlation-Id").orElseThrow());
     assertThat(limited.headers().firstValue("X-RateLimit-Remaining")).contains("0");

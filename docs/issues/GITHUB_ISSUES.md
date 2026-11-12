@@ -34,7 +34,7 @@ Define a roster of role-based Claude Code subagents and reusable skills so work 
 **Scope**
 - `.claude/agents/`: `product-owner`, `architect`, `principal-engineer` (delegation map), `api-contract-engineer`, `kafka-streams-engineer`, `database-reviewer`, `security-reviewer`, `code-reviewer`, `test-engineer`, `devops-engineer`, `manual-qa-tester`.
 - `.claude/skills/`: `analyze-case`, `architecture-review`, `implement-feature`, `run`, `verify-project`, `create-issues`, `create-pr`.
-- Each agent: single responsibility, minimal tool list, explicit model, project-specific rules (service-owned schemas, `ProblemDetail`, `*.v1` events, no JPA in `common-module`, no secrets).
+- Each agent: single responsibility, minimal tool list, explicit model, project-specific rules (service-owned schemas, `ApiError`/`ApiResponse`, `*.v1` events, no JPA in `common-module`, no secrets).
 - Reviewer agents are read-only; only implementers may edit files.
 - Short "Agents" section in the README with the roster and delegation map.
 
@@ -72,7 +72,7 @@ Turn the two PowerShell scripts under `docs/issues/` into project skills so issu
 Shared library with versioned contracts and security primitives. **Must not contain JPA entities.**
 
 **Scope**
-- RFC 7807 `ProblemDetail` error contract + shared `@RestControllerAdvice` base, stable error codes (e.g. `BAG_TAG_DUPLICATE`, `ILLEGAL_TRANSITION`, `CAPACITY_EXCEEDED`).
+- `ApiError` (error) and `ApiResponse` (success) envelopes + shared `@RestControllerAdvice` base, stable error codes (e.g. `BAG_TAG_DUPLICATE`, `ILLEGAL_TRANSITION`, `CAPACITY_EXCEEDED`).
 - Event envelope record: `eventId, eventType, schemaVersion, aggregateId, occurredAt, publishedAt, correlationId, payload` + JSON (de)serialization config.
 - Event payload DTOs / topic-name constants for all topics in §8 (`baggage.scan.received.v1`, …).
 - Shared security primitives: roles enum (`PASSENGER, AGENT, DISPATCHER, ADMIN`), JWT claim names, issuer/audience validator, `SecurityContext` helper.
@@ -138,8 +138,8 @@ Single external entry point under `/api/v1`, built on the **servlet stack** (Spr
 - Registers itself with the Eureka server (discovery-server, #5) as `API-GATEWAY` (instance id `api-gateway:<host>:<port>`, 10 s lease renewal) and fetches the registry to resolve `lb://` routes. `EUREKA_URL` / `EUREKA_INSTANCE_HOSTNAME` select the server and the advertised host per environment.
 - JWT verification with Spring Security's servlet resource server: the signature is verified with the identity-service **public key** (`java.security.PublicKey`, obtained from its JWKS so several active `kid`s work), plus `exp`, `iss`, `aud`; 401 for missing/invalid, 403 for forbidden.
 - Token forwarding to downstream services; Redis-backed rate limiting as a servlet filter (blocking Spring Data Redis, token bucket). Redis runs with a password (`REDIS_PASSWORD`, no default in the gateway) in both Compose files.
-- Generate/propagate `X-Correlation-Id`; pass `Idempotency-Key`. Reuse the servlet `CorrelationIdFilter` and `ProblemDetails` from `common-module`.
-- ProblemDetail-formatted gateway errors; OpenTelemetry tracing (W3C `traceparent` continued and propagated to downstream services) and Micrometer metrics, both exported over OTLP to an OpenTelemetry Collector: metrics are scraped by Prometheus (no admin token needed) and traces are stored in Tempo; Logs go to the same collector and on to Loki, each line tagged with its trace id; Grafana shows three provisioned dashboards: service metrics, traces (tables of requests, failures and calls with a service dropdown and links that open the full trace) and logs per service, with trace↔log links in both directions; a fourth dashboard shows JaCoCo test coverage per module (a script pushes the reports to a Pushgateway that Prometheus scrapes) (`observability/`, started by both Compose files). Downstream calls time out (2 s connect, 30 s read) instead of holding gateway threads.
+- Generate/propagate `X-Correlation-Id`; pass `Idempotency-Key`. Reuse the servlet `CorrelationIdFilter` and `ApiErrorWriter` from `common-module`.
+- ApiError-formatted gateway errors; OpenTelemetry tracing (W3C `traceparent` continued and propagated to downstream services) and Micrometer metrics, both exported over OTLP to an OpenTelemetry Collector: metrics are scraped by Prometheus (no admin token needed) and traces are stored in Tempo; Logs go to the same collector and on to Loki, each line tagged with its trace id; Grafana shows three provisioned dashboards: service metrics, traces (tables of requests, failures and calls with a service dropdown and links that open the full trace) and logs per service, with trace↔log links in both directions; a fourth dashboard shows JaCoCo test coverage per module (a script pushes the reports to a Pushgateway that Prometheus scrapes) (`observability/`, started by both Compose files). Downstream calls time out (2 s connect, 30 s read) instead of holding gateway threads.
 - Swagger UI (springdoc) at `/swagger-ui.html` with a "Select a definition" dropdown listing every service; each service's OpenAPI document is fetched through the gateway (`/service-docs/<service>` → the service's `/v3/api-docs`). Can be switched off with `DOCS_ENABLED=false`.
 
 **Acceptance criteria**
@@ -150,7 +150,7 @@ Single external entry point under `/api/v1`, built on the **servlet stack** (Spr
 - [x] A trace context is started or continued at the gateway and sent downstream; a slow downstream is cut off at the read timeout (both tested).
 - [x] Gateway metrics and span-derived request metrics reach Prometheus through the collector, and the Grafana dashboard queries them (verified with real containers).
 - [x] Gateway traces are stored in Tempo and can be found by TraceQL in Grafana, including a trace the caller started (verified with real containers).
-- [x] Rate-limit returns 429 with ProblemDetail (verified against a real Redis).
+- [x] Rate-limit returns 429 with an ApiError (verified against a real Redis).
 - [x] Redis requires a password: the rate limiter authenticates with it, and clients without or with a wrong password are refused (verified against a real Redis).
 - [x] Gateway token-forwarding integration test (real HTTP hop to a downstream stub).
 - [x] Servlet stack only: no WebFlux or Reactor Netty dependency in `api-gateway`; no `Mono`/`Flux` in its code.

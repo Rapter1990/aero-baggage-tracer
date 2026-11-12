@@ -2,9 +2,9 @@ package com.aerotrace.common.error;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.aerotrace.common.api.ApiError;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ProblemDetail;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -14,19 +14,24 @@ import org.springframework.web.context.request.ServletWebRequest;
 class SecurityAndFrameworkErrorsTest {
 
   private final BaseExceptionHandler handler = new BaseExceptionHandler();
+  private final MockHttpServletRequest request = new MockHttpServletRequest("DELETE", "/bags");
 
   @Test
   void accessDeniedIs403NotInternalError() {
-    var response = handler.handleAccessDenied(new AccessDeniedException("nope"));
+    var response = handler.handleAccessDenied(new AccessDeniedException("nope"), request);
+
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
-    assertThat(response.getBody().getProperties()).containsEntry("errorCode", "ACCESS_DENIED");
+    assertThat(response.getBody().code()).isEqualTo("ACCESS_DENIED");
+    assertThat(response.getBody().message()).doesNotContain("nope");
   }
 
   @Test
   void authenticationFailureIs401() {
-    var response = handler.handleAuthentication(new BadCredentialsException("bad"));
+    var response = handler.handleAuthentication(new BadCredentialsException("bad"), request);
+
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-    assertThat(response.getBody().getProperties()).containsEntry("errorCode", "UNAUTHENTICATED");
+    assertThat(response.getBody().code()).isEqualTo("UNAUTHENTICATED");
+    assertThat(response.getBody().message()).doesNotContain("bad");
   }
 
   @Test
@@ -38,16 +43,17 @@ class SecurityAndFrameworkErrorsTest {
   }
 
   @Test
-  void springMvcMethodNotAllowedKeepsStatusAndGetsErrorCode() throws Exception {
-    var request = new ServletWebRequest(new MockHttpServletRequest("DELETE", "/bags"));
+  void springMvcMethodNotAllowedKeepsStatusAndGetsErrorCodeAndPath() throws Exception {
     var ex = new HttpRequestMethodNotSupportedException("DELETE");
 
-    var response = handler.handleException(ex, request);
+    var response = handler.handleException(ex, new ServletWebRequest(request));
 
     assertThat(response).isNotNull();
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
-    ProblemDetail pd = (ProblemDetail) response.getBody();
-    assertThat(pd.getStatus()).isEqualTo(405);
-    assertThat(pd.getProperties()).containsEntry("errorCode", "REQUEST_REJECTED");
+    ApiError error = (ApiError) response.getBody();
+    assertThat(error.status()).isEqualTo(405);
+    assertThat(error.code()).isEqualTo("REQUEST_REJECTED");
+    assertThat(error.path()).isEqualTo("/bags");
+    assertThat(error.message()).isNotBlank();
   }
 }

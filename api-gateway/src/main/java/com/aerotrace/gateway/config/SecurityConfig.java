@@ -1,10 +1,10 @@
 package com.aerotrace.gateway.config;
 
+import com.aerotrace.common.error.ApiErrorWriter;
 import com.aerotrace.common.error.ErrorCode;
 import com.aerotrace.common.security.AeroTraceJwtValidators;
 import com.aerotrace.common.security.JwtClaims;
 import com.aerotrace.common.security.Role;
-import com.aerotrace.gateway.problem.ProblemResponseWriter;
 import com.aerotrace.gateway.ratelimit.RateLimitFilter;
 import com.aerotrace.gateway.ratelimit.RateLimiter;
 import java.time.Duration;
@@ -64,17 +64,17 @@ class SecurityConfig {
       HttpSecurity http,
       JwtDecoder jwtDecoder,
       GatewayProperties properties,
-      ProblemResponseWriter problems,
+      ApiErrorWriter errors,
       RateLimiter rateLimiter)
       throws Exception {
     AuthenticationEntryPoint unauthorized =
         (request, response, ex) -> {
           response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
-          problems.write(response, ErrorCode.UNAUTHENTICATED, "Authentication required");
+          errors.write(request, response, ErrorCode.UNAUTHENTICATED, "Authentication required");
         };
     AccessDeniedHandler forbidden =
         (request, response, ex) ->
-            problems.write(response, ErrorCode.ACCESS_DENIED, "Insufficient permissions");
+            errors.write(request, response, ErrorCode.ACCESS_DENIED, "Insufficient permissions");
 
     http.csrf(AbstractHttpConfigurer::disable)
         .httpBasic(AbstractHttpConfigurer::disable)
@@ -114,7 +114,7 @@ class SecurityConfig {
                         jwt ->
                             jwt.decoder(jwtDecoder).jwtAuthenticationConverter(rolesConverter())))
         .addFilterAfter(
-            new RateLimitFilter(rateLimiter, problems), BearerTokenAuthenticationFilter.class);
+            new RateLimitFilter(rateLimiter, errors), BearerTokenAuthenticationFilter.class);
     return http.build();
   }
 

@@ -11,7 +11,7 @@ Role-based Claude Code subagents live in [.claude/agents](.claude/agents); reusa
 | `principal-engineer` | Orchestrates an issue end to end, delegates to specialists | yes |
 | `product-owner` | Scope, acceptance criteria, BR/AT mapping | no |
 | `architect` | Boundaries, ADRs, Kafka topology | docs only |
-| `api-contract-engineer` | REST, ProblemDetail, event envelopes | contracts |
+| `api-contract-engineer` | REST, ApiError and ApiResponse, event envelopes | contracts |
 | `kafka-streams-engineer` | Consumers, Streams topologies, DLQ, replay | yes |
 | `database-reviewer` | Liquibase, indexes, transactions | no |
 | `security-reviewer` | JWT, roles, PII, secrets | no |

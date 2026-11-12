@@ -199,11 +199,11 @@ class AuthorizationMatrixTest extends IdentityTestBase {
         send(endpoint.method(), endpoint.path(), endpoint.body(), tokenFor(caller));
 
     var problem = JSON.readTree(response.body());
-    assertThat(problem.get("errorCode").asString())
+    assertThat(problem.get("code").asString())
         .isEqualTo(expected == 401 ? "UNAUTHENTICATED" : "ACCESS_DENIED");
     assertThat(problem.get("status").asInt()).isEqualTo(expected);
     assertThat(response.headers().firstValue("Content-Type").orElse(""))
-        .contains("application/problem+json");
+        .contains("application/json");
     // No hint about why a token was refused (expired? wrong audience? bad signature?).
     assertThat(response.body())
         .doesNotContainIgnoringCase("expired")

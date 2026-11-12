@@ -207,7 +207,7 @@ abstract class AbstractTokenEndpointTest extends IdentityTestBase {
 
     assertThat(response.statusCode()).isEqualTo(401);
     JsonNode problem = JSON.readTree(response.body());
-    assertThat(problem.get("errorCode").asString()).isEqualTo("UNAUTHENTICATED");
+    assertThat(problem.get("code").asString()).isEqualTo("UNAUTHENTICATED");
     assertThat(problem.get("status").asInt()).isEqualTo(401);
     assertThat(response.body()).doesNotContain("access_token");
   }
@@ -218,10 +218,10 @@ abstract class AbstractTokenEndpointTest extends IdentityTestBase {
     HttpResponse<String> unknownUser = login("nobody-here", "not-the-right-password");
 
     assertThat(unknownUser.statusCode()).isEqualTo(wrongPassword.statusCode());
-    assertThat(JSON.readTree(unknownUser.body()).get("detail"))
-        .isEqualTo(JSON.readTree(wrongPassword.body()).get("detail"));
-    assertThat(JSON.readTree(unknownUser.body()).get("errorCode"))
-        .isEqualTo(JSON.readTree(wrongPassword.body()).get("errorCode"));
+    assertThat(JSON.readTree(unknownUser.body()).get("message"))
+        .isEqualTo(JSON.readTree(wrongPassword.body()).get("message"));
+    assertThat(JSON.readTree(unknownUser.body()).get("code"))
+        .isEqualTo(JSON.readTree(wrongPassword.body()).get("code"));
   }
 
   @Test
@@ -251,8 +251,8 @@ abstract class AbstractTokenEndpointTest extends IdentityTestBase {
       assertThat(response.statusCode())
           .as(body.substring(0, Math.min(40, body.length())))
           .isEqualTo(400);
-      assertThat(JSON.readTree(response.body()).get("errorCode").asString())
-          .isEqualTo("VALIDATION_FAILED");
+      assertThat(JSON.readTree(response.body()).get("code").asString())
+          .isEqualTo("VALIDATION_ERROR");
     }
   }
 

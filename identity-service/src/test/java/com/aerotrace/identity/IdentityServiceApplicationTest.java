@@ -40,7 +40,7 @@ class IdentityServiceApplicationTest extends IdentityTestBase {
     assertThat(response.statusCode()).isEqualTo(401);
     // The shared RFC 7807 contract, with nothing that reveals internals.
     assertThat(response.body())
-        .contains("\"errorCode\":\"UNAUTHENTICATED\"")
+        .contains("\"code\":\"UNAUTHENTICATED\"")
         .doesNotContain("stackTrace")
         .doesNotContain("Exception")
         .doesNotContain("\tat ");

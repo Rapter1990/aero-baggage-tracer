@@ -1,5 +1,6 @@
 package com.aerotrace.identity.security;
 
+import com.aerotrace.common.error.ApiErrorWriter;
 import com.aerotrace.common.error.ErrorCode;
 import com.aerotrace.common.security.AeroTraceJwtValidators;
 import com.aerotrace.common.security.JwtClaims;
@@ -81,17 +82,17 @@ class SecurityConfig {
   SecurityFilterChain securityFilterChain(
       HttpSecurity http,
       JwtDecoder jwtDecoder,
-      ProblemWriter problems,
+      ApiErrorWriter errors,
       @Value("${aerotrace.identity.docs.enabled:true}") boolean docsEnabled)
       throws Exception {
     AuthenticationEntryPoint unauthorized =
         (request, response, ex) -> {
           response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
-          problems.write(response, ErrorCode.UNAUTHENTICATED, "Authentication required");
+          errors.write(request, response, ErrorCode.UNAUTHENTICATED, "Authentication required");
         };
     AccessDeniedHandler forbidden =
         (request, response, ex) ->
-            problems.write(response, ErrorCode.ACCESS_DENIED, "Insufficient permissions");
+            errors.write(request, response, ErrorCode.ACCESS_DENIED, "Insufficient permissions");
 
     DefaultBearerTokenResolver bearer = new DefaultBearerTokenResolver();
     BearerTokenResolver resolver = request -> isPublic(request) ? null : bearer.resolve(request);

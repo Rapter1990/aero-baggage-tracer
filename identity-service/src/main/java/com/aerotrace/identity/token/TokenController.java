@@ -2,7 +2,7 @@ package com.aerotrace.identity.token;
 
 import com.aerotrace.common.error.ApiException;
 import com.aerotrace.common.error.ErrorCode;
-import com.aerotrace.identity.docs.ProblemExamples;
+import com.aerotrace.identity.docs.ApiExamples;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
@@ -50,29 +50,29 @@ class TokenController {
             @Content(
                 mediaType = "application/json",
                 schema = @Schema(implementation = TokenResponse.class),
-                examples = @ExampleObject(name = "issued", value = ProblemExamples.TOKEN_ISSUED))),
+                examples = @ExampleObject(name = "issued", value = ApiExamples.TOKEN_ISSUED))),
     @ApiResponse(
         responseCode = "400",
         description = "username or password is missing, blank or too long.",
         content =
             @Content(
-                mediaType = "application/problem+json",
-                schema = @Schema(ref = "#/components/schemas/Problem"),
+                mediaType = "application/json",
+                schema = @Schema(ref = "#/components/schemas/ApiError"),
                 examples =
                     @ExampleObject(
                         name = "validation",
-                        value = ProblemExamples.TOKEN_VALIDATION_FAILED))),
+                        value = ApiExamples.TOKEN_VALIDATION_ERROR))),
     @ApiResponse(
         responseCode = "401",
         description = "The credentials were not accepted.",
         content =
             @Content(
-                mediaType = "application/problem+json",
-                schema = @Schema(ref = "#/components/schemas/Problem"),
+                mediaType = "application/json",
+                schema = @Schema(ref = "#/components/schemas/ApiError"),
                 examples =
                     @ExampleObject(
                         name = "invalid-credentials",
-                        value = ProblemExamples.TOKEN_INVALID_CREDENTIALS)))
+                        value = ApiExamples.TOKEN_INVALID_CREDENTIALS)))
   })
   @PostMapping(
       value = "/token",
@@ -80,10 +80,10 @@ class TokenController {
       produces = MediaType.APPLICATION_JSON_VALUE)
   ResponseEntity<TokenResponse> token(@RequestBody TokenRequest request) {
     if (blank(request.username()) || blank(request.password())) {
-      throw new ApiException(ErrorCode.VALIDATION_FAILED, "username and password are required");
+      throw new ApiException(ErrorCode.VALIDATION_ERROR, "username and password are required");
     }
     if (request.username().length() > MAX_LENGTH || request.password().length() > MAX_LENGTH) {
-      throw new ApiException(ErrorCode.VALIDATION_FAILED, "username or password is too long");
+      throw new ApiException(ErrorCode.VALIDATION_ERROR, "username or password is too long");
     }
     return ResponseEntity.ok()
         .cacheControl(CacheControl.noStore())

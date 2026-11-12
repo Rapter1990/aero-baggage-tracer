@@ -1,7 +1,7 @@
 package com.aerotrace.gateway.ratelimit;
 
+import com.aerotrace.common.error.ApiErrorWriter;
 import com.aerotrace.common.error.ErrorCode;
-import com.aerotrace.gateway.problem.ProblemResponseWriter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -13,18 +13,18 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Applies the rate limiter to API calls and answers 429 as a ProblemDetail. Callers are keyed by
- * token subject, or by remote address when there is no authenticated token (e.g. token requests).
- * Not a Spring bean: the security chain adds it right after bearer-token authentication.
+ * Applies the rate limiter to API calls and answers 429 as an ApiError. Callers are keyed by token
+ * subject, or by remote address when there is no authenticated token (e.g. token requests). Not a
+ * Spring bean: the security chain adds it right after bearer-token authentication.
  */
 public class RateLimitFilter extends OncePerRequestFilter {
 
   private final RateLimiter limiter;
-  private final ProblemResponseWriter problems;
+  private final ApiErrorWriter errors;
 
-  public RateLimitFilter(RateLimiter limiter, ProblemResponseWriter problems) {
+  public RateLimitFilter(RateLimiter limiter, ApiErrorWriter errors) {
     this.limiter = limiter;
-    this.problems = problems;
+    this.errors = errors;
   }
 
   @Override
@@ -45,7 +45,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
       return;
     }
     response.setHeader("Retry-After", "1");
-    problems.write(response, ErrorCode.RATE_LIMITED, "Too many requests, retry later");
+    errors.write(request, response, ErrorCode.RATE_LIMITED, "Too many requests, retry later");
   }
 
   private static String callerKey(HttpServletRequest request) {

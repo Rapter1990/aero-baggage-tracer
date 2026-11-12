@@ -1,6 +1,6 @@
 package com.aerotrace.identity.keys;
 
-import com.aerotrace.identity.docs.ProblemExamples;
+import com.aerotrace.identity.docs.ApiExamples;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
@@ -34,7 +34,7 @@ class JwksController {
       content =
           @Content(
               mediaType = "application/json",
-              examples = @ExampleObject(name = "jwks", value = ProblemExamples.JWKS)))
+              examples = @ExampleObject(name = "jwks", value = ApiExamples.JWKS)))
   @GetMapping(value = "/.well-known/jwks.json", produces = MediaType.APPLICATION_JSON_VALUE)
   ResponseEntity<String> jwks() {
     return ResponseEntity.ok()

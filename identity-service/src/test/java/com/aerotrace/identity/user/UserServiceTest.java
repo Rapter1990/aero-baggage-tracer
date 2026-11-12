@@ -77,7 +77,7 @@ class UserServiceTest extends IdentityTestBase {
     assertThatThrownBy(() -> users.register(name(), PASSWORD, Set.of(Role.PASSENGER), null))
         .isInstanceOf(ApiException.class)
         .extracting(e -> ((ApiException) e).errorCode())
-        .isEqualTo(ErrorCode.VALIDATION_FAILED);
+        .isEqualTo(ErrorCode.VALIDATION_ERROR);
   }
 
   @Test

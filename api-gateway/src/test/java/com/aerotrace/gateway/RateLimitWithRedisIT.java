@@ -22,7 +22,7 @@ import tools.jackson.databind.JsonNode;
 
 /**
  * The whole gateway with its real Redis-backed rate limiter (no in-memory stand-in): a client is
- * cut off with a ProblemDetail 429 once its bucket in a real, password-protected Redis is empty.
+ * cut off with a ApiError 429 once its bucket in a real, password-protected Redis is empty.
  */
 @SpringBootTest(
     webEnvironment = WebEnvironment.RANDOM_PORT,
@@ -77,9 +77,9 @@ class RateLimitWithRedisIT extends AbstractTestContainerConfiguration {
 
     assertThat(limited.statusCode()).isEqualTo(429);
     assertThat(limited.headers().firstValue("Content-Type").orElse(""))
-        .startsWith("application/problem+json");
+        .startsWith("application/json");
     JsonNode body = GatewayClient.json(limited);
-    assertThat(body.get("errorCode").asString()).isEqualTo("RATE_LIMITED");
+    assertThat(body.get("code").asString()).isEqualTo("RATE_LIMITED");
     assertThat(body.get("status").asInt()).isEqualTo(429);
     assertThat(limited.headers().firstValue("Retry-After")).isPresent();
     assertThat(limited.headers().firstValue("X-RateLimit-Remaining")).contains("0");
