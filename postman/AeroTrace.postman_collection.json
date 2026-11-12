@@ -69,18 +69,18 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('200 OK', () => pm.response.to.have.status(200));",
-                  "const data = pm.response.json().data;",
+                  "const result = pm.response.json().data;",
                   "pm.test('an access token and a refresh token', () => {",
-                  "  pm.expect(data.tokenType).to.eql('Bearer');",
-                  "  pm.expect(data.accessToken.split('.')).to.have.lengthOf(3);",
-                  "  pm.expect(data.refreshToken).to.be.a('string').and.to.have.lengthOf(64);",
-                  "  pm.expect(data.roles).to.eql(['PASSENGER']);",
+                  "  pm.expect(result.tokenType).to.eql('Bearer');",
+                  "  pm.expect(result.accessToken.split('.')).to.have.lengthOf(3);",
+                  "  pm.expect(result.refreshToken).to.be.a('string').and.to.have.lengthOf(64);",
+                  "  pm.expect(result.roles).to.eql(['PASSENGER']);",
                   "});",
                   "pm.test('the access token expires before the refresh token', () => {",
-                  "  pm.expect(new Date(data.accessTokenExpiresAt) < new Date(data.refreshTokenExpiresAt)).to.eql(true);",
+                  "  pm.expect(new Date(result.accessTokenExpiresAt) < new Date(result.refreshTokenExpiresAt)).to.eql(true);",
                   "});",
-                  "pm.environment.set('accessToken', data.accessToken);",
-                  "pm.environment.set('refreshToken', data.refreshToken);"
+                  "pm.environment.set('accessToken', result.accessToken);",
+                  "pm.environment.set('refreshToken', result.refreshToken);"
                 ]
               }
             }
@@ -137,13 +137,13 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('200 OK', () => pm.response.to.have.status(200));",
-                  "const data = pm.response.json().data;",
+                  "const result = pm.response.json().data;",
                   "pm.test('a new pair: the refresh token was rotated', () => {",
-                  "  pm.expect(data.refreshToken).to.not.eql(pm.environment.get('usedRefreshToken'));",
-                  "  pm.expect(data.accessToken.split('.')).to.have.lengthOf(3);",
+                  "  pm.expect(result.refreshToken).to.not.eql(pm.environment.get('usedRefreshToken'));",
+                  "  pm.expect(result.accessToken.split('.')).to.have.lengthOf(3);",
                   "});",
-                  "pm.environment.set('accessToken', data.accessToken);",
-                  "pm.environment.set('refreshToken', data.refreshToken);"
+                  "pm.environment.set('accessToken', result.accessToken);",
+                  "pm.environment.set('refreshToken', result.refreshToken);"
                 ]
               }
             }
@@ -190,13 +190,13 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('200 OK', () => pm.response.to.have.status(200));",
-                  "const data = pm.response.json().data;",
+                  "const result = pm.response.json().data;",
                   "pm.test('the reset token is returned (there is no mail service yet)', () => {",
-                  "  pm.expect(data.message).to.eql('If the account exists, a password reset has been started.');",
-                  "  pm.expect(data.resetToken).to.be.a('string').and.to.have.lengthOf(64);",
-                  "  pm.expect(data.expiresAt).to.be.a('string');",
+                  "  pm.expect(result.message).to.eql('If the account exists, a password reset has been started.');",
+                  "  pm.expect(result.resetToken).to.be.a('string').and.to.have.lengthOf(64);",
+                  "  pm.expect(result.expiresAt).to.be.a('string');",
                   "});",
-                  "pm.environment.set('resetToken', data.resetToken);"
+                  "pm.environment.set('resetToken', result.resetToken);"
                 ]
               }
             }
@@ -261,9 +261,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('200 OK', () => pm.response.to.have.status(200));",
-                  "const data = pm.response.json().data;",
-                  "pm.environment.set('accessToken', data.accessToken);",
-                  "pm.environment.set('refreshToken', data.refreshToken);"
+                  "const result = pm.response.json().data;",
+                  "pm.environment.set('accessToken', result.accessToken);",
+                  "pm.environment.set('refreshToken', result.refreshToken);"
                 ]
               }
             }
@@ -542,9 +542,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('200 OK', () => pm.response.to.have.status(200));",
-                  "const data = pm.response.json().data;",
-                  "pm.test('the roles include ADMIN', () => pm.expect(data.roles).to.include('ADMIN'));",
-                  "pm.environment.set('adminAccessToken', data.accessToken);"
+                  "const result = pm.response.json().data;",
+                  "pm.test('the roles include ADMIN', () => pm.expect(result.roles).to.include('ADMIN'));",
+                  "pm.environment.set('adminAccessToken', result.accessToken);"
                 ]
               }
             }
