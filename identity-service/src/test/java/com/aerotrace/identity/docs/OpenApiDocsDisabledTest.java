@@ -2,13 +2,13 @@ package com.aerotrace.identity.docs;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.aerotrace.identity.support.IdentityTestBase;
+import com.aerotrace.identity.base.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.context.TestPropertySource;
 
 /** Outside development the definition is switched off, as on the gateway. */
 @TestPropertySource(properties = "aerotrace.identity.docs.enabled=false")
-class OpenApiDocsDisabledTest extends IdentityTestBase {
+class OpenApiDocsDisabledTest extends AbstractIntegrationTest {
 
   @Test
   void theDefinitionIsNotServed() {

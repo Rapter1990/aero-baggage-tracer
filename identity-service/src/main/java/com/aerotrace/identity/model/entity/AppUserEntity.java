@@ -42,6 +42,12 @@ public class AppUserEntity implements Persistable<UUID> {
   @Column(nullable = false, unique = true, length = 64)
   private String username;
 
+  @Column(unique = true, length = 150)
+  private String email;
+
+  @Column(name = "full_name", length = 150)
+  private String fullName;
+
   @Column(name = "password_hash", nullable = false, length = 100)
   private String passwordHash;
 
@@ -68,12 +74,25 @@ public class AppUserEntity implements Persistable<UUID> {
   private boolean isNew = true;
 
   public AppUserEntity(
-      UUID id, String username, String passwordHash, String passengerRef, Set<Role> roles) {
+      UUID id,
+      String username,
+      String email,
+      String fullName,
+      String passwordHash,
+      String passengerRef,
+      Set<Role> roles) {
     this.id = id;
     this.username = username;
+    this.email = email;
+    this.fullName = fullName;
     this.passwordHash = passwordHash;
     this.passengerRef = passengerRef;
     this.roles = new HashSet<>(roles);
+  }
+
+  /** Replaces the password with the hash of a new one. */
+  public void changePassword(String newPasswordHash) {
+    this.passwordHash = newPasswordHash;
   }
 
   @PrePersist

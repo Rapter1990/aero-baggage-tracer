@@ -8,9 +8,12 @@ import lombok.NoArgsConstructor;
 public final class ApiPaths {
 
   public static final String AUTH_BASE = "/api/v1/auth";
-  public static final String TOKEN = AUTH_BASE + "/token";
-  public static final String ME = AUTH_BASE + "/me";
-  public static final String POLICY = AUTH_BASE + "/policy";
+  public static final String REGISTER = AUTH_BASE + "/register";
+  public static final String LOGIN = AUTH_BASE + "/login";
+  public static final String REFRESH_TOKEN = AUTH_BASE + "/refresh-token";
+  public static final String FORGOT_PASSWORD = AUTH_BASE + "/forgot-password";
+  public static final String RESET_PASSWORD = AUTH_BASE + "/reset-password";
+  public static final String LOGOUT = AUTH_BASE + "/logout";
 
   /** Fixed by the JWK Set standard's discovery convention; the gateway is configured with it. */
   public static final String JWKS = "/.well-known/jwks.json";
@@ -22,4 +25,12 @@ public final class ApiPaths {
   public static final String HEALTH = "/actuator/health";
   public static final String HEALTH_ALL = "/actuator/health/**";
   public static final String INFO = "/actuator/info";
+
+  /**
+   * Calls made without an access token: nobody has one yet, or they are proving who they are by
+   * other means (a password, a refresh token, a reset token).
+   */
+  public static final String[] PUBLIC_AUTH_CALLS = {
+    LOGIN, REFRESH_TOKEN, FORGOT_PASSWORD, RESET_PASSWORD, LOGOUT
+  };
 }

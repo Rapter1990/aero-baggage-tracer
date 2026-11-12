@@ -7,8 +7,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class DocsConstants {
 
-  public static final String TAG_TOKENS = "Tokens";
-  public static final String TAG_ACCOUNT = "Account";
+  public static final String TAG_AUTHENTICATION = "Authentication";
   public static final String TAG_SIGNING_KEYS = "Signing keys";
 
   public static final String BEARER_AUTH = "bearerAuth";

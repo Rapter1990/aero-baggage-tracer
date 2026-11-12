@@ -48,7 +48,12 @@ public class BaseExceptionHandler extends ResponseEntityExceptionHandler {
   @ExceptionHandler(ApiException.class)
   public ResponseEntity<ApiError> handleApiException(ApiException ex, HttpServletRequest request) {
     ApiError error = ApiError.of(ex.errorCode(), ex.getMessage(), request.getRequestURI());
-    return ResponseEntity.status(ex.errorCode().httpStatus()).body(error);
+    ResponseEntity.BodyBuilder response = ResponseEntity.status(ex.errorCode().httpStatus());
+    if (ex.errorCode() == ErrorCode.UNAUTHENTICATED) {
+      // A 401 names the scheme that would be accepted, as the security filters' 401 does.
+      response.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
+    }
+    return response.body(error);
   }
 
   /**

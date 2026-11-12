@@ -2,13 +2,13 @@ package com.aerotrace.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.aerotrace.identity.support.IdentityTestBase;
+import com.aerotrace.identity.base.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 
 /** The production defaults for sending traces, metrics and logs to the collector. */
-class OtlpMetricsConfigTest extends IdentityTestBase {
+class OtlpMetricsConfigTest extends AbstractIntegrationTest {
 
   @Autowired private Environment environment;
 

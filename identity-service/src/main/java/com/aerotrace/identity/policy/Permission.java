@@ -8,13 +8,15 @@ import lombok.Getter;
 import lombok.experimental.Accessors;
 
 /**
- * What can be done on the platform and by which roles. This is the one place the answer lives:
- * services enforce it on their own endpoints and identity-service publishes it. Adding a permission
- * here, with its roles, is how a new rule is introduced.
+ * What can be done on the platform and by which roles. This is the one place the answer lives.
+ * Adding a permission here, with its roles, is how a new rule is introduced.
  */
 @Getter
 @Accessors(fluent = true)
 public enum Permission {
+  /** Creating accounts with a staff role (anyone may register as a passenger). */
+  USER_MANAGE("Create accounts with a staff role", Role.ADMIN),
+
   /** Recovery cases move OPEN, ASSESSING, RESERVED, IN_TRANSIT, RESOLVED (backlog #11). */
   CASE_TRANSITION("Move a recovery case to its next state", Role.AGENT, Role.DISPATCHER),
 

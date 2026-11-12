@@ -2,7 +2,7 @@ package com.aerotrace.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.aerotrace.identity.support.IdentityTestBase;
+import com.aerotrace.identity.base.AbstractIntegrationTest;
 import com.aerotrace.identity.support.StubCollector;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
@@ -15,7 +15,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 /** Log lines reach the collector (and Loki), tagged with the trace they were written in. */
-class OtlpLogsExportTest extends IdentityTestBase {
+class OtlpLogsExportTest extends AbstractIntegrationTest {
 
   private static final StubCollector COLLECTOR = new StubCollector("/v1/logs");
 

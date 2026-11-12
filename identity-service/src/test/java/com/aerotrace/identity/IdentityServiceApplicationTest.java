@@ -2,14 +2,14 @@ package com.aerotrace.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.aerotrace.identity.support.IdentityTestBase;
+import com.aerotrace.identity.base.AbstractIntegrationTest;
 import java.net.http.HttpResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 
 /** The service starts, reports itself healthy and is identifiable to Eureka and the collector. */
-class IdentityServiceApplicationTest extends IdentityTestBase {
+class IdentityServiceApplicationTest extends AbstractIntegrationTest {
 
   @Autowired private Environment environment;
 

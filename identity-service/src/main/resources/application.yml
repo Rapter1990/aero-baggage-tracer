@@ -64,11 +64,20 @@ aerotrace:
       private-key-location: ${IDENTITY_JWT_PRIVATE_KEY_LOCATION:}
       public-key: ${IDENTITY_JWT_PUBLIC_KEY:}
       public-key-location: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:}
-    seed:
-      # Test users (agent, dispatcher, admin, two passengers). Development only; never in production.
-      enabled: ${IDENTITY_SEED_ENABLED:false}
-      # No default: seeding refuses to run without a password of at least 12 characters.
-      password: ${IDENTITY_SEED_PASSWORD:}
+    auth:
+      # How long a refresh token can be exchanged, and how long a password reset token can be used.
+      refresh-token-ttl: ${IDENTITY_REFRESH_TOKEN_TTL:7d}
+      password-reset-ttl: ${IDENTITY_PASSWORD_RESET_TTL:15m}
+      # Development only: put the reset token in the forgot-password response. There is no mail
+      # service yet; with this off the token is not returned to the caller at all.
+      password-reset-return-token: ${IDENTITY_PASSWORD_RESET_RETURN_TOKEN:false}
+    bootstrap-admin:
+      # The first administrator, created at start-up when set and when no administrator exists.
+      # Public registration only creates passengers, so this is how the first staff account
+      # appears. Leave the username empty to create nothing.
+      username: ${IDENTITY_BOOTSTRAP_ADMIN_USERNAME:}
+      password: ${IDENTITY_BOOTSTRAP_ADMIN_PASSWORD:}
+      email: ${IDENTITY_BOOTSTRAP_ADMIN_EMAIL:}
 
 eureka:
   instance:

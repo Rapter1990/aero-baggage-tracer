@@ -14,79 +14,154 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Owns users and roles: registration rules, password hashing and lookups. */
+/**
+ * Creating and finding users, and checking passwords. Usernames and emails are stored in lower
+ * case, so lookups do not depend on how someone typed them.
+ */
 @Service
 @RequiredArgsConstructor
 public class UserService {
-
-  private static final Pattern USERNAME = Pattern.compile(UserRules.USERNAME_PATTERN);
 
   private final AppUserRepository users;
   private final PasswordEncoder encoder;
   private final IdentityMapper mapper;
 
+  /** Checked against when no account matches, so that case costs a real hash comparison. */
+  private volatile String timingEqualizerHash;
+
   /**
-   * Registers a user. A PASSENGER must carry a pseudonymous passenger reference; any other role
-   * must not. Rule violations are reported with generic messages that never echo the input.
+   * Creates an account. Passengers get a generated passenger reference, staff get none.
+   *
+   * @throws ApiException {@code USER_ALREADY_EXISTS} when the username or email is taken, or {@code
+   *     VALIDATION_ERROR} when the password is longer than BCrypt can use or no role is given
    */
   @Transactional
-  public AppUser register(
-      String username, String rawPassword, Set<Role> roles, String passengerRef) {
-    String name = username == null ? "" : username.toLowerCase(Locale.ROOT);
-    if (!USERNAME.matcher(name).matches()) {
-      throw invalid(ApiMessages.USERNAME_RULE);
-    }
-    validatePassword(rawPassword);
+  public AppUser create(
+      String username, String email, String fullName, String rawPassword, Set<Role> roles) {
     if (roles == null || roles.isEmpty()) {
-      throw invalid(ApiMessages.ROLE_REQUIRED);
+      throw new ApiException(ErrorCode.VALIDATION_ERROR, ApiMessages.ROLE_REQUIRED);
     }
-    boolean passenger = roles.contains(Role.PASSENGER);
-    if (passenger && !PassengerRef.isValid(passengerRef)) {
-      throw invalid(ApiMessages.PASSENGER_REF_REQUIRED);
+    if (!fitsBcrypt(rawPassword)) {
+      throw new ApiException(ErrorCode.VALIDATION_ERROR, ApiMessages.PASSWORD_RULE);
     }
-    if (!passenger && passengerRef != null) {
-      throw invalid(ApiMessages.PASSENGER_REF_FORBIDDEN);
+    String normalizedUsername = normalize(username);
+    String normalizedEmail = normalize(email);
+    if (users.findByUsername(normalizedUsername).isPresent()
+        || users.findByEmail(normalizedEmail).isPresent()) {
+      throw alreadyExists();
     }
-
+    String passengerRef = roles.contains(Role.PASSENGER) ? PassengerRef.generate() : null;
     AppUserEntity entity =
         new AppUserEntity(
-            UUID.randomUUID(), name, encoder.encode(rawPassword), passengerRef, roles);
+            UUID.randomUUID(),
+            normalizedUsername,
+            normalizedEmail,
+            fullName.trim(),
+            encoder.encode(rawPassword),
+            passengerRef,
+            roles);
     try {
-      users.saveAndFlush(entity);
+      return mapper.toDomain(users.saveAndFlush(entity));
     } catch (DataIntegrityViolationException e) {
-      throw new ApiException(ErrorCode.REQUEST_REJECTED, ApiMessages.USER_NOT_REGISTERED);
+      // Two registrations racing for the same name: the unique index decides.
+      throw alreadyExists();
     }
-    return mapper.toDomain(entity);
+  }
+
+  /** The account with this username, or this email address when the text contains an "@". */
+  @Transactional(readOnly = true)
+  public Optional<AppUser> findByUsernameOrEmail(String usernameOrEmail) {
+    String key = normalize(usernameOrEmail);
+    Optional<AppUserEntity> found =
+        key.contains("@") ? users.findByEmail(key) : users.findByUsername(key);
+    return found.map(mapper::toDomain);
   }
 
   @Transactional(readOnly = true)
-  public Optional<AppUser> findByUsername(String username) {
-    if (username == null) {
-      return Optional.empty();
+  public long countWithRole(Role role) {
+    return users.countWithRole(role);
+  }
+
+  /**
+   * Checks a password for a sign-in. An unknown account, a disabled one and a password BCrypt would
+   * silently cut short (so "right prefix plus junk" would pass) all fail, after the same amount of
+   * work as a real check.
+   */
+  public boolean authenticates(Optional<AppUser> account, String rawPassword) {
+    if (account.isEmpty() || !fitsBcrypt(rawPassword)) {
+      encoder.matches(withinBcryptLimit(rawPassword), timingEqualizer());
+      return false;
     }
-    return users.findByUsername(username.toLowerCase(Locale.ROOT)).map(mapper::toDomain);
+    boolean matches = encoder.matches(rawPassword, account.get().passwordHash());
+    return matches && account.get().enabled();
   }
 
-  public boolean passwordMatches(AppUser account, String rawPassword) {
-    return rawPassword != null && encoder.matches(rawPassword, account.passwordHash());
+  /**
+   * Replaces a user's password.
+   *
+   * @throws ApiException {@code VALIDATION_ERROR} when the password is longer than BCrypt can use
+   */
+  @Transactional
+  public void changePassword(UUID userId, String rawPassword) {
+    requireFitsBcrypt(rawPassword);
+    AppUserEntity user =
+        users
+            .findById(userId)
+            .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "User not found"));
+    user.changePassword(encoder.encode(rawPassword));
   }
 
-  private static void validatePassword(String password) {
-    if (password == null
-        || password.length() < UserRules.MIN_PASSWORD_LENGTH
-        || password.getBytes(StandardCharsets.UTF_8).length > UserRules.MAX_PASSWORD_BYTES) {
-      throw invalid(ApiMessages.PASSWORD_RULE);
+  /** Throws the validation error for a password BCrypt would silently cut short. */
+  public void requireFitsBcrypt(String rawPassword) {
+    if (!fitsBcrypt(rawPassword)) {
+      throw new ApiException(ErrorCode.VALIDATION_ERROR, ApiMessages.PASSWORD_RULE);
     }
   }
 
-  private static ApiException invalid(String detail) {
-    return new ApiException(ErrorCode.VALIDATION_ERROR, detail);
+  private String timingEqualizer() {
+    String hash = timingEqualizerHash;
+    if (hash == null) {
+      hash = encoder.encode(UUID.randomUUID().toString());
+      timingEqualizerHash = hash;
+    }
+    return hash;
+  }
+
+  private static ApiException alreadyExists() {
+    return new ApiException(ErrorCode.USER_ALREADY_EXISTS, ApiMessages.USER_ALREADY_EXISTS);
+  }
+
+  private static String normalize(String value) {
+    return value.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private static boolean fitsBcrypt(String password) {
+    return password.getBytes(StandardCharsets.UTF_8).length <= UserRules.MAX_PASSWORD_BYTES;
+  }
+
+  /** The longest start of the password that BCrypt accepts, cut on a character boundary. */
+  private static String withinBcryptLimit(String password) {
+    if (fitsBcrypt(password)) {
+      return password;
+    }
+    StringBuilder kept = new StringBuilder();
+    int bytes = 0;
+    for (int i = 0; i < password.length(); ) {
+      int codePoint = password.codePointAt(i);
+      String character = new String(Character.toChars(codePoint));
+      bytes += character.getBytes(StandardCharsets.UTF_8).length;
+      if (bytes > UserRules.MAX_PASSWORD_BYTES) {
+        break;
+      }
+      kept.append(character);
+      i += Character.charCount(codePoint);
+    }
+    return kept.toString();
   }
 }

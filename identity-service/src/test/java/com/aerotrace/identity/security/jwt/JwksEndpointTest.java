@@ -2,7 +2,7 @@ package com.aerotrace.identity.security.jwt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.aerotrace.identity.support.IdentityTestBase;
+import com.aerotrace.identity.base.AbstractIntegrationTest;
 import com.nimbusds.jose.jwk.JWKSet;
 import java.net.http.HttpResponse;
 import java.text.ParseException;
@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /** The public key resource servers use to verify tokens. */
-class JwksEndpointTest extends IdentityTestBase {
+class JwksEndpointTest extends AbstractIntegrationTest {
 
   @Autowired private JwtTokenService tokens;
 

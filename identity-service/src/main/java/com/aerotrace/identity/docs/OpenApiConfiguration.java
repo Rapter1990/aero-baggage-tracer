@@ -38,7 +38,7 @@ class OpenApiConfiguration {
             .addProperty("code", new StringSchema().example("ACCESS_DENIED"))
             .addProperty("message", new StringSchema().example("Insufficient permissions"))
             .addProperty("status", new Schema<Integer>().type("integer").example(403))
-            .addProperty("path", new StringSchema().example(ApiPaths.POLICY))
+            .addProperty("path", new StringSchema().example(ApiPaths.REGISTER))
             .addProperty(
                 "validationErrors",
                 new MapSchema()
@@ -52,8 +52,9 @@ class OpenApiConfiguration {
                 .title("AeroTrace Identity Service")
                 .version("v1")
                 .description(
-                    "Issues signed JWT access tokens (RS256), publishes the public key to verify "
-                        + "them and owns users and roles. Verify tokens with the JWKS at "
+                    "Registers users, signs them in with a password, issues signed JWT access tokens "
+                        + "(RS256) with refresh tokens, handles password reset and publishes the "
+                        + "public key to verify the tokens. Verify tokens with the JWKS at "
                         + ApiPaths.JWKS
                         + ". Successful responses are wrapped as {success, data, timestamp}, "
                         + "except the JWKS, whose format is fixed by standard."))
@@ -66,7 +67,7 @@ class OpenApiConfiguration {
                         .type(SecurityScheme.Type.HTTP)
                         .scheme(SecurityConstants.TOKEN_TYPE.toLowerCase())
                         .bearerFormat("JWT")
-                        .description("Access token from POST " + ApiPaths.TOKEN)));
+                        .description("Access token from POST " + ApiPaths.LOGIN)));
   }
 
   @Bean

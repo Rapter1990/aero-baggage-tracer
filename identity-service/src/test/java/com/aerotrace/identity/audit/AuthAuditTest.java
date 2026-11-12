@@ -2,7 +2,7 @@ package com.aerotrace.identity.audit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.aerotrace.identity.support.IdentityTestBase;
+import com.aerotrace.identity.base.AbstractIntegrationTest;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -10,7 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 /** Authentication events are recorded append-only, without any secret. */
-class AuthAuditTest extends IdentityTestBase {
+class AuthAuditTest extends AbstractIntegrationTest {
 
   @Autowired private AuthAuditLog audit;
   @Autowired private JdbcClient jdbc;

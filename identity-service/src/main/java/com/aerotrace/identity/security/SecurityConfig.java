@@ -43,10 +43,13 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 @Configuration(proxyBeanMethods = false)
 class SecurityConfig {
 
-  /** Reachable without a token. A token sent to one of these is ignored, never held against you. */
+  /**
+   * Reachable without a token. A token sent to one of these is ignored, never held against you.
+   * Registration is not listed: it looks at the token, because a staff account needs an ADMIN.
+   */
   private static boolean isPublic(HttpServletRequest request) {
     String path = request.getRequestURI();
-    return path.equals(ApiPaths.TOKEN)
+    return Arrays.asList(ApiPaths.PUBLIC_AUTH_CALLS).contains(path)
         || path.equals(ApiPaths.JWKS)
         || path.startsWith(ApiPaths.API_DOCS)
         || path.equals(ApiPaths.INFO)
@@ -111,8 +114,6 @@ class SecurityConfig {
     DefaultBearerTokenResolver bearer = new DefaultBearerTokenResolver();
     BearerTokenResolver resolver = request -> isPublic(request) ? null : bearer.resolve(request);
 
-    String[] everyRole = Arrays.stream(Role.values()).map(Role::name).toArray(String[]::new);
-
     http.csrf(AbstractHttpConfigurer::disable)
         .httpBasic(AbstractHttpConfigurer::disable)
         .formLogin(AbstractHttpConfigurer::disable)
@@ -126,7 +127,11 @@ class SecurityConfig {
                   .requestMatchers(HttpMethod.GET, ApiPaths.JWKS)
                   .permitAll()
                   // Any method: the controller answers a wrong one with 405, not a login prompt.
-                  .requestMatchers(ApiPaths.TOKEN)
+                  .requestMatchers(ApiPaths.PUBLIC_AUTH_CALLS)
+                  .permitAll()
+                  // Open to everyone; the service decides which roles an anonymous caller may ask
+                  // for.
+                  .requestMatchers(ApiPaths.REGISTER)
                   .permitAll();
               if (docsEnabled) {
                 // The definition only; the endpoints it describes still need their own rules.
@@ -138,12 +143,8 @@ class SecurityConfig {
                         ApiPaths.API_DOCS_YAML)
                     .permitAll();
               }
-              requests
-                  .requestMatchers(HttpMethod.GET, ApiPaths.ME, ApiPaths.POLICY)
-                  .hasAnyRole(everyRole)
-                  // Anything new must be given an explicit rule above.
-                  .anyRequest()
-                  .denyAll();
+              // Anything new must be given an explicit rule above.
+              requests.anyRequest().denyAll();
             })
         .exceptionHandling(
             handling ->

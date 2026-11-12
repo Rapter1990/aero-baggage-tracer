@@ -39,6 +39,16 @@ import org.springframework.web.client.RestTemplate;
 @EnableConfigurationProperties(GatewayProperties.class)
 class SecurityConfig {
 
+  /** The identity-service calls that are made without an access token. */
+  private static final String[] PUBLIC_AUTH_PATHS = {
+    "/api/v1/auth/register",
+    "/api/v1/auth/login",
+    "/api/v1/auth/refresh-token",
+    "/api/v1/auth/forgot-password",
+    "/api/v1/auth/reset-password",
+    "/api/v1/auth/logout"
+  };
+
   @Bean
   JwtDecoder jwtDecoder(GatewayProperties properties) {
     SimpleClientHttpRequestFactory http = new SimpleClientHttpRequestFactory();
@@ -92,8 +102,9 @@ class SecurityConfig {
                     .permitAll();
               }
               requests.requestMatchers("/actuator/**").hasRole(Role.ADMIN.name());
-              // Obtaining a token is the one unauthenticated API call.
-              requests.requestMatchers(HttpMethod.POST, "/api/v1/auth/token").permitAll();
+              // Signing up, signing in and the token and password flows are the unauthenticated
+              // API calls: nobody has a token yet. The identity-service decides what each allows.
+              requests.requestMatchers(HttpMethod.POST, PUBLIC_AUTH_PATHS).permitAll();
               for (GatewayProperties.RoleRule rule : properties.roleRules()) {
                 requests
                     .requestMatchers(rule.pattern())

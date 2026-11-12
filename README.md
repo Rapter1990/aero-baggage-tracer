@@ -57,22 +57,36 @@ In `docker-compose.yml` and `docker-compose-local.yml`, the services that need t
 | `DB_PASSWORD` (also `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`; defaults `localhost`, `5433`, `aerotrace`, `aerotrace`) | identity-service started outside Docker (inside Compose it takes the `POSTGRES_*` values) |
 | `IDENTITY_ISSUER` | identity-service, no default. Must equal the gateway's `JWT_ISSUER` |
 | `IDENTITY_JWT_PRIVATE_KEY_LOCATION`, `IDENTITY_JWT_PUBLIC_KEY_LOCATION` (or the PEM text itself in `IDENTITY_JWT_PRIVATE_KEY`, `IDENTITY_JWT_PUBLIC_KEY`) | identity-service: the RSA key pair (PEM; the private key in PKCS#8, `BEGIN PRIVATE KEY`) that signs and verifies the access tokens. A location is a Spring resource (`file:/run/secrets/private.pem`, `classpath:...`) or a file path; inline text wins over a location. Unset, the development pair in `identity-service/src/main/resources/keys` is used, **whose private key is in this repository** |
-| `IDENTITY_SEED_ENABLED`, `IDENTITY_SEED_PASSWORD` | identity-service: creates the test users `passenger`, `passenger2`, `agent`, `dispatcher` and `admin` sharing this password (at least 12 characters, no default). Off unless switched on; never enable it in production. Turning it off later does not delete the accounts it made |
+| `IDENTITY_BOOTSTRAP_ADMIN_USERNAME`, `IDENTITY_BOOTSTRAP_ADMIN_PASSWORD`, `IDENTITY_BOOTSTRAP_ADMIN_EMAIL` | identity-service: the first administrator, created at start-up when a username is set and no administrator exists yet (password at least 12 characters, no default). Public registration only creates passengers, so this is how the first staff account appears. Leave the username empty to create nothing |
+| `IDENTITY_PASSWORD_RESET_RETURN_TOKEN` | identity-service, development only (default `false`): put the password reset token in the forgot-password response. There is no mail service yet; with this off the token is not returned to the caller at all |
+| `IDENTITY_REFRESH_TOKEN_TTL`, `IDENTITY_PASSWORD_RESET_TTL` | identity-service: lifetime of a refresh token (default `7d`) and of a password reset token (default `15m`) |
 | `DOCS_ENABLED` | api-gateway and identity-service: serve the OpenAPI definitions and Swagger UI (default `false`, because they map every endpoint without a token) |
 
 ## Running the stack with Docker Compose
 
 `docker compose up -d` starts the stack. The gateway listens on `127.0.0.1:8080` only; put a reverse proxy with TLS in front of it to expose it further.
 
-To sign in you need users. Add test users in `.env` (see the table above), and optionally the API docs:
+Anyone can register a passenger. To get staff accounts, create the first administrator in `.env` (see the table above), and optionally switch on the API docs:
 
 ```
-IDENTITY_SEED_ENABLED=true
-IDENTITY_SEED_PASSWORD=choose-at-least-12-characters
+IDENTITY_BOOTSTRAP_ADMIN_USERNAME=admin
+IDENTITY_BOOTSTRAP_ADMIN_PASSWORD=choose-at-least-12-characters
+IDENTITY_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 DOCS_ENABLED=true
 ```
 
-Then `POST http://localhost:8080/api/v1/auth/token` with `{"username":"agent","password":"<that password>"}` returns `{"success":true,"data":{"accessToken":"...","tokenType":"Bearer","expiresIn":900},"timestamp":"..."}`.
+The authentication API (all under `http://localhost:8080/api/v1/auth`, answers wrapped as `{"success":true,"data":...,"timestamp":...}`):
+
+| Call | What it does |
+|---|---|
+| `POST /register` `{username,email,password,fullName[,role]}` | Creates an account (201). Only `PASSENGER` without a token; `AGENT`, `DISPATCHER` or `ADMIN` need an ADMIN access token |
+| `POST /login` `{usernameOrEmail,password}` | Returns `accessToken`, `refreshToken`, `tokenType`, the expiry times and the roles |
+| `POST /refresh-token` `{refreshToken}` | Exchanges a refresh token for a new pair. A refresh token works once; presenting a used one ends every session of that user |
+| `POST /forgot-password` `{usernameOrEmail}` | Starts a password reset. The answer is the same whether or not the account exists |
+| `POST /reset-password` `{resetToken,newPassword}` | Sets a new password with a reset token (once, 15 minutes) and ends every session of the user |
+| `POST /logout` `{refreshToken}` | Revokes the refresh token; always succeeds |
+
+Passwords are 12 to 72 bytes. Refresh and reset tokens are stored only as SHA-256 hashes.
 
 Tokens are signed with the development key pair that ships inside identity-service unless you provide your own. Its private key is in this repository, so anyone can mint tokens that the platform accepts: fine for a throwaway local stack, never for anything else (identity-service logs a warning at every start while it is in use). To use your own pair:
 
@@ -90,7 +104,8 @@ Every service answers with the same two envelopes from `common-module`: `ApiResp
 ## Known limitations of the identity-service
 
 - No per-account lockout or backoff and no cap on concurrent password hashing; the gateway's per-address rate limit is the only brake today.
-- Access tokens cannot be revoked; a token stays valid until it expires (15 minutes plus a minute of clock skew).
+- Reset tokens have no delivery channel yet (no mail service): in production nobody receives one until that exists. `IDENTITY_PASSWORD_RESET_RETURN_TOKEN` is for development, and while it is on the forgot-password answer reveals which accounts exist.
+- Access tokens cannot be revoked (logout and password reset revoke refresh tokens only); a token stays valid until it expires (15 minutes plus a minute of clock skew).
 - The audit trail's immutability is enforced by database triggers, but the service connects as the schema owner and could drop them; use a restricted runtime role where that matters.
 - The signing key pair is one static pair read at start-up. There is no automatic rotation and no second key id: replacing the pair means restarting identity-service, and tokens signed with the old pair stop verifying (at most 15 minutes of tokens, plus the gateway's key cache of about a minute).
 - The development key pair that ships with the service has its private key in the repository (see above).

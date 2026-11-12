@@ -3,12 +3,17 @@ package com.aerotrace.identity.constant;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
-/** The rules for usernames and passwords. */
+/** The rules for usernames, emails and passwords. */
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class UserRules {
 
-  /** Lower-case letters, digits, dot, underscore and hyphen. */
-  public static final String USERNAME_PATTERN = "[a-z0-9._-]{3,64}";
+  /** Letters, digits, dot, underscore and hyphen; matched without regard to case. */
+  public static final String USERNAME_PATTERN = "(?i)[a-z0-9._-]{3,64}";
+
+  public static final int MAX_USERNAME_LENGTH = 64;
+  public static final int MAX_EMAIL_LENGTH = 150;
+  public static final int MIN_FULL_NAME_LENGTH = 2;
+  public static final int MAX_FULL_NAME_LENGTH = 150;
 
   /** A passenger's pseudonymous reference: "P-" and 20 digits. It carries no personal data. */
   public static final String PASSENGER_REF_PREFIX = "P-";

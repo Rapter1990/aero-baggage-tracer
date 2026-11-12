@@ -2,7 +2,7 @@ package com.aerotrace.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.aerotrace.identity.support.IdentityTestBase;
+import com.aerotrace.identity.base.AbstractIntegrationTest;
 import com.aerotrace.identity.support.StubCollector;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
@@ -14,7 +14,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 /** Spans are exported over OTLP to the collector (and on to Tempo), named after this service. */
-class OtlpTracesExportTest extends IdentityTestBase {
+class OtlpTracesExportTest extends AbstractIntegrationTest {
 
   private static final StubCollector COLLECTOR = new StubCollector("/v1/traces");
 
