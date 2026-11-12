@@ -1,0 +1,625 @@
+{
+  "info": {
+    "name": "AeroTrace - Identity (via api-gateway)",
+    "description": "The authentication API of the identity-service, called through the api-gateway (default http://localhost:8080). Run the folder \"1. Passenger journey\" top to bottom with the runner: it registers a new passenger, logs in, refreshes the token, resets the password, logs in again and logs out. Tokens are stored in the environment by the test scripts. Folder \"2. Negative cases\" checks the refusals. The gateway limits each address to about 10 requests per second (burst 20), so run the collection with a delay of 150 ms or more between requests. Folder \"3. Staff (ADMIN)\" needs adminUsername and adminPassword in the environment: the first admin is made by hand (see the README).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "apiPrefix", "value": "/api/v1/auth" }
+  ],
+  "item": [
+    {
+      "name": "1. Passenger journey",
+      "item": [
+        {
+          "name": "Register passenger",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A new, unique account for every run, with the starting password again (the reset step changes it).",
+                  "pm.environment.set('password', pm.environment.get('initialPassword'));",
+                  "const suffix = Date.now().toString(36);",
+                  "pm.environment.set('username', 'pax-' + suffix);",
+                  "pm.environment.set('email', 'pax-' + suffix + '@example.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('wrapped in the ApiResponse envelope', () => {",
+                  "  pm.expect(body.success).to.eql(true);",
+                  "  pm.expect(body.timestamp).to.be.a('string');",
+                  "});",
+                  "pm.test('a passenger, ACTIVE, with no secrets in the answer', () => {",
+                  "  pm.expect(body.data.roles).to.eql(['PASSENGER']);",
+                  "  pm.expect(body.data.status).to.eql('ACTIVE');",
+                  "  pm.expect(body.data.username).to.eql(pm.environment.get('username'));",
+                  "  pm.expect(pm.response.text()).to.not.include('password').and.to.not.include('passengerRef');",
+                  "});",
+                  "pm.test('not cacheable', () => pm.expect(pm.response.headers.get('Cache-Control')).to.include('no-store'));",
+                  "pm.environment.set('userId', body.data.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"fullName\": \"Postman Passenger\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/register", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["register"] }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.test('an access token and a refresh token', () => {",
+                  "  pm.expect(data.tokenType).to.eql('Bearer');",
+                  "  pm.expect(data.accessToken.split('.')).to.have.lengthOf(3);",
+                  "  pm.expect(data.refreshToken).to.be.a('string').and.to.have.lengthOf(64);",
+                  "  pm.expect(data.roles).to.eql(['PASSENGER']);",
+                  "});",
+                  "pm.test('the access token expires before the refresh token', () => {",
+                  "  pm.expect(new Date(data.accessTokenExpiresAt) < new Date(data.refreshTokenExpiresAt)).to.eql(true);",
+                  "});",
+                  "pm.environment.set('accessToken', data.accessToken);",
+                  "pm.environment.set('refreshToken', data.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usernameOrEmail\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/login", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["login"] }
+          }
+        },
+        {
+          "name": "Login with the email address",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK: the email works as well as the username', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usernameOrEmail\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/login", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["login"] }
+          }
+        },
+        {
+          "name": "Refresh token",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Remember the token that is about to be used up, for the replay check below.",
+                  "pm.environment.set('usedRefreshToken', pm.environment.get('refreshToken'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.test('a new pair: the refresh token was rotated', () => {",
+                  "  pm.expect(data.refreshToken).to.not.eql(pm.environment.get('usedRefreshToken'));",
+                  "  pm.expect(data.accessToken.split('.')).to.have.lengthOf(3);",
+                  "});",
+                  "pm.environment.set('accessToken', data.accessToken);",
+                  "pm.environment.set('refreshToken', data.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/refresh-token", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["refresh-token"] }
+          }
+        },
+        {
+          "name": "Refresh token again with the used-up token (refused)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401: a refresh token works once', () => pm.response.to.have.status(401));",
+                  "pm.test('a fixed message that says nothing about why', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.code).to.eql('UNAUTHENTICATED');",
+                  "  pm.expect(body.message).to.eql('Invalid or expired refresh token.');",
+                  "});",
+                  "// A replay within seconds is only refused. A replay of a long-rotated token would end every session."
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{usedRefreshToken}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/refresh-token", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["refresh-token"] }
+          }
+        },
+        {
+          "name": "Forgot password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.test('the reset token is returned (there is no mail service yet)', () => {",
+                  "  pm.expect(data.message).to.eql('If the account exists, a password reset has been started.');",
+                  "  pm.expect(data.resetToken).to.be.a('string').and.to.have.lengthOf(64);",
+                  "  pm.expect(data.expiresAt).to.be.a('string');",
+                  "});",
+                  "pm.environment.set('resetToken', data.resetToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"usernameOrEmail\": \"{{username}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/forgot-password", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["forgot-password"] }
+          }
+        },
+        {
+          "name": "Reset password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('every session was ended', () => pm.expect(pm.response.json().data.message).to.include('Active refresh tokens were revoked'));",
+                  "// From now on the new password is the password.",
+                  "pm.environment.set('oldPassword', pm.environment.get('password'));",
+                  "pm.environment.set('password', pm.environment.get('newPassword'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"resetToken\": \"{{resetToken}}\",\n  \"newPassword\": \"{{newPassword}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/reset-password", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["reset-password"] }
+          }
+        },
+        {
+          "name": "Refresh after the reset (refused)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401: the reset ended the old session', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/refresh-token", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["refresh-token"] }
+          }
+        },
+        {
+          "name": "Login with the new password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.environment.set('accessToken', data.accessToken);",
+                  "pm.environment.set('refreshToken', data.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"usernameOrEmail\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/login", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["login"] }
+          }
+        },
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('confirmation', () => pm.expect(pm.response.json().data.message).to.eql('Logout completed successfully'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/logout", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["logout"] }
+          }
+        },
+        {
+          "name": "Logout again (still 200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK: logout is idempotent', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/logout", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["logout"] }
+          }
+        },
+        {
+          "name": "Refresh after logout (refused)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401: the logged-out token is dead', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/refresh-token", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["refresh-token"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Negative cases",
+      "item": [
+        {
+          "name": "Login with a wrong password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));",
+                  "pm.test('the same answer as for an unknown user', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.code).to.eql('UNAUTHENTICATED');",
+                  "  pm.expect(body.message).to.eql('Invalid credentials.');",
+                  "  pm.expect(body.status).to.eql(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"usernameOrEmail\": \"{{username}}\",\n  \"password\": \"definitely-not-the-password\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/login", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["login"] }
+          }
+        },
+        {
+          "name": "Login as an unknown user",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 with the same message', () => {",
+                  "  pm.response.to.have.status(401);",
+                  "  pm.expect(pm.response.json().message).to.eql('Invalid credentials.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"usernameOrEmail\": \"nobody-{{$timestamp}}\",\n  \"password\": \"definitely-not-the-password\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/login", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["login"] }
+          }
+        },
+        {
+          "name": "Login with empty fields",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 VALIDATION_ERROR naming the fields', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.code).to.eql('VALIDATION_ERROR');",
+                  "  pm.expect(body.validationErrors).to.have.keys('usernameOrEmail', 'password');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/login", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["login"] }
+          }
+        },
+        {
+          "name": "Register with a weak password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 and the value that was sent is not echoed', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "  pm.expect(pm.response.json().validationErrors).to.have.property('password');",
+                  "  pm.expect(pm.response.text()).to.not.include('short');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"weak-{{$timestamp}}\",\n  \"email\": \"weak-{{$timestamp}}@example.com\",\n  \"password\": \"short\",\n  \"fullName\": \"Weak Password\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/register", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["register"] }
+          }
+        },
+        {
+          "name": "Register a staff role without a token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401: a staff role needs an ADMIN token', () => {",
+                  "  pm.response.to.have.status(401);",
+                  "  pm.expect(pm.response.json().code).to.eql('UNAUTHENTICATED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"staff-{{$timestamp}}\",\n  \"email\": \"staff-{{$timestamp}}@example.com\",\n  \"password\": \"{{password}}\",\n  \"fullName\": \"Sneaky Staff\",\n  \"role\": \"ADMIN\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/register", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["register"] }
+          }
+        },
+        {
+          "name": "Register a duplicate username",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 USER_ALREADY_EXISTS', () => {",
+                  "  pm.response.to.have.status(409);",
+                  "  pm.expect(pm.response.json().code).to.eql('USER_ALREADY_EXISTS');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"{{username}}\",\n  \"email\": \"other-{{$timestamp}}@example.com\",\n  \"password\": \"{{password}}\",\n  \"fullName\": \"Duplicate\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/register", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["register"] }
+          }
+        },
+        {
+          "name": "Reset password with an unknown token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 with a fixed message', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "  pm.expect(pm.response.json().message).to.eql('Invalid or expired password reset token.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"resetToken\": \"never-issued\",\n  \"newPassword\": \"a-brand-new-password\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/reset-password", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["reset-password"] }
+          }
+        },
+        {
+          "name": "A path that is not exposed",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 without a token: everything not listed is denied', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/me", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["me"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Staff (ADMIN)",
+      "description": "Needs adminUsername and adminPassword in the environment. The first administrator is made by hand: register a passenger, then insert the ADMIN role for that user in the database (see the README).",
+      "item": [
+        {
+          "name": "Login as the administrator",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "pm.test('the roles include ADMIN', () => pm.expect(data.roles).to.include('ADMIN'));",
+                  "pm.environment.set('adminAccessToken', data.accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"usernameOrEmail\": \"{{adminUsername}}\",\n  \"password\": \"{{adminPassword}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/login", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["login"] }
+          }
+        },
+        {
+          "name": "Register a dispatcher (ADMIN token)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const suffix = Date.now().toString(36);",
+                  "pm.environment.set('staffUsername', 'dispatcher-' + suffix);",
+                  "pm.environment.set('staffEmail', 'dispatcher-' + suffix + '@example.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('a DISPATCHER account', () => pm.expect(pm.response.json().data.roles).to.eql(['DISPATCHER']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{adminAccessToken}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"{{staffUsername}}\",\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{password}}\",\n  \"fullName\": \"Postman Dispatcher\",\n  \"role\": \"DISPATCHER\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/register", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["register"] }
+          }
+        },
+        {
+          "name": "Register a dispatcher with a passenger token (refused)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403: a valid token without the ADMIN role', () => {",
+                  "  pm.response.to.have.status(403);",
+                  "  pm.expect(pm.response.json().code).to.eql('ACCESS_DENIED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"denied-{{$timestamp}}\",\n  \"email\": \"denied-{{$timestamp}}@example.com\",\n  \"password\": \"{{password}}\",\n  \"fullName\": \"Denied Dispatcher\",\n  \"role\": \"DISPATCHER\"\n}" },
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/register", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["register"] }
+          }
+        }
+      ]
+    }
+  ]
+}
