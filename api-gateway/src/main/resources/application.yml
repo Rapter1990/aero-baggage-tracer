@@ -103,8 +103,9 @@ aerotrace:
       - pattern: /api/v1/admin/**
         roles: ADMIN
     docs:
-      # Turn off outside development: Swagger UI and the definitions are served without a token.
-      enabled: ${DOCS_ENABLED:false}
+      # Swagger UI and the definitions are served without a token. Set DOCS_ENABLED=false to turn
+      # them off where the API map should stay private.
+      enabled: ${DOCS_ENABLED:true}
     rate-limit:
       replenish-rate: ${RATE_LIMIT_REPLENISH_RATE:10}
       burst-capacity: ${RATE_LIMIT_BURST_CAPACITY:20}

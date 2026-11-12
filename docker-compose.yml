@@ -2,7 +2,7 @@
 #   docker compose up -d
 # Inside the network services use the `compose` profile endpoints (kafka:9092, redis:6379,
 # postgres:5432). Redis and Postgres are internal only; Kafka is reachable from the host on
-# 127.0.0.1:29092.
+# localhost:29092.
 # Use docker-compose-local.yml for dev-only infrastructure (Kafka, Redis, Postgres on localhost).
 # Dev-only credentials; override via env vars. Never reuse them outside local development.
 services:
@@ -23,7 +23,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
     ports:
-      - "127.0.0.1:29092:29092"
+      - "29092:29092"
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
       interval: 10s
@@ -88,7 +88,7 @@ services:
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
       TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-1.0}
     ports:
-      - "127.0.0.1:8761:8761"
+      - "8761:8761"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8761/actuator/health"]
       interval: 10s
@@ -116,7 +116,7 @@ services:
       discovery-server:
         condition: service_healthy
     ports:
-      - "127.0.0.1:1111:1111"
+      - "1111:1111"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:1111/actuator/health"]
       interval: 10s
@@ -149,7 +149,6 @@ services:
       # with a bind mount or a secret.
       IDENTITY_JWT_PRIVATE_KEY_LOCATION: ${IDENTITY_JWT_PRIVATE_KEY_LOCATION:-}
       IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-}
-      DOCS_ENABLED: ${DOCS_ENABLED:-false}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
@@ -183,7 +182,6 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redis}
       JWT_ISSUER: ${COMPOSE_JWT_ISSUER:-http://identity-service:8081}
       JWK_SET_URI: ${COMPOSE_JWK_SET_URI:-http://identity-service:8081/.well-known/jwks.json}
-      DOCS_ENABLED: ${DOCS_ENABLED:-false}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
@@ -197,7 +195,7 @@ services:
         condition: service_healthy
     ports:
       # Loopback only: put a reverse proxy with TLS in front of it to expose it further.
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
       interval: 10s
@@ -248,7 +246,7 @@ services:
     restart: unless-stopped
     # Anyone who can reach it could push fake numbers: loopback only (the script runs on the host).
     ports:
-      - "127.0.0.1:9091:9091"
+      - "9091:9091"
     networks:
       - aerotrace
 
@@ -259,7 +257,7 @@ services:
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
-      - "127.0.0.1:9090:9090"
+      - "9090:9090"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
       interval: 10s
@@ -281,7 +279,7 @@ services:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
       interval: 10s

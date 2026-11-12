@@ -49,8 +49,8 @@ aerotrace:
     bcrypt-strength: ${IDENTITY_BCRYPT_STRENGTH:12}
     docs:
       # The OpenAPI definition at /v3/api-docs, which the gateway's Swagger UI reads. It is served
-      # without a token, so turn it off outside development.
-      enabled: ${DOCS_ENABLED:false}
+      # without a token. Set DOCS_ENABLED=false to turn it off where the API map should stay private.
+      enabled: ${DOCS_ENABLED:true}
     jwt:
       # The iss claim; the gateway's JWT_ISSUER must be the same. No default.
       issuer: ${IDENTITY_ISSUER}

@@ -58,17 +58,13 @@ In `docker-compose.yml` and `docker-compose-local.yml`, the services that need t
 | `IDENTITY_ISSUER` | identity-service, no default. Must equal the gateway's `JWT_ISSUER` |
 | `IDENTITY_JWT_PRIVATE_KEY_LOCATION`, `IDENTITY_JWT_PUBLIC_KEY_LOCATION` (or the PEM text itself in `IDENTITY_JWT_PRIVATE_KEY`, `IDENTITY_JWT_PUBLIC_KEY`) | identity-service: the RSA key pair (PEM; the private key in PKCS#8, `BEGIN PRIVATE KEY`) that signs and verifies the access tokens. A location is a Spring resource (`file:/run/secrets/private.pem`, `classpath:...`) or a file path; inline text wins over a location. Unset, the development pair in `identity-service/src/main/resources/keys` is used, **whose private key is in this repository** |
 | `IDENTITY_REFRESH_TOKEN_TTL`, `IDENTITY_PASSWORD_RESET_TTL` | identity-service: lifetime of a refresh token (default `7d`) and of a password reset token (default `15m`) |
-| `DOCS_ENABLED` | api-gateway and identity-service: serve the OpenAPI definitions and Swagger UI (default `false`, because they map every endpoint without a token) |
+| `DOCS_ENABLED` | api-gateway and identity-service: serve the OpenAPI definitions and Swagger UI (default `true`; they are served without a token and map every endpoint, so set `false` where that should stay private) |
 
 ## Running the stack with Docker Compose
 
-`docker compose up -d` starts the stack. The gateway listens on `127.0.0.1:8080` only; put a reverse proxy with TLS in front of it to expose it further.
+`docker compose up -d` starts the stack. The gateway listens on port 8080 on all interfaces; put a reverse proxy with TLS in front of it before exposing it further.
 
-Anyone can register a passenger. Staff accounts (`AGENT`, `DISPATCHER`, `ADMIN`) can only be created by an administrator through `POST /register` with an ADMIN access token, so the first administrator is made once by hand. Optionally switch on the API docs in `.env`:
-
-```
-DOCS_ENABLED=true
-```
+Anyone can register a passenger. Staff accounts (`AGENT`, `DISPATCHER`, `ADMIN`) can only be created by an administrator through `POST /register` with an ADMIN access token, so the first administrator is made once by hand. The API docs are on by default (`DOCS_ENABLED=false` in `.env` turns them off).
 
 To create the first administrator, register a passenger, then give that user the role in the database:
 

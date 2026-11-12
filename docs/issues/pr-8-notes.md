@@ -20,8 +20,9 @@ Security posture to know about:
 
 - **`forgot-password` returns the reset token in its response** (no mail service yet, as in the reference implementation). Anyone who knows a username or email can take over that account, and the answer reveals which accounts exist. **Do not expose this service to untrusted callers until the token is delivered out of band.**
 - **The development key pair is in the repository** (`identity-service/src/main/resources/keys`); the service logs a warning at every start while it is used. Provide your own pair for anything that matters.
+- The OpenAPI definitions and Swagger UI are on by default in the gateway and identity-service and served without a token (`DOCS_ENABLED=false` turns them off).
 - No lockout/backoff; the gateway's per-address rate limit is the only brake, with no per-endpoint or per-account limit on `login` / `forgot-password`.
 - `register` answers 409 for existing usernames/emails (account enumeration); refresh sessions slide with no absolute limit; creating staff trusts the roles in the caller's token (up to 15 minutes old); access tokens are not revocable before they expire.
-- Compose: Eureka, config-server, Prometheus and Grafana are bound to `127.0.0.1` but keep default credentials (`eureka`, `admin/grafana`); images are not pinned to digests; the database user needs `CREATE` on the database for the init SQL.
+- Compose publishes the ports on all interfaces (Eureka 8761, config-server 1111, Prometheus 9090, Grafana 3000, the gateway 8080) and keeps default credentials (`eureka`, `admin/grafana`), so anyone who can reach the host can use them, and a fake identity-service registered in Eureka could receive login traffic; images are not pinned to digests; the database user needs `CREATE` on the database for the init SQL.
 
 Suggested follow-up issues: key rotation with multiple `kid`s, mail delivery for reset tokens, per-endpoint and per-account rate limiting, absolute session lifetime, hardened compose defaults.
