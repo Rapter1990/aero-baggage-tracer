@@ -73,7 +73,7 @@ INSERT INTO identity.user_role (user_id, role)
 SELECT id, 'ADMIN' FROM identity.app_user WHERE username = 'your-username';
 ```
 
-The authentication API (all under `http://localhost:8080/api/v1/auth`, answers wrapped as `{"success":true,"data":...,"timestamp":...}`):
+The identity-service listens on port 1112 (published by Compose, so its own endpoints, such as `/.well-known/jwks.json`, `/actuator/health` and `/v3/api-docs`, can be called directly). The authentication API (all under `http://localhost:8080/api/v1/auth` through the gateway, or `http://localhost:1112/api/v1/auth` directly, answers wrapped as `{"success":true,"data":...,"timestamp":...}`):
 
 | Call | What it does |
 |---|---|
@@ -97,7 +97,7 @@ then mount both files into the identity-service container and set `IDENTITY_JWT_
 
 ## Postman collection
 
-`postman/AeroTrace.postman_collection.json` and `postman/AeroTrace-local.postman_environment.json` call the authentication API through the gateway (`baseUrl` defaults to `http://localhost:8080`). Import both into Postman, select the "AeroTrace - local" environment and run the collection with a delay of 150 ms or more between requests (the gateway allows about 10 requests per second per address). Folder 1 walks a passenger through register, login, refresh, forgot and reset password, login again and logout; the test scripts store the tokens in the environment. Folder 2 checks the refusals (wrong password, validation, duplicate, unknown tokens). Folder 3 needs `adminUsername` and `adminPassword` in the environment (the first admin is made by hand, see above). With newman: `newman run postman/AeroTrace.postman_collection.json -e postman/AeroTrace-local.postman_environment.json --delay-request 150 --folder "1. Passenger journey" --folder "2. Negative cases"`.
+`postman/AeroTrace.postman_collection.json` and `postman/AeroTrace-local.postman_environment.json` call the authentication API through the gateway (`baseUrl` defaults to `http://localhost:8080`; folder 4 calls the identity-service directly at `identityUrl`, default `http://localhost:1112`). Import both into Postman, select the "AeroTrace - local" environment and run the collection with a delay of 150 ms or more between requests (the gateway allows about 10 requests per second per address). Folder 1 walks a passenger through register, login, refresh, forgot and reset password, login again and logout; the test scripts store the tokens in the environment. Folder 2 checks the refusals (wrong password, validation, duplicate, unknown tokens). Folder 3 needs `adminUsername` and `adminPassword` in the environment (the first admin is made by hand, see above). With newman: `newman run postman/AeroTrace.postman_collection.json -e postman/AeroTrace-local.postman_environment.json --delay-request 150 --folder "1. Passenger journey" --folder "2. Negative cases"`.
 
 ## API response format
 

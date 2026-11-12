@@ -54,8 +54,12 @@ class IdentityServiceApplicationTest extends AbstractIntegrationTest {
   }
 
   @Test
-  void listensOnPort8081ByDefault() {
-    assertThat(environment.getProperty("server.port")).isNotNull();
+  void listensOnPort1112ByDefault() {
+    // The test runs on a random port, so read the configured default from the file itself.
+    var yaml = new org.springframework.beans.factory.config.YamlPropertiesFactoryBean();
+    yaml.setResources(new org.springframework.core.io.ClassPathResource("application.yml"));
+
+    assertThat(yaml.getObject()).containsEntry("server.port", 1112);
     assertThat(IdentityServiceApplication.class).isNotNull();
   }
 }

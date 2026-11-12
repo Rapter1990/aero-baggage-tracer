@@ -32,11 +32,11 @@ WORKDIR /app
 COPY --from=build /src/identity-service/target/identity-service-*-exec.jar app.jar
 
 # Step #10: Document the identity-service port.
-EXPOSE 8081
+EXPOSE 1112
 
 # Step #11: Mark the container healthy only when the actuator health endpoint answers.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=40s --retries=5 \
-  CMD curl -fsS http://localhost:8081/actuator/health || exit 1
+  CMD curl -fsS http://localhost:1112/actuator/health || exit 1
 
 # Step #12: Start identity-service.
 ENTRYPOINT ["java", "-jar", "app.jar"]

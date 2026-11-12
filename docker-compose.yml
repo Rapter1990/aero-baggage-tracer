@@ -142,7 +142,7 @@ services:
       DB_USER: ${POSTGRES_USER:-aerotrace}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
       # Must equal what the gateway expects (JWT_ISSUER above).
-      IDENTITY_ISSUER: ${COMPOSE_JWT_ISSUER:-http://identity-service:8081}
+      IDENTITY_ISSUER: ${COMPOSE_JWT_ISSUER:-http://identity-service:1112}
       # The RSA key pair (PEM) that signs the tokens. Empty: the development pair bundled in
       # the image is used, whose private key is in the repository. Use your own for
       # anything that matters, e.g. IDENTITY_JWT_PRIVATE_KEY_LOCATION=file:/run/secrets/jwt.pem
@@ -158,9 +158,11 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-    # No host port: clients reach it through the gateway (/api/v1/auth/**).
+    # Clients normally reach it through the gateway (/api/v1/auth/**); 1112 is its own port.
+    ports:
+      - "1112:1112"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8081/actuator/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:1112/actuator/health"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -180,8 +182,8 @@ services:
       EUREKA_INSTANCE_HOSTNAME: api-gateway
       REDIS_HOST: redis
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redis}
-      JWT_ISSUER: ${COMPOSE_JWT_ISSUER:-http://identity-service:8081}
-      JWK_SET_URI: ${COMPOSE_JWK_SET_URI:-http://identity-service:8081/.well-known/jwks.json}
+      JWT_ISSUER: ${COMPOSE_JWT_ISSUER:-http://identity-service:1112}
+      JWK_SET_URI: ${COMPOSE_JWK_SET_URI:-http://identity-service:1112/.well-known/jwks.json}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
