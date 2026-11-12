@@ -37,7 +37,12 @@ class IdentityServiceApplicationTest extends IdentityTestBase {
     HttpResponse<String> response = get("/no-such-path");
 
     assertThat(response.statusCode()).isEqualTo(404);
-    assertThat(response.body()).doesNotContain("trace").doesNotContain("exception");
+    // The shared RFC 7807 contract, with nothing that reveals internals.
+    assertThat(response.body())
+        .contains("\"errorCode\":\"NOT_FOUND\"")
+        .doesNotContain("stackTrace")
+        .doesNotContain("Exception")
+        .doesNotContain("\tat ");
   }
 
   @Test

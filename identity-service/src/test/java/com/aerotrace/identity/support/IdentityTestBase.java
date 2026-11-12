@@ -33,7 +33,9 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
       "management.tracing.export.otlp.enabled=false",
       "management.logging.export.otlp.enabled=false",
       // A low BCrypt cost keeps the tests fast; production uses the default.
-      "aerotrace.identity.bcrypt-strength=4"
+      "aerotrace.identity.bcrypt-strength=4",
+      // Test-only key-encryption key (bytes 0..31).
+      "aerotrace.identity.keys.encryption-key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
     })
 public abstract class IdentityTestBase {
 

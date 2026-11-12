@@ -36,6 +36,21 @@ aerotrace:
   identity:
     # BCrypt cost factor for password hashes.
     bcrypt-strength: ${IDENTITY_BCRYPT_STRENGTH:12}
+    keys:
+      # RS256 or ES256, for newly generated signing keys.
+      algorithm: ${IDENTITY_KEY_ALGORITHM:RS256}
+      # base64 of 32 random bytes (openssl rand -base64 32). No default: private keys are stored
+      # encrypted with it, and the service refuses to start without it.
+      encryption-key: ${IDENTITY_KEY_ENCRYPTION_KEY}
+      rotation-interval: ${IDENTITY_KEY_ROTATION_INTERVAL:30d}
+      # A new key is published this long before it signs, so gateways have cached it by then.
+      publish-lead: 10m
+      cache-ttl: 10s
+      maintenance-interval: PT5M
+    token:
+      # A replaced signing key stays published for ttl + clock-skew after it stops signing.
+      ttl: 15m
+      clock-skew: 1m
     seed:
       # Test users (agent, dispatcher, admin, two passengers). Development only; never in production.
       enabled: ${IDENTITY_SEED_ENABLED:false}
