@@ -41,6 +41,11 @@ public final class StubCollector {
     exchange.close();
   }
 
+  /** Everything pushed so far. */
+  public List<Push> pushes() {
+    return List.copyOf(pushes);
+  }
+
   public String url(String path) {
     return "http://localhost:" + server.getAddress().getPort() + path;
   }

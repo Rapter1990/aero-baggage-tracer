@@ -35,7 +35,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
       // A low BCrypt cost keeps the tests fast; production uses the default.
       "aerotrace.identity.bcrypt-strength=4",
       // Test-only key-encryption key (bytes 0..31).
-      "aerotrace.identity.keys.encryption-key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+      "aerotrace.identity.keys.encryption-key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "aerotrace.identity.token.issuer=http://identity.test"
     })
 public abstract class IdentityTestBase {
 
@@ -64,6 +65,31 @@ public abstract class IdentityTestBase {
 
   @Value("${local.server.port}")
   private int port;
+
+  protected int port() {
+    return port;
+  }
+
+  protected HttpResponse<String> post(String path, String contentType, String body) {
+    try {
+      return HttpClient.newHttpClient()
+          .send(
+              HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                  .header("Content-Type", contentType)
+                  .POST(HttpRequest.BodyPublishers.ofString(body))
+                  .build(),
+              HttpResponse.BodyHandlers.ofString());
+    } catch (IOException e) {
+      throw new IllegalStateException(e);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(e);
+    }
+  }
+
+  protected HttpResponse<String> postJson(String path, String json) {
+    return post(path, "application/json", json);
+  }
 
   protected HttpResponse<String> get(String path) {
     try {

@@ -48,6 +48,9 @@ aerotrace:
       cache-ttl: 10s
       maintenance-interval: PT5M
     token:
+      # The iss claim; the gateway's JWT_ISSUER must be the same. No default.
+      issuer: ${IDENTITY_ISSUER}
+      audience: ${IDENTITY_AUDIENCE:aerotrace-api}
       # A replaced signing key stays published for ttl + clock-skew after it stops signing.
       ttl: 15m
       clock-skew: 1m
