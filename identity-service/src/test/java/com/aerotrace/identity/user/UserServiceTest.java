@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.aerotrace.common.error.ApiException;
 import com.aerotrace.common.error.ErrorCode;
 import com.aerotrace.common.security.Role;
+import com.aerotrace.identity.model.domain.AppUser;
 import com.aerotrace.identity.support.IdentityTestBase;
 import java.util.Set;
 import java.util.UUID;
@@ -31,7 +32,7 @@ class UserServiceTest extends IdentityTestBase {
   void storesOnlyABcryptHashOfThePassword() {
     String username = name();
 
-    UserAccount saved = users.register(username, PASSWORD, Set.of(Role.AGENT), null);
+    AppUser saved = users.register(username, PASSWORD, Set.of(Role.AGENT), null);
 
     assertThat(saved.passwordHash()).startsWith("$2").doesNotContain(PASSWORD);
     String stored =
@@ -49,7 +50,7 @@ class UserServiceTest extends IdentityTestBase {
 
     users.register(username, PASSWORD, Set.of(Role.AGENT, Role.DISPATCHER), null);
 
-    UserAccount loaded = users.findByUsername(username).orElseThrow();
+    AppUser loaded = users.findByUsername(username).orElseThrow();
     assertThat(loaded.roles()).containsExactlyInAnyOrder(Role.AGENT, Role.DISPATCHER);
     assertThat(loaded.enabled()).isTrue();
     assertThat(loaded.passengerRef()).isNull();
@@ -129,7 +130,7 @@ class UserServiceTest extends IdentityTestBase {
   void passwordsAreCheckedAgainstTheStoredHash() {
     String username = name();
     users.register(username, PASSWORD, Set.of(Role.AGENT), null);
-    UserAccount account = users.findByUsername(username).orElseThrow();
+    AppUser account = users.findByUsername(username).orElseThrow();
 
     assertThat(users.passwordMatches(account, PASSWORD)).isTrue();
     assertThat(users.passwordMatches(account, "wrong-password-123")).isFalse();
@@ -138,7 +139,7 @@ class UserServiceTest extends IdentityTestBase {
   @Test
   void theAccountNeverPrintsItsHashOrReference() {
     String username = name();
-    UserAccount saved =
+    AppUser saved =
         users.register(username, PASSWORD, Set.of(Role.PASSENGER), PassengerRef.generate());
 
     assertThat(saved.toString())

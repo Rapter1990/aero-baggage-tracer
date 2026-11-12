@@ -26,6 +26,15 @@ spring:
       # Liquibase does not create the schema that holds its own tracking tables, so make sure it
       # exists before the first migration runs (a no-op once it does).
       connection-init-sql: CREATE SCHEMA IF NOT EXISTS identity
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Liquibase owns the schema; Hibernate only checks that the entities match it.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
   liquibase:
     # This service owns the "identity" schema; Liquibase tracks its changes there too.
     change-log: classpath:db/changelog/db.changelog-master.yaml

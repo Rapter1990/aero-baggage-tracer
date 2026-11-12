@@ -6,8 +6,8 @@ import com.aerotrace.common.security.AeroTraceJwtValidators;
 import com.aerotrace.common.security.JwtClaims;
 import com.aerotrace.common.security.Role;
 import com.aerotrace.identity.keys.SigningKeyService;
+import com.aerotrace.identity.model.domain.AppUser;
 import com.aerotrace.identity.support.IdentityTestBase;
-import com.aerotrace.identity.user.UserAccount;
 import com.aerotrace.identity.user.UserService;
 import com.nimbusds.jwt.SignedJWT;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -112,7 +112,7 @@ abstract class AbstractTokenEndpointTest extends IdentityTestBase {
   @Test
   void theTokenCarriesTheAgreedClaims() throws ParseException {
     SignedJWT jwt = SignedJWT.parse(tokenFor("dispatcher"));
-    UserAccount user = users.findByUsername("dispatcher").orElseThrow();
+    AppUser user = users.findByUsername("dispatcher").orElseThrow();
 
     assertThat(jwt.getHeader().getAlgorithm().getName()).isEqualTo(algorithm());
     assertThat(jwt.getJWTClaimsSet().getIssuer()).isEqualTo("http://identity.test");

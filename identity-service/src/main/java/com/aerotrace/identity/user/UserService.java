@@ -3,13 +3,17 @@ package com.aerotrace.identity.user;
 import com.aerotrace.common.error.ApiException;
 import com.aerotrace.common.error.ErrorCode;
 import com.aerotrace.common.security.Role;
+import com.aerotrace.identity.model.domain.AppUser;
+import com.aerotrace.identity.model.entity.AppUserEntity;
+import com.aerotrace.identity.model.mapper.IdentityMapper;
+import com.aerotrace.identity.repository.AppUserRepository;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
-import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,16 +25,18 @@ public class UserService {
   static final int MIN_PASSWORD_LENGTH = 12;
 
   /** BCrypt silently ignores everything past 72 bytes, so longer passwords are refused. */
-  static final int MAX_PASSWORD_BYTES = 72;
+  public static final int MAX_PASSWORD_BYTES = 72;
 
   private static final Pattern USERNAME = Pattern.compile("[a-z0-9._-]{3,64}");
 
-  private final UserRepository users;
+  private final AppUserRepository users;
   private final PasswordEncoder encoder;
+  private final IdentityMapper mapper;
 
-  UserService(UserRepository users, PasswordEncoder encoder) {
+  UserService(AppUserRepository users, PasswordEncoder encoder, IdentityMapper mapper) {
     this.users = users;
     this.encoder = encoder;
+    this.mapper = mapper;
   }
 
   /**
@@ -38,7 +44,7 @@ public class UserService {
    * must not. Rule violations are reported with generic messages that never echo the input.
    */
   @Transactional
-  public UserAccount register(
+  public AppUser register(
       String username, String rawPassword, Set<Role> roles, String passengerRef) {
     String name = username == null ? "" : username.toLowerCase(Locale.ROOT);
     if (!USERNAME.matcher(name).matches()) {
@@ -56,26 +62,26 @@ public class UserService {
       throw invalid("Only a passenger can carry a passenger reference");
     }
 
-    UserAccount account =
-        new UserAccount(
-            UUID.randomUUID(), name, encoder.encode(rawPassword), passengerRef, true, roles);
+    AppUserEntity entity =
+        new AppUserEntity(
+            UUID.randomUUID(), name, encoder.encode(rawPassword), passengerRef, roles);
     try {
-      users.insert(account);
-    } catch (DuplicateKeyException e) {
+      users.saveAndFlush(entity);
+    } catch (DataIntegrityViolationException e) {
       throw new ApiException(ErrorCode.REQUEST_REJECTED, "The user could not be registered");
     }
-    return account;
+    return mapper.toDomain(entity);
   }
 
   @Transactional(readOnly = true)
-  public Optional<UserAccount> findByUsername(String username) {
+  public Optional<AppUser> findByUsername(String username) {
     if (username == null) {
       return Optional.empty();
     }
-    return users.findByUsername(username.toLowerCase(Locale.ROOT));
+    return users.findByUsername(username.toLowerCase(Locale.ROOT)).map(mapper::toDomain);
   }
 
-  public boolean passwordMatches(UserAccount account, String rawPassword) {
+  public boolean passwordMatches(AppUser account, String rawPassword) {
     return rawPassword != null && encoder.matches(rawPassword, account.passwordHash());
   }
 

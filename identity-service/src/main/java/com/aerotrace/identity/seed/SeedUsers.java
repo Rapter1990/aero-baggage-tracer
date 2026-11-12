@@ -1,5 +1,7 @@
 package com.aerotrace.identity.seed;
 
+import com.aerotrace.common.error.ApiException;
+import com.aerotrace.common.error.ErrorCode;
 import com.aerotrace.common.security.Role;
 import com.aerotrace.identity.user.UserService;
 import java.util.Set;
@@ -57,8 +59,15 @@ public class SeedUsers implements ApplicationRunner {
     int created = 0;
     for (Seed seed : SEEDS) {
       if (users.findByUsername(seed.username()).isEmpty()) {
-        users.register(seed.username(), password, Set.of(seed.role()), seed.passengerRef());
-        created++;
+        try {
+          users.register(seed.username(), password, Set.of(seed.role()), seed.passengerRef());
+          created++;
+        } catch (ApiException e) {
+          // Another replica starting at the same moment created it first: that is fine.
+          if (e.errorCode() != ErrorCode.REQUEST_REJECTED) {
+            throw e;
+          }
+        }
       }
     }
     log.info("Seeded {} test user(s); {} already existed", created, SEEDS.length - created);

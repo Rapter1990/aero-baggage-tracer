@@ -8,7 +8,7 @@ import com.aerotrace.identity.audit.AuthAuditLog;
 import com.aerotrace.identity.audit.AuthEventType;
 import com.aerotrace.identity.audit.AuthOutcome;
 import com.aerotrace.identity.keys.JwtSigner;
-import com.aerotrace.identity.user.UserAccount;
+import com.aerotrace.identity.model.domain.AppUser;
 import com.aerotrace.identity.user.UserService;
 import com.nimbusds.jwt.JWTClaimsSet;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -64,7 +64,7 @@ class TokenService {
   }
 
   TokenResponse issue(String username, String password) {
-    Optional<UserAccount> found = users.findByUsername(username);
+    Optional<AppUser> found = users.findByUsername(username);
     boolean authenticated;
     if (found.isEmpty()) {
       encoder.matches(password, timingEqualizerHash);
@@ -78,12 +78,12 @@ class TokenService {
           AuthEventType.LOGIN_FAILED,
           AuthOutcome.FAILURE,
           username,
-          found.map(UserAccount::id).orElse(null));
+          found.map(AppUser::id).orElse(null));
       count("failure");
       throw new ApiException(ErrorCode.UNAUTHENTICATED, INVALID_CREDENTIALS);
     }
 
-    UserAccount user = found.get();
+    AppUser user = found.get();
     Instant now = clock.instant();
     JWTClaimsSet.Builder claims =
         new JWTClaimsSet.Builder()
@@ -104,7 +104,7 @@ class TokenService {
     return new TokenResponse(token, "Bearer", properties.ttl().toSeconds());
   }
 
-  private static List<String> roleNames(UserAccount user) {
+  private static List<String> roleNames(AppUser user) {
     return user.roles().stream().map(Role::name).sorted().toList();
   }
 

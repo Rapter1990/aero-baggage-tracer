@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.aerotrace.common.security.Role;
+import com.aerotrace.identity.model.domain.AppUser;
 import com.aerotrace.identity.support.IdentityTestBase;
-import com.aerotrace.identity.user.UserAccount;
 import com.aerotrace.identity.user.UserService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,7 +24,7 @@ class SeedUsersTest extends IdentityTestBase {
   @Autowired private SeedUsers seed;
   @Autowired private PasswordEncoder encoder;
 
-  private UserAccount user(String username) {
+  private AppUser user(String username) {
     return users.findByUsername(username).orElseThrow();
   }
 
@@ -38,8 +38,8 @@ class SeedUsersTest extends IdentityTestBase {
 
   @Test
   void createsTwoPassengersSoOwnershipCanBeTested() {
-    UserAccount first = user("passenger");
-    UserAccount second = user("passenger2");
+    AppUser first = user("passenger");
+    AppUser second = user("passenger2");
 
     assertThat(first.passengerRef()).matches("P-\\d{20}");
     assertThat(second.passengerRef()).matches("P-\\d{20}").isNotEqualTo(first.passengerRef());
@@ -53,7 +53,7 @@ class SeedUsersTest extends IdentityTestBase {
 
   @Test
   void seededPasswordsAreStoredHashed() {
-    UserAccount agent = user("agent");
+    AppUser agent = user("agent");
 
     assertThat(agent.passwordHash()).startsWith("$2");
     assertThat(encoder.matches("seed-test-password-1", agent.passwordHash())).isTrue();

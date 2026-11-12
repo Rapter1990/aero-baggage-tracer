@@ -1,14 +1,22 @@
 package com.aerotrace.identity.audit;
 
+import com.aerotrace.identity.model.entity.AuthAuditEntity;
+import com.aerotrace.identity.repository.AuthAuditRepository;
+import java.time.Clock;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Writes the append-only audit trail of authentication events. It accepts only an event type, an
  * outcome and who it concerned: there is no way to pass a password, token or other secret in.
+ *
+ * <p>Each entry is written in a transaction of its own, so a failure to audit can never poison the
+ * caller's transaction.
  */
 @Component
 public class AuthAuditLog {
@@ -16,10 +24,15 @@ public class AuthAuditLog {
   private static final Logger log = LoggerFactory.getLogger(AuthAuditLog.class);
   private static final int MAX_USERNAME = 128;
 
-  private final JdbcClient jdbc;
+  private final AuthAuditRepository repository;
+  private final Clock clock;
+  private final TransactionTemplate separateTransaction;
 
-  AuthAuditLog(JdbcClient jdbc) {
-    this.jdbc = jdbc;
+  AuthAuditLog(AuthAuditRepository repository, Clock clock, PlatformTransactionManager manager) {
+    this.repository = repository;
+    this.clock = clock;
+    this.separateTransaction = new TransactionTemplate(manager);
+    this.separateTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
   }
 
   /**
@@ -28,14 +41,15 @@ public class AuthAuditLog {
    */
   public void record(AuthEventType type, AuthOutcome outcome, String username, UUID userId) {
     try {
-      jdbc.sql(
-              "INSERT INTO identity.auth_audit (event_type, outcome, username, user_id) "
-                  + "VALUES (:type, :outcome, :username, :userId)")
-          .param("type", type == null ? null : type.name())
-          .param("outcome", outcome == null ? null : outcome.name())
-          .param("username", truncate(username))
-          .param("userId", userId)
-          .update();
+      separateTransaction.executeWithoutResult(
+          status ->
+              repository.save(
+                  new AuthAuditEntity(
+                      clock.instant(),
+                      type == null ? null : type.name(),
+                      outcome == null ? null : outcome.name(),
+                      truncate(username),
+                      userId)));
     } catch (RuntimeException e) {
       log.warn("Could not write an authentication audit entry ({})", e.getClass().getSimpleName());
     }
