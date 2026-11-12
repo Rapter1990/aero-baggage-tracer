@@ -448,3 +448,104 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 - Multi-tenant airline isolation (gateway, service, index).
 - Blue/green event schema v1 → v2 migration.
 - Chaos experiment (Kafka outage / DB restart) with recovery timeline and integrity checks.
+
+---
+
+## #25 Identity: signing key rotation with multiple active `kid`s
+`[module:identity] [security] [priority:p1]` · Follow-up of #8 (PR#8)
+
+**Description**
+Issue #8 asked for key rotation ("multiple active `kid`s"; rotation must not invalidate unexpired tokens). PR#8 ships one static PEM key pair read at start-up, so replacing the pair needs a restart and tokens signed with the old pair stop verifying.
+
+**Scope**
+- Hold several public keys in the published JWKS (current signing key plus keys that are still needed to verify unexpired tokens); sign with the current key only.
+- A rotation procedure that needs no downtime (new key published first, switched to signing after the gateway's key cache has refreshed, old key removed after the longest token lifetime plus clock skew).
+- Keep private keys out of the database and the repository; the bundled development pair stays development-only.
+- Gateway and resource services pick up new `kid`s from the JWKS without a restart.
+
+**Acceptance criteria**
+- [ ] After a rotation, tokens signed with the previous key still validate until they expire, and new tokens carry the new `kid`.
+- [ ] The JWKS lists every key that may still verify a live token and no private material.
+- [ ] A test rotates the key with a mutable clock and checks both old and new tokens at the gateway decoder.
+- [ ] README documents the rotation steps.
+
+---
+
+## #26 Identity: deliver password reset tokens out of band
+`[module:identity] [module:notification] [security] [priority:p0]` · Follow-up of #8 (PR#8) · Depends on #14
+
+**Description**
+`POST /api/v1/auth/forgot-password` currently returns the reset token in its response because there is no mail service. Anyone who knows a username or email can reset that account's password, and the answer reveals which accounts exist.
+
+**Scope**
+- Send the reset token to the account's email address through the notification-service (or another mail channel) and stop returning it to the caller.
+- Return the same answer, with the same work and timing, whether or not the account exists.
+- Keep the token single-use and short-lived; never log or trace it.
+- A development-only way to read the token (for example a local mail catcher) that is off by default.
+
+**Acceptance criteria**
+- [ ] `forgot-password` never contains the token or `expiresAt` in its response.
+- [ ] The answer for an unknown, a disabled and an existing account is identical.
+- [ ] Integration test: the token reaches the mail channel and works exactly once.
+- [ ] No token appears in logs, spans or metrics.
+
+---
+
+## #27 Rate limiting and lockout for the authentication endpoints
+`[module:gateway] [module:identity] [security] [priority:p1]` · Follow-up of #8 (PR#8) · Depends on #7
+
+**Description**
+Each wrong password costs a BCrypt-12 hash and the only brake is the gateway's per-address rate limit (about 10 requests per second, shared by every client behind a reverse proxy). `login`, `register`, `forgot-password` and `reset-password` can be used for credential stuffing, account flooding and CPU exhaustion.
+
+**Scope**
+- Stricter, per-endpoint buckets for `/api/v1/auth/*` in the gateway; a per-target-account bucket for `login` and `forgot-password`.
+- Trusted-proxy configuration, so the client address is the real one behind a TLS reverse proxy and `X-Forwarded-For` cannot be forged.
+- Failed-login counter with backoff or temporary lockout per account and per address, without letting an attacker lock out a victim indefinitely.
+- Bounded concurrency for password hashing; metrics (outcome only) for refused attempts.
+
+**Acceptance criteria**
+- [ ] 429 with the shared `ApiError` after the per-endpoint and per-account limits (tested against a real Redis).
+- [ ] A forged `X-Forwarded-For` does not change the bucket unless the proxy is trusted.
+- [ ] Repeated wrong passwords slow down or lock the account for a limited time and are audited.
+- [ ] README documents the limits and how to change them.
+
+---
+
+## #28 Identity: session and account hardening
+`[module:identity] [security] [priority:p2]` · Follow-up of #8 (PR#8)
+
+**Description**
+Gaps left in PR#8: refresh sessions slide forever, access tokens cannot be revoked before they expire, creating staff trusts the roles in a token that may be 15 minutes old, and registration answers 409 for existing usernames and emails.
+
+**Scope**
+- Absolute session lifetime: carry a session id or start time through refresh-token rotation and refuse after N days.
+- Re-check the caller's current roles and enabled flag in the database for `USER_MANAGE` (staff creation); optionally a per-user `tokens_valid_after` so password reset or disabling a user invalidates access tokens immediately.
+- Registration that does not reveal whether a username or email exists (generic answer plus email verification), once #26 provides mail delivery.
+- Restrict email addresses to a form that lower-cases identically in Java and PostgreSQL, and map CHECK violations to 400.
+- Cap the number of active refresh tokens per user.
+
+**Acceptance criteria**
+- [ ] A session ends after the absolute limit even if it is refreshed continuously.
+- [ ] A demoted or disabled ADMIN cannot create staff accounts.
+- [ ] Registration answers identically for new and existing usernames and emails.
+- [ ] Tests cover each of the above.
+
+---
+
+## #29 Hardened Docker Compose defaults
+`[devops] [security] [priority:p2]` · Follow-up of #8 (PR#8) · Depends on #17
+
+**Description**
+`docker-compose.yml` publishes Eureka (8761), config-server (1111), Prometheus (9090), Grafana (3000) and the gateway (8080) on all interfaces with default credentials (`eureka`, `admin/grafana`). Anyone who can reach the host can register a fake `identity-service` in Eureka and receive login traffic. Images use floating tags, the identity-service runs `curl` only for its health check, and its database user needs `CREATE` on the database for the schema init SQL.
+
+**Scope**
+- Required secrets without defaults (`EUREKA_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`) or a documented, clearly marked development override; ports for internal tools published only when asked for.
+- Pin base and infrastructure images by digest; non-root users, `read_only`, `cap_drop: [ALL]`, `no-new-privileges` for service containers; a JRE-native health check instead of `curl`.
+- Create the `identity` schema with a one-time migration or admin user and run the service with a least-privilege database role.
+- Run the Postman collection (`postman/`) with newman against the composed stack as a smoke test, including the gateway-to-identity path.
+
+**Acceptance criteria**
+- [ ] `docker compose up` fails fast without the required secrets, or starts with loopback-only ports when the development override is used.
+- [ ] Images are pinned and containers run as non-root with a read-only filesystem where possible.
+- [ ] The identity-service starts with a database role that cannot create objects outside its schema.
+- [ ] The newman smoke test passes against the composed stack.
