@@ -2,10 +2,9 @@ package com.aerotrace.identity.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.aerotrace.identity.keys.JwtSigner;
-import com.aerotrace.identity.keys.SigningKeyService;
+import com.aerotrace.identity.security.jwt.JwtTokenService;
 import com.aerotrace.identity.support.IdentityTestBase;
-import com.nimbusds.jose.JOSEException;
+import com.aerotrace.identity.support.TestKeys;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.RSASSASigner;
@@ -21,12 +20,10 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.TestPropertySource;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -38,8 +35,7 @@ import tools.jackson.databind.json.JsonMapper;
 @TestPropertySource(
     properties = {
       "aerotrace.identity.seed.enabled=true",
-      "aerotrace.identity.seed.password=seed-test-password-1",
-      "aerotrace.identity.keys.cache-ttl=0s"
+      "aerotrace.identity.seed.password=seed-test-password-1"
     })
 class AuthorizationMatrixTest extends IdentityTestBase {
 
@@ -51,7 +47,6 @@ class AuthorizationMatrixTest extends IdentityTestBase {
   enum Access {
     PUBLIC,
     ANY_ROLE,
-    ADMIN_ONLY,
     NOT_EXPOSED
   }
 
@@ -92,8 +87,8 @@ class AuthorizationMatrixTest extends IdentityTestBase {
           new Endpoint("GET", "/actuator/health", null, Access.PUBLIC),
           new Endpoint("GET", "/api/v1/auth/me", null, Access.ANY_ROLE),
           new Endpoint("GET", "/api/v1/auth/policy", null, Access.ANY_ROLE),
-          new Endpoint("POST", "/api/v1/auth/keys/rotate", null, Access.ADMIN_ONLY),
           new Endpoint("GET", "/api/v1/auth/unknown", null, Access.NOT_EXPOSED),
+          new Endpoint("POST", "/api/v1/auth/keys/rotate", null, Access.NOT_EXPOSED),
           new Endpoint("GET", "/actuator/env", null, Access.NOT_EXPOSED));
 
   static Stream<Arguments> matrix() {
@@ -122,19 +117,11 @@ class AuthorizationMatrixTest extends IdentityTestBase {
                 case PASSENGER, AGENT, DISPATCHER, ADMIN -> 200;
                 default -> 403;
               };
-      case ADMIN_ONLY -> !caller.valid ? 401 : caller == Caller.ADMIN ? 202 : 403;
       case NOT_EXPOSED -> caller.valid ? 403 : 401;
     };
   }
 
-  @Autowired private JwtSigner signer;
-  @Autowired private SigningKeyService keys;
-  @Autowired private JdbcClient jdbc;
-
-  @AfterEach
-  void restoreSingleKey() {
-    jdbc.sql("DELETE FROM identity.signing_key").update();
-  }
+  @Autowired private JwtTokenService tokens;
 
   private String login(String username) {
     HttpResponse<String> response =
@@ -144,45 +131,58 @@ class AuthorizationMatrixTest extends IdentityTestBase {
     return JSON.readTree(response.body()).get("data").get("accessToken").asString();
   }
 
-  private JWTClaimsSet.Builder claims(Instant expires) {
-    return new JWTClaimsSet.Builder()
-        .issuer("http://identity.test")
-        .audience("aerotrace-api")
-        .subject(UUID.randomUUID().toString())
-        .issueTime(new Date())
-        .expirationTime(Date.from(expires))
-        .claim("roles", List.of("ADMIN"));
+  /** A token signed with the real private key, with exactly the claims a test wants. */
+  private String signed(String issuer, String audience, List<String> roles, Instant expires) {
+    return TestKeys.token(
+        TestKeys.bundledPrivateKey(), tokens.keyId(), issuer, audience, roles, expires);
   }
 
-  private Instant soon() {
+  private static Instant soon() {
     return Instant.now().plus(Duration.ofMinutes(10));
   }
 
-  private String tokenFor(Caller caller) throws JOSEException {
+  private String tokenFor(Caller caller) throws Exception {
     return switch (caller) {
       case ANONYMOUS -> null;
       case PASSENGER -> login("passenger");
       case AGENT -> login("agent");
       case DISPATCHER -> login("dispatcher");
       case ADMIN -> login("admin");
-      case NO_ROLES -> signer.sign(claims(soon()).claim("roles", List.of()).build());
-      case UNKNOWN_ROLE -> signer.sign(claims(soon()).claim("roles", List.of("ROOT")).build());
-      case EXPIRED -> signer.sign(claims(Instant.now().minus(Duration.ofHours(1))).build());
-      case WRONG_AUDIENCE -> signer.sign(claims(soon()).audience("another-api").build());
-      case WRONG_ISSUER -> signer.sign(claims(soon()).issuer("http://someone-else").build());
+      case NO_ROLES -> signed(TestKeys.ISSUER, TestKeys.AUDIENCE, List.of(), soon());
+      case UNKNOWN_ROLE -> signed(TestKeys.ISSUER, TestKeys.AUDIENCE, List.of("ROOT"), soon());
+      case EXPIRED ->
+          signed(
+              TestKeys.ISSUER,
+              TestKeys.AUDIENCE,
+              List.of("ADMIN"),
+              Instant.now().minus(Duration.ofHours(1)));
+      case WRONG_AUDIENCE -> signed(TestKeys.ISSUER, "another-api", List.of("ADMIN"), soon());
+      case WRONG_ISSUER ->
+          signed("http://someone-else", TestKeys.AUDIENCE, List.of("ADMIN"), soon());
       case FORGED_SIGNATURE -> {
-        // An admin token signed by a key the service never published, claiming a real key id.
+        // An admin token signed by a key the service never published, claiming the real key id.
         RSAKey attacker = new RSAKeyGenerator(2048).generate();
         SignedJWT forged =
             new SignedJWT(
-                new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(keys.signingKey().kid()).build(),
-                claims(soon()).build());
+                new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(tokens.keyId()).build(),
+                adminClaims());
         forged.sign(new RSASSASigner(attacker));
         yield forged.serialize();
       }
-      case ALG_NONE -> new PlainJWT(claims(soon()).build()).serialize();
+      case ALG_NONE -> new PlainJWT(adminClaims()).serialize();
       case GARBAGE -> "this-is-not-a-jwt";
     };
+  }
+
+  private static JWTClaimsSet adminClaims() {
+    return new JWTClaimsSet.Builder()
+        .issuer(TestKeys.ISSUER)
+        .audience(TestKeys.AUDIENCE)
+        .subject(UUID.randomUUID().toString())
+        .issueTime(new Date())
+        .expirationTime(Date.from(soon()))
+        .claim("roles", List.of("ADMIN"))
+        .build();
   }
 
   @ParameterizedTest(name = "{0} as {1}")

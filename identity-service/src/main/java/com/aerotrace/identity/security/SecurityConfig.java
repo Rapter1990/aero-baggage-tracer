@@ -2,22 +2,18 @@ package com.aerotrace.identity.security;
 
 import com.aerotrace.common.error.ApiErrorWriter;
 import com.aerotrace.common.error.ErrorCode;
-import com.aerotrace.common.security.AeroTraceJwtValidators;
 import com.aerotrace.common.security.JwtClaims;
 import com.aerotrace.common.security.Role;
-import com.aerotrace.identity.keys.SigningKeyService;
-import com.aerotrace.identity.policy.Permission;
-import com.aerotrace.identity.token.TokenProperties;
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.jwk.source.JWKSource;
-import com.nimbusds.jose.proc.JWSKeySelector;
-import com.nimbusds.jose.proc.JWSVerificationKeySelector;
-import com.nimbusds.jose.proc.SecurityContext;
-import com.nimbusds.jwt.proc.DefaultJWTProcessor;
+import com.aerotrace.identity.constant.ApiMessages;
+import com.aerotrace.identity.constant.ApiPaths;
+import com.aerotrace.identity.constant.JwtConstants;
+import com.aerotrace.identity.constant.SecurityConstants;
+import com.aerotrace.identity.security.jwt.JwtTokenService;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -28,8 +24,9 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.BadJwtException;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
@@ -40,42 +37,56 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 /**
  * Servlet JWT resource-server security. Same posture as the gateway: stateless, 401 for a missing
  * or invalid token, 403 for a valid token without the role, and everything not listed is denied.
- * The service verifies tokens with its own published keys in process (no HTTP call to itself).
+ * The service verifies tokens itself with {@link JwtTokenService}, with the same key pair it signs
+ * with (no HTTP call to itself).
  */
 @Configuration(proxyBeanMethods = false)
 class SecurityConfig {
 
-  private static final Set<JWSAlgorithm> ALGORITHMS =
-      Set.of(JWSAlgorithm.RS256, JWSAlgorithm.ES256);
-
   /** Reachable without a token. A token sent to one of these is ignored, never held against you. */
   private static boolean isPublic(HttpServletRequest request) {
     String path = request.getRequestURI();
-    return path.equals("/api/v1/auth/token")
-        || path.equals("/.well-known/jwks.json")
-        || path.startsWith("/v3/api-docs")
-        || path.equals("/actuator/info")
-        || path.equals("/actuator/health")
-        || path.startsWith("/actuator/health/");
+    return path.equals(ApiPaths.TOKEN)
+        || path.equals(ApiPaths.JWKS)
+        || path.startsWith(ApiPaths.API_DOCS)
+        || path.equals(ApiPaths.INFO)
+        || path.equals(ApiPaths.HEALTH)
+        || path.startsWith(ApiPaths.HEALTH + "/");
   }
 
+  /**
+   * Verifies a bearer token with {@link JwtTokenService#parseClaims} (signature, issuer, audience
+   * and expiry) and hands Spring Security the claims it needs.
+   */
   @Bean
-  JwtDecoder jwtDecoder(SigningKeyService keys, TokenProperties tokens) {
-    JWKSource<SecurityContext> source =
-        (selector, context) -> selector.select(keys.publishedKeys());
-    JWSKeySelector<SecurityContext> selector =
-        (header, context) ->
-            ALGORITHMS.contains(header.getAlgorithm())
-                ? new JWSVerificationKeySelector<>(header.getAlgorithm(), source)
-                    .selectJWSKeys(header, context)
-                : List.of();
-    DefaultJWTProcessor<SecurityContext> processor = new DefaultJWTProcessor<>();
-    processor.setJWSKeySelector(selector);
-    // Claims are checked by the validator below, as in the gateway.
-    processor.setJWTClaimsSetVerifier((claims, context) -> {});
-    NimbusJwtDecoder decoder = new NimbusJwtDecoder(processor);
-    decoder.setJwtValidator(AeroTraceJwtValidators.create(tokens.issuer(), tokens.audience()));
-    return decoder;
+  JwtDecoder jwtDecoder(JwtTokenService tokens) {
+    return token -> {
+      try {
+        return toJwt(token, tokens.parseClaims(token));
+      } catch (JwtException | IllegalArgumentException e) {
+        // The reason (expired? wrong audience? bad signature?) is not passed on to the caller.
+        throw new BadJwtException("The token is not valid", e);
+      }
+    };
+  }
+
+  private static Jwt toJwt(String token, Claims claims) {
+    Jwt.Builder jwt =
+        Jwt.withTokenValue(token)
+            .header("alg", JwtConstants.SIGNATURE_ALGORITHM)
+            .header("typ", JwtConstants.HEADER_TYPE)
+            .subject(claims.getSubject())
+            .issuer(claims.getIssuer())
+            .audience(claims.getAudience())
+            .jti(claims.getId())
+            .claim(JwtClaims.ROLES, claims.get(JwtClaims.ROLES))
+            .issuedAt(claims.getIssuedAt() == null ? null : claims.getIssuedAt().toInstant())
+            .expiresAt(claims.getExpiration().toInstant());
+    Object passengerRef = claims.get(JwtClaims.PASSENGER_REF);
+    if (passengerRef != null) {
+      jwt.claim(JwtClaims.PASSENGER_REF, passengerRef);
+    }
+    return jwt.build();
   }
 
   @Bean
@@ -87,19 +98,20 @@ class SecurityConfig {
       throws Exception {
     AuthenticationEntryPoint unauthorized =
         (request, response, ex) -> {
-          response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
-          errors.write(request, response, ErrorCode.UNAUTHENTICATED, "Authentication required");
+          response.setHeader(
+              HttpHeaders.WWW_AUTHENTICATE, SecurityConstants.WWW_AUTHENTICATE_BEARER);
+          errors.write(
+              request, response, ErrorCode.UNAUTHENTICATED, ApiMessages.AUTHENTICATION_REQUIRED);
         };
     AccessDeniedHandler forbidden =
         (request, response, ex) ->
-            errors.write(request, response, ErrorCode.ACCESS_DENIED, "Insufficient permissions");
+            errors.write(
+                request, response, ErrorCode.ACCESS_DENIED, ApiMessages.INSUFFICIENT_PERMISSIONS);
 
     DefaultBearerTokenResolver bearer = new DefaultBearerTokenResolver();
     BearerTokenResolver resolver = request -> isPublic(request) ? null : bearer.resolve(request);
 
     String[] everyRole = Arrays.stream(Role.values()).map(Role::name).toArray(String[]::new);
-    String[] rotators =
-        Permission.SIGNING_KEY_ROTATE.roles().stream().map(Role::name).toArray(String[]::new);
 
     http.csrf(AbstractHttpConfigurer::disable)
         .httpBasic(AbstractHttpConfigurer::disable)
@@ -109,24 +121,25 @@ class SecurityConfig {
         .authorizeHttpRequests(
             requests -> {
               requests
-                  .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info")
+                  .requestMatchers(ApiPaths.HEALTH, ApiPaths.HEALTH_ALL, ApiPaths.INFO)
                   .permitAll()
-                  .requestMatchers(HttpMethod.GET, "/.well-known/jwks.json")
+                  .requestMatchers(HttpMethod.GET, ApiPaths.JWKS)
                   .permitAll()
                   // Any method: the controller answers a wrong one with 405, not a login prompt.
-                  .requestMatchers("/api/v1/auth/token")
+                  .requestMatchers(ApiPaths.TOKEN)
                   .permitAll();
               if (docsEnabled) {
                 // The definition only; the endpoints it describes still need their own rules.
                 requests
                     .requestMatchers(
-                        HttpMethod.GET, "/v3/api-docs", "/v3/api-docs/**", "/v3/api-docs.yaml")
+                        HttpMethod.GET,
+                        ApiPaths.API_DOCS,
+                        ApiPaths.API_DOCS_ALL,
+                        ApiPaths.API_DOCS_YAML)
                     .permitAll();
               }
               requests
-                  .requestMatchers(HttpMethod.POST, "/api/v1/auth/keys/rotate")
-                  .hasAnyRole(rotators)
-                  .requestMatchers(HttpMethod.GET, "/api/v1/auth/me", "/api/v1/auth/policy")
+                  .requestMatchers(HttpMethod.GET, ApiPaths.ME, ApiPaths.POLICY)
                   .hasAnyRole(everyRole)
                   // Anything new must be given an explicit rule above.
                   .anyRequest()

@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.aerotrace.common.security.AeroTraceJwtValidators;
 import com.aerotrace.common.security.JwtClaims;
 import com.aerotrace.common.security.Role;
-import com.aerotrace.identity.keys.SigningKeyService;
 import com.aerotrace.identity.model.domain.AppUser;
 import com.aerotrace.identity.support.IdentityTestBase;
 import com.aerotrace.identity.user.UserService;
@@ -18,7 +17,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,18 +36,15 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * POST /api/v1/auth/token end to end: the path the gateway forwards. Tokens are verified the way
  * the gateway does it, with its decoder settings and the shared claim validators, against this
- * service's live JWKS. Subclasses pick the signing algorithm.
+ * service's live JWKS.
  */
 @ExtendWith(OutputCaptureExtension.class)
 @TestPropertySource(
     properties = {
       "aerotrace.identity.seed.enabled=true",
-      "aerotrace.identity.seed.password=seed-test-password-1",
-      "aerotrace.identity.keys.cache-ttl=0s",
-      "aerotrace.identity.keys.publish-lead=0s",
-      "aerotrace.identity.keys.max-stale=0s"
+      "aerotrace.identity.seed.password=seed-test-password-1"
     })
-abstract class AbstractTokenEndpointTest extends IdentityTestBase {
+class TokenEndpointTest extends IdentityTestBase {
 
   static final String PATH = "/api/v1/auth/token";
   static final String PASSWORD = "seed-test-password-1";
@@ -57,15 +52,7 @@ abstract class AbstractTokenEndpointTest extends IdentityTestBase {
 
   @Autowired UserService users;
   @Autowired JdbcClient jdbc;
-  @Autowired SigningKeyService keys;
   @Autowired MeterRegistry meters;
-
-  abstract String algorithm();
-
-  @AfterEach
-  void restoreSingleKey() {
-    jdbc.sql("DELETE FROM identity.signing_key").update();
-  }
 
   HttpResponse<String> login(String username, String password) {
     return postJson(PATH, "{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}");
@@ -84,7 +71,6 @@ abstract class AbstractTokenEndpointTest extends IdentityTestBase {
             .jwsAlgorithms(
                 algorithms -> {
                   algorithms.add(SignatureAlgorithm.RS256);
-                  algorithms.add(SignatureAlgorithm.ES256);
                 })
             .build();
     OAuth2TokenValidator<Jwt> validator = AeroTraceJwtValidators.create(issuer, audience);
@@ -118,7 +104,7 @@ abstract class AbstractTokenEndpointTest extends IdentityTestBase {
     SignedJWT jwt = SignedJWT.parse(tokenFor("dispatcher"));
     AppUser user = users.findByUsername("dispatcher").orElseThrow();
 
-    assertThat(jwt.getHeader().getAlgorithm().getName()).isEqualTo(algorithm());
+    assertThat(jwt.getHeader().getAlgorithm().getName()).isEqualTo("RS256");
     assertThat(jwt.getJWTClaimsSet().getIssuer()).isEqualTo("http://identity.test");
     assertThat(jwt.getJWTClaimsSet().getAudience()).containsExactly("aerotrace-api");
     assertThat(jwt.getJWTClaimsSet().getSubject()).isEqualTo(user.id().toString());
@@ -179,28 +165,6 @@ abstract class AbstractTokenEndpointTest extends IdentityTestBase {
     org.assertj.core.api.Assertions.assertThatThrownBy(
             () -> gatewayDecoder("http://someone-else", "aerotrace-api").decode(token))
         .isInstanceOf(BadJwtException.class);
-  }
-
-  @Test
-  void rotatingTheKeyKeepsEarlierTokensValidForTheGateway() {
-    JwtDecoder gateway = gatewayDecoder();
-    String before = tokenFor("agent");
-    assertThat(gateway.decode(before)).isNotNull();
-
-    keys.rotate();
-    String after = tokenFor("agent");
-
-    assertThat(gateway.decode(after)).isNotNull();
-    assertThat(gateway.decode(before)).isNotNull();
-    assertThat(kid(after)).isNotEqualTo(kid(before));
-  }
-
-  private static String kid(String token) {
-    try {
-      return SignedJWT.parse(token).getHeader().getKeyID();
-    } catch (ParseException e) {
-      throw new IllegalStateException(e);
-    }
   }
 
   // --- failure -----------------------------------------------------------------------------

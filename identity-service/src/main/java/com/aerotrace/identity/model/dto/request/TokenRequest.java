@@ -1,5 +1,7 @@
 package com.aerotrace.identity.model.dto.request;
 
+import com.aerotrace.identity.constant.ApiMessages;
+import com.aerotrace.identity.constant.UserRules;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -11,11 +13,11 @@ import jakarta.validation.constraints.Size;
  * @param password the account password
  */
 public record TokenRequest(
-    @NotBlank(message = "must not be blank")
-        @Size(max = 256, message = "must be at most 256 characters")
+    @NotBlank(message = ApiMessages.MUST_NOT_BE_BLANK)
+        @Size(max = UserRules.MAX_CREDENTIAL_LENGTH, message = ApiMessages.TOO_LONG)
         String username,
-    @NotBlank(message = "must not be blank")
-        @Size(max = 256, message = "must be at most 256 characters")
+    @NotBlank(message = ApiMessages.MUST_NOT_BE_BLANK)
+        @Size(max = UserRules.MAX_CREDENTIAL_LENGTH, message = ApiMessages.TOO_LONG)
         String password) {
 
   @Override

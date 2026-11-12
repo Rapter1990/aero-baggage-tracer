@@ -1,5 +1,8 @@
 package com.aerotrace.identity.docs;
 
+import com.aerotrace.identity.constant.ApiPaths;
+import com.aerotrace.identity.constant.DocsConstants;
+import com.aerotrace.identity.constant.SecurityConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.swagger.v3.core.util.Json;
@@ -26,8 +29,6 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 class OpenApiConfiguration {
 
-  static final String BEARER = "bearerAuth";
-
   @Bean
   OpenAPI identityOpenApi() {
     Schema<Object> apiError =
@@ -37,7 +38,7 @@ class OpenApiConfiguration {
             .addProperty("code", new StringSchema().example("ACCESS_DENIED"))
             .addProperty("message", new StringSchema().example("Insufficient permissions"))
             .addProperty("status", new Schema<Integer>().type("integer").example(403))
-            .addProperty("path", new StringSchema().example("/api/v1/auth/keys/rotate"))
+            .addProperty("path", new StringSchema().example(ApiPaths.POLICY))
             .addProperty(
                 "validationErrors",
                 new MapSchema()
@@ -51,21 +52,21 @@ class OpenApiConfiguration {
                 .title("AeroTrace Identity Service")
                 .version("v1")
                 .description(
-                    "Issues signed JWT access tokens, publishes the keys to verify them and owns "
-                        + "users and roles. Tokens are RS256 or ES256; verify them with the JWKS "
-                        + "at /.well-known/jwks.json (several key ids can be live at once). "
-                        + "Successful responses are wrapped as {success, data, timestamp}, except "
-                        + "the JWKS, whose format is fixed by standard."))
+                    "Issues signed JWT access tokens (RS256), publishes the public key to verify "
+                        + "them and owns users and roles. Verify tokens with the JWKS at "
+                        + ApiPaths.JWKS
+                        + ". Successful responses are wrapped as {success, data, timestamp}, "
+                        + "except the JWKS, whose format is fixed by standard."))
         .components(
             new Components()
-                .addSchemas("ApiError", apiError)
+                .addSchemas(DocsConstants.API_ERROR_SCHEMA, apiError)
                 .addSecuritySchemes(
-                    BEARER,
+                    DocsConstants.BEARER_AUTH,
                     new SecurityScheme()
                         .type(SecurityScheme.Type.HTTP)
-                        .scheme("bearer")
+                        .scheme(SecurityConstants.TOKEN_TYPE.toLowerCase())
                         .bearerFormat("JWT")
-                        .description("Access token from POST /api/v1/auth/token")));
+                        .description("Access token from POST " + ApiPaths.TOKEN)));
   }
 
   @Bean
@@ -112,9 +113,9 @@ class OpenApiConfiguration {
           .content(
               new Content()
                   .addMediaType(
-                      "application/json",
+                      org.springframework.http.MediaType.APPLICATION_JSON_VALUE,
                       new MediaType()
-                          .schema(new Schema<>().$ref("#/components/schemas/ApiError"))
+                          .schema(new Schema<>().$ref(DocsConstants.API_ERROR_REF))
                           .addExamples("default", new Example().value(parsed))));
     } catch (java.io.IOException e) {
       throw new IllegalStateException("Invalid OpenAPI example", e);

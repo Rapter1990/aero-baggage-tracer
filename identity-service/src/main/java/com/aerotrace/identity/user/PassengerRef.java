@@ -1,26 +1,28 @@
 package com.aerotrace.identity.user;
 
+import com.aerotrace.identity.constant.UserRules;
 import java.security.SecureRandom;
 import java.util.regex.Pattern;
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
 
 /**
  * The pseudonymous passenger reference placed in tokens for row-level ownership: "P-" followed by
  * 20 random digits. It carries no personal data. The shape matches what the shared log masker
  * redacts, and references are never logged anyway.
  */
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class PassengerRef {
 
-  private static final Pattern FORMAT = Pattern.compile("P-[0-9]{20}");
+  private static final Pattern FORMAT = Pattern.compile(UserRules.PASSENGER_REF_PATTERN);
   private static final SecureRandom RANDOM = new SecureRandom();
 
-  private PassengerRef() {}
-
   public static String generate() {
-    StringBuilder digits = new StringBuilder("P-");
-    for (int i = 0; i < 20; i++) {
-      digits.append(RANDOM.nextInt(10));
+    StringBuilder reference = new StringBuilder(UserRules.PASSENGER_REF_PREFIX);
+    for (int i = 0; i < UserRules.PASSENGER_REF_DIGITS; i++) {
+      reference.append(RANDOM.nextInt(10));
     }
-    return digits.toString();
+    return reference.toString();
   }
 
   public static boolean isValid(String value) {

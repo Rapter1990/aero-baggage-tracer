@@ -43,35 +43,27 @@ spring:
 
 aerotrace:
   identity:
-    # Set only for a throwaway development run: allows the key-encryption key and the seed
-    # password that are published in the repository (see DevDefaultsGuard).
-    allow-dev-defaults: ${IDENTITY_ALLOW_DEV_DEFAULTS:false}
     # BCrypt cost factor for password hashes.
     bcrypt-strength: ${IDENTITY_BCRYPT_STRENGTH:12}
     docs:
       # The OpenAPI definition at /v3/api-docs, which the gateway's Swagger UI reads. It is served
       # without a token, so turn it off outside development.
       enabled: ${DOCS_ENABLED:false}
-    keys:
-      # RS256 or ES256, for newly generated signing keys.
-      algorithm: ${IDENTITY_KEY_ALGORITHM:RS256}
-      # base64 of 32 random bytes (openssl rand -base64 32). No default: private keys are stored
-      # encrypted with it, and the service refuses to start without it.
-      encryption-key: ${IDENTITY_KEY_ENCRYPTION_KEY}
-      rotation-interval: ${IDENTITY_KEY_ROTATION_INTERVAL:30d}
-      # A new key is published this long before it signs, so gateways have cached it by then.
-      publish-lead: 10m
-      cache-ttl: 10s
-      # Never longer than token.clock-skew (see SigningKeyService.validateTimings).
-      max-stale: 30s
-      maintenance-interval: PT5M
-    token:
+    jwt:
       # The iss claim; the gateway's JWT_ISSUER must be the same. No default.
       issuer: ${IDENTITY_ISSUER}
       audience: ${IDENTITY_AUDIENCE:aerotrace-api}
-      # A replaced signing key stays published for ttl + clock-skew after it stops signing.
       ttl: 15m
       clock-skew: 1m
+      # The RSA key pair that signs and verifies the tokens, as PEM: a private key in PKCS#8
+      # ("BEGIN PRIVATE KEY") and the matching public key. Each is read from the inline text if
+      # given, otherwise from the location (a Spring resource such as file:/run/secrets/x.pem, or a
+      # path). With nothing set, the development pair bundled in src/main/resources/keys is used:
+      # its private key is in the repository, so replace it wherever the tokens matter.
+      private-key: ${IDENTITY_JWT_PRIVATE_KEY:}
+      private-key-location: ${IDENTITY_JWT_PRIVATE_KEY_LOCATION:}
+      public-key: ${IDENTITY_JWT_PUBLIC_KEY:}
+      public-key-location: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:}
     seed:
       # Test users (agent, dispatcher, admin, two passengers). Development only; never in production.
       enabled: ${IDENTITY_SEED_ENABLED:false}

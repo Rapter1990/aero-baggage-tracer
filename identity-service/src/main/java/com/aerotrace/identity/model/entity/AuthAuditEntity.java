@@ -8,6 +8,9 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 import org.hibernate.annotations.Immutable;
 
 /**
@@ -16,6 +19,8 @@ import org.hibernate.annotations.Immutable;
  */
 @Entity
 @Immutable
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "auth_audit", schema = "identity")
 public class AuthAuditEntity {
 
@@ -38,8 +43,6 @@ public class AuthAuditEntity {
   @Column(name = "user_id", updatable = false)
   private UUID userId;
 
-  protected AuthAuditEntity() {}
-
   public AuthAuditEntity(
       Instant occurredAt, String eventType, String outcome, String username, UUID userId) {
     this.occurredAt = occurredAt;
@@ -47,29 +50,5 @@ public class AuthAuditEntity {
     this.outcome = outcome;
     this.username = username;
     this.userId = userId;
-  }
-
-  public Long getId() {
-    return id;
-  }
-
-  public Instant getOccurredAt() {
-    return occurredAt;
-  }
-
-  public String getEventType() {
-    return eventType;
-  }
-
-  public String getOutcome() {
-    return outcome;
-  }
-
-  public String getUsername() {
-    return username;
-  }
-
-  public UUID getUserId() {
-    return userId;
   }
 }

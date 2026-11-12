@@ -2,12 +2,16 @@ package com.aerotrace.identity.docs;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.aerotrace.identity.security.jwt.JwtTokenService;
 import com.aerotrace.identity.support.IdentityTestBase;
+import com.aerotrace.identity.support.TestKeys;
 import java.net.http.HttpResponse;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.TestPropertySource;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -25,6 +29,8 @@ import tools.jackson.databind.json.JsonMapper;
 class OpenApiDocsTest extends IdentityTestBase {
 
   private static final JsonMapper JSON = JsonMapper.builder().build();
+
+  @Autowired private JwtTokenService tokens;
   private static final List<String> PROBLEM_FIELDS = List.of("code", "message", "status", "path");
 
   private JsonNode docs() {
@@ -86,7 +92,6 @@ class OpenApiDocsTest extends IdentityTestBase {
             "/api/v1/auth/token",
             "/api/v1/auth/me",
             "/api/v1/auth/policy",
-            "/api/v1/auth/keys/rotate",
             "/.well-known/jwks.json");
     assertThat(docs().get("info").get("title").asString()).isEqualTo("AeroTrace Identity Service");
   }
@@ -101,7 +106,6 @@ class OpenApiDocsTest extends IdentityTestBase {
     assertThat(scheme.get("bearerFormat").asString()).isEqualTo("JWT");
     assertThat(operation(docs, "/api/v1/auth/me", "get").get("security")).isNotNull();
     assertThat(operation(docs, "/api/v1/auth/policy", "get").get("security")).isNotNull();
-    assertThat(operation(docs, "/api/v1/auth/keys/rotate", "post").get("security")).isNotNull();
     for (String[] open :
         new String[][] {{"/api/v1/auth/token", "post"}, {"/.well-known/jwks.json", "get"}}) {
       JsonNode security = operation(docs, open[0], open[1]).get("security");
@@ -116,8 +120,7 @@ class OpenApiDocsTest extends IdentityTestBase {
     for (String[] secured :
         new String[][] {
           {"/api/v1/auth/me", "get"},
-          {"/api/v1/auth/policy", "get"},
-          {"/api/v1/auth/keys/rotate", "post"}
+          {"/api/v1/auth/policy", "get"}
         }) {
       assertThat(example(docs, secured[0], secured[1], "401").get("code").asString())
           .as(secured[0])
@@ -139,12 +142,21 @@ class OpenApiDocsTest extends IdentityTestBase {
 
   @Test
   void the403ExampleMatchesARealForbiddenResponse() {
-    HttpResponse<String> actual =
-        send("POST", "/api/v1/auth/keys/rotate", null, token("passenger"));
+    // A genuine token whose roles are not known to the platform: signed in, but allowed nothing.
+    String noRoles =
+        TestKeys.token(
+            TestKeys.bundledPrivateKey(),
+            tokens.keyId(),
+            TestKeys.ISSUER,
+            TestKeys.AUDIENCE,
+            List.of("ROOT"),
+            Instant.now().plusSeconds(600));
+
+    HttpResponse<String> actual = send("GET", "/api/v1/auth/policy", null, noRoles);
 
     assertThat(actual.statusCode()).isEqualTo(403);
     assertSameShapeAndValues(
-        example(docs(), "/api/v1/auth/keys/rotate", "post", "403"), JSON.readTree(actual.body()));
+        example(docs(), "/api/v1/auth/policy", "get", "403"), JSON.readTree(actual.body()));
   }
 
   @Test

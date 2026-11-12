@@ -3,12 +3,13 @@ package com.aerotrace.identity.seed;
 import com.aerotrace.common.error.ApiException;
 import com.aerotrace.common.error.ErrorCode;
 import com.aerotrace.common.security.Role;
+import com.aerotrace.identity.constant.SeedConstants;
+import com.aerotrace.identity.constant.UserRules;
 import com.aerotrace.identity.user.UserService;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -19,34 +20,24 @@ import org.springframework.stereotype.Component;
  * {@code aerotrace.identity.seed.enabled=true}. Users that already exist are left untouched, so it
  * is safe to run on every start. All of them share the configured password, which is hashed.
  */
+@Slf4j
 @Component
+@RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "aerotrace.identity.seed", name = "enabled", havingValue = "true")
 public class SeedUsers implements ApplicationRunner {
 
-  private static final Logger log = LoggerFactory.getLogger(SeedUsers.class);
-  private static final int MIN_PASSWORD_LENGTH = 12;
-
   private record Seed(String username, Role role, String passengerRef) {}
 
-  // Fixed references so demos, journey-service seeds and ownership tests can name a passenger.
-  private static final Seed[] SEEDS = {
-    new Seed("passenger", Role.PASSENGER, "P-00000000000000000001"),
-    new Seed("passenger2", Role.PASSENGER, "P-00000000000000000002"),
-    new Seed("agent", Role.AGENT, null),
-    new Seed("dispatcher", Role.DISPATCHER, null),
-    new Seed("admin", Role.ADMIN, null)
-  };
-
-  /** The accounts this class creates; also what a start-up check looks for. */
-  public static final List<String> USERNAMES = Arrays.stream(SEEDS).map(Seed::username).toList();
+  private static final List<Seed> SEEDS =
+      List.of(
+          new Seed(SeedConstants.PASSENGER, Role.PASSENGER, SeedConstants.PASSENGER_REF),
+          new Seed(SeedConstants.PASSENGER_2, Role.PASSENGER, SeedConstants.PASSENGER_2_REF),
+          new Seed(SeedConstants.AGENT, Role.AGENT, null),
+          new Seed(SeedConstants.DISPATCHER, Role.DISPATCHER, null),
+          new Seed(SeedConstants.ADMIN, Role.ADMIN, null));
 
   private final UserService users;
   private final SeedProperties properties;
-
-  public SeedUsers(UserService users, SeedProperties properties) {
-    this.users = users;
-    this.properties = properties;
-  }
 
   @Override
   public void run(ApplicationArguments args) {
@@ -55,10 +46,10 @@ public class SeedUsers implements ApplicationRunner {
 
   public void seed() {
     String password = properties.password();
-    if (password == null || password.length() < MIN_PASSWORD_LENGTH) {
+    if (password == null || password.length() < UserRules.MIN_PASSWORD_LENGTH) {
       throw new IllegalStateException(
           "aerotrace.identity.seed.password must be set to at least "
-              + MIN_PASSWORD_LENGTH
+              + UserRules.MIN_PASSWORD_LENGTH
               + " characters when seeding is enabled");
     }
     int created = 0;
@@ -79,6 +70,6 @@ public class SeedUsers implements ApplicationRunner {
         "Test users are enabled ({} created, {} already existed). They share one password: "
             + "never run this way in production.",
         created,
-        SEEDS.length - created);
+        SEEDS.size() - created);
   }
 }

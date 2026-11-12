@@ -19,10 +19,9 @@ class AuthorizationPolicyTest {
   }
 
   @Test
-  void onlyAdminsManageCapacityChangeRiskPoliciesAndRotateKeys() {
+  void onlyAdminsManageCapacityAndChangeRiskPolicies() {
     assertThat(Permission.CAPACITY_MANAGE.roles()).containsExactly(Role.ADMIN);
     assertThat(Permission.RISK_POLICY_CHANGE.roles()).containsExactly(Role.ADMIN);
-    assertThat(Permission.SIGNING_KEY_ROTATE.roles()).containsExactly(Role.ADMIN);
   }
 
   @Test
@@ -64,8 +63,7 @@ class AuthorizationPolicyTest {
 
     assertThat(entries)
         .extracting(AuthorizationPolicy.Entry::name)
-        .containsExactly(
-            "CASE_TRANSITION", "CAPACITY_MANAGE", "RISK_POLICY_CHANGE", "SIGNING_KEY_ROTATE");
+        .containsExactly("CASE_TRANSITION", "CAPACITY_MANAGE", "RISK_POLICY_CHANGE");
     assertThat(entries.get(0).roles()).containsExactly("AGENT", "DISPATCHER");
   }
 }

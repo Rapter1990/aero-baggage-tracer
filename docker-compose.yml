@@ -143,12 +143,15 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
       # Must equal what the gateway expects (JWT_ISSUER above).
       IDENTITY_ISSUER: ${COMPOSE_JWT_ISSUER:-http://identity-service:8081}
-      # No defaults for secrets: the key that encrypts the signing keys in the database must
-      # be yours (openssl rand -base64 32). Left empty, the service refuses to start. For a
-      # throwaway development stack add the override file: docker-compose.dev.yml.
-      IDENTITY_KEY_ENCRYPTION_KEY: ${IDENTITY_KEY_ENCRYPTION_KEY:-}
+      # The RSA key pair (PEM) that signs the tokens. Empty: the development pair bundled in
+      # the image is used, whose private key is in the repository. Use your own for
+      # anything that matters, e.g. IDENTITY_JWT_PRIVATE_KEY_LOCATION=file:/run/secrets/jwt.pem
+      # with a bind mount or a secret.
+      IDENTITY_JWT_PRIVATE_KEY_LOCATION: ${IDENTITY_JWT_PRIVATE_KEY_LOCATION:-}
+      IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-}
       # Test users (passenger, passenger2, agent, dispatcher, admin share one password).
-      # Off unless you switch it on; never in production.
+      # Off unless you switch it on in .env (IDENTITY_SEED_ENABLED=true plus a password of
+      # at least 12 characters); never in production.
       IDENTITY_SEED_ENABLED: ${IDENTITY_SEED_ENABLED:-false}
       IDENTITY_SEED_PASSWORD: ${IDENTITY_SEED_PASSWORD:-}
       DOCS_ENABLED: ${DOCS_ENABLED:-false}

@@ -55,22 +55,33 @@ In `docker-compose.yml` and `docker-compose-local.yml`, the services that need t
 | `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD` | Grafana (optional, defaults `admin` / `grafana`) |
 | `JWT_ISSUER`, `JWT_AUDIENCE`, `JWK_SET_URI` | api-gateway started outside Docker (inside Compose it uses `COMPOSE_JWT_ISSUER` / `COMPOSE_JWK_SET_URI`) |
 | `DB_PASSWORD` (also `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`; defaults `localhost`, `5433`, `aerotrace`, `aerotrace`) | identity-service started outside Docker (inside Compose it takes the `POSTGRES_*` values) |
-| `IDENTITY_ISSUER`, `IDENTITY_KEY_ENCRYPTION_KEY` | identity-service, no defaults. The issuer must equal the gateway's `JWT_ISSUER`. The key (`openssl rand -base64 32`) encrypts the token-signing keys stored in the database; if it is lost or changed the stored keys can no longer be read, and the service then creates a fresh signing key (earlier tokens stay verifiable through the published public keys until they expire) |
+| `IDENTITY_ISSUER` | identity-service, no default. Must equal the gateway's `JWT_ISSUER` |
+| `IDENTITY_JWT_PRIVATE_KEY_LOCATION`, `IDENTITY_JWT_PUBLIC_KEY_LOCATION` (or the PEM text itself in `IDENTITY_JWT_PRIVATE_KEY`, `IDENTITY_JWT_PUBLIC_KEY`) | identity-service: the RSA key pair (PEM; the private key in PKCS#8, `BEGIN PRIVATE KEY`) that signs and verifies the access tokens. A location is a Spring resource (`file:/run/secrets/private.pem`, `classpath:...`) or a file path; inline text wins over a location. Unset, the development pair in `identity-service/src/main/resources/keys` is used, **whose private key is in this repository** |
 | `IDENTITY_SEED_ENABLED`, `IDENTITY_SEED_PASSWORD` | identity-service: creates the test users `passenger`, `passenger2`, `agent`, `dispatcher` and `admin` sharing this password (at least 12 characters, no default). Off unless switched on; never enable it in production. Turning it off later does not delete the accounts it made |
-| `IDENTITY_ALLOW_DEV_DEFAULTS` | identity-service: set to `true` only for a throwaway development run. Without it the service refuses to start with the key-encryption key or seed password that are published in this repository |
 | `DOCS_ENABLED` | api-gateway and identity-service: serve the OpenAPI definitions and Swagger UI (default `false`, because they map every endpoint without a token) |
 
 ## Running the stack with Docker Compose
 
-`docker-compose.yml` has no secrets of its own: put `IDENTITY_KEY_ENCRYPTION_KEY` (and whatever else you need) in `.env` and start it with `docker compose up -d`. The gateway listens on `127.0.0.1:8080` only; put a reverse proxy with TLS in front of it to expose it further.
+`docker compose up -d` starts the stack. The gateway listens on `127.0.0.1:8080` only; put a reverse proxy with TLS in front of it to expose it further.
 
-For a developer machine, `docker-compose.dev.yml` adds the test users, a key-encryption key and the API docs, using values that are published in this repository and therefore known to everyone:
+To sign in you need users. Add test users in `.env` (see the table above), and optionally the API docs:
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+```
+IDENTITY_SEED_ENABLED=true
+IDENTITY_SEED_PASSWORD=choose-at-least-12-characters
+DOCS_ENABLED=true
 ```
 
-Then `POST http://localhost:8080/api/v1/auth/token` with `{"username":"agent","password":"aerotrace-dev-password"}` returns `{"success":true,"data":{"accessToken":"...","tokenType":"Bearer","expiresIn":900},"timestamp":"..."}`. Never use the override file on a shared, cloud or production host: identity-service refuses to start with those published values unless `IDENTITY_ALLOW_DEV_DEFAULTS=true`, which only that file sets.
+Then `POST http://localhost:8080/api/v1/auth/token` with `{"username":"agent","password":"<that password>"}` returns `{"success":true,"data":{"accessToken":"...","tokenType":"Bearer","expiresIn":900},"timestamp":"..."}`.
+
+Tokens are signed with the development key pair that ships inside identity-service unless you provide your own. Its private key is in this repository, so anyone can mint tokens that the platform accepts: fine for a throwaway local stack, never for anything else (identity-service logs a warning at every start while it is in use). To use your own pair:
+
+```bash
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out private.pem
+openssl rsa -in private.pem -pubout -out public.pem
+```
+
+then mount both files into the identity-service container and set `IDENTITY_JWT_PRIVATE_KEY_LOCATION` and `IDENTITY_JWT_PUBLIC_KEY_LOCATION` to their paths (for example `file:/run/secrets/private.pem`).
 
 ## API response format
 
@@ -81,8 +92,8 @@ Every service answers with the same two envelopes from `common-module`: `ApiResp
 - No per-account lockout or backoff and no cap on concurrent password hashing; the gateway's per-address rate limit is the only brake today.
 - Access tokens cannot be revoked; a token stays valid until it expires (15 minutes plus a minute of clock skew).
 - The audit trail's immutability is enforced by database triggers, but the service connects as the schema owner and could drop them; use a restricted runtime role where that matters.
-- Erasing a retired private key sets the column to null; the encrypted value can remain in old row versions, write-ahead logs and backups, protected only by the key-encryption key.
-- The key-encryption key has no automatic rotation; the stored format is versioned (`v1:`) so one can be added.
+- The signing key pair is one static pair read at start-up. There is no automatic rotation and no second key id: replacing the pair means restarting identity-service, and tokens signed with the old pair stop verifying (at most 15 minutes of tokens, plus the gateway's key cache of about a minute).
+- The development key pair that ships with the service has its private key in the repository (see above).
 
 ## Observability (OpenTelemetry Collector, Tempo, Loki, Prometheus, Grafana)
 

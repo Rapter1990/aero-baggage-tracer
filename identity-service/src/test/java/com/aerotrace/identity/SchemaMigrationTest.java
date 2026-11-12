@@ -54,13 +54,6 @@ class SchemaMigrationTest extends IdentityTestBase {
   }
 
   @Test
-  void createsTheSigningKeyTableWithoutAPlaintextPrivateKeyColumn() {
-    assertThat(columns("signing_key"))
-        .contains("kid", "algorithm", "public_key", "private_key_enc", "activate_at", "retire_at")
-        .doesNotContain("private_key");
-  }
-
-  @Test
   void theAuditTableHasNoColumnThatCouldHoldACredentialOrToken() {
     assertThat(columns("auth_audit"))
         .noneMatch(c -> c.contains("password") || c.contains("token") || c.contains("secret"));

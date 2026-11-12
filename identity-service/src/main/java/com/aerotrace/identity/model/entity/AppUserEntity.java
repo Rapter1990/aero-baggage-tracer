@@ -19,6 +19,9 @@ import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 import org.springframework.data.domain.Persistable;
 
 /**
@@ -29,6 +32,8 @@ import org.springframework.data.domain.Persistable;
  * digits), never an email address or name.
  */
 @Entity
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "app_user", schema = "identity")
 public class AppUserEntity implements Persistable<UUID> {
 
@@ -58,9 +63,9 @@ public class AppUserEntity implements Persistable<UUID> {
   @Enumerated(EnumType.STRING)
   private Set<Role> roles = new HashSet<>();
 
-  @Transient private boolean isNew = true;
-
-  protected AppUserEntity() {}
+  @Getter(AccessLevel.NONE)
+  @Transient
+  private boolean isNew = true;
 
   public AppUserEntity(
       UUID id, String username, String passwordHash, String passengerRef, Set<Role> roles) {
@@ -85,36 +90,7 @@ public class AppUserEntity implements Persistable<UUID> {
   }
 
   @Override
-  public UUID getId() {
-    return id;
-  }
-
-  @Override
   public boolean isNew() {
     return isNew;
-  }
-
-  public String getUsername() {
-    return username;
-  }
-
-  public String getPasswordHash() {
-    return passwordHash;
-  }
-
-  public String getPassengerRef() {
-    return passengerRef;
-  }
-
-  public boolean isEnabled() {
-    return enabled;
-  }
-
-  public Instant getCreatedAt() {
-    return createdAt;
-  }
-
-  public Set<Role> getRoles() {
-    return roles;
   }
 }

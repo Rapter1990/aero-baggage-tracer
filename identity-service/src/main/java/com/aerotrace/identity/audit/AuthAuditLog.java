@@ -1,11 +1,11 @@
 package com.aerotrace.identity.audit;
 
+import com.aerotrace.identity.constant.AuditConstants;
 import com.aerotrace.identity.model.entity.AuthAuditEntity;
 import com.aerotrace.identity.repository.AuthAuditRepository;
 import java.time.Clock;
 import java.util.UUID;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -18,11 +18,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>Each entry is written in a transaction of its own, so a failure to audit can never poison the
  * caller's transaction.
  */
+@Slf4j
 @Component
 public class AuthAuditLog {
-
-  private static final Logger log = LoggerFactory.getLogger(AuthAuditLog.class);
-  private static final int MAX_USERNAME = 128;
 
   private final AuthAuditRepository repository;
   private final Clock clock;
@@ -56,9 +54,9 @@ public class AuthAuditLog {
   }
 
   private static String truncate(String username) {
-    if (username == null || username.length() <= MAX_USERNAME) {
+    if (username == null || username.length() <= AuditConstants.MAX_USERNAME_LENGTH) {
       return username;
     }
-    return username.substring(0, MAX_USERNAME);
+    return username.substring(0, AuditConstants.MAX_USERNAME_LENGTH);
   }
 }

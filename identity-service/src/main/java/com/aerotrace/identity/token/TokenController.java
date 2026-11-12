@@ -1,5 +1,8 @@
 package com.aerotrace.identity.token;
 
+import com.aerotrace.identity.constant.ApiPaths;
+import com.aerotrace.identity.constant.DocsConstants;
+import com.aerotrace.identity.constant.SecurityConstants;
 import com.aerotrace.identity.docs.ApiExamples;
 import com.aerotrace.identity.model.dto.request.TokenRequest;
 import com.aerotrace.identity.model.dto.response.TokenResponse;
@@ -11,12 +14,12 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -24,15 +27,11 @@ import org.springframework.web.bind.annotation.RestController;
  * is the one the api-gateway forwards.
  */
 @RestController
-@RequestMapping("/api/v1/auth")
-@Tag(name = "Tokens")
+@RequiredArgsConstructor
+@Tag(name = DocsConstants.TAG_TOKENS)
 class TokenController {
 
   private final TokenService tokens;
-
-  TokenController(TokenService tokens) {
-    this.tokens = tokens;
-  }
 
   @Operation(
       summary = "Exchange a username and password for an access token",
@@ -46,15 +45,15 @@ class TokenController {
         description = "Signed access token. Send it as `Authorization: Bearer <token>`.",
         content =
             @Content(
-                mediaType = "application/json",
+                mediaType = MediaType.APPLICATION_JSON_VALUE,
                 examples = @ExampleObject(name = "issued", value = ApiExamples.TOKEN_ISSUED))),
     @ApiResponse(
         responseCode = "400",
         description = "username or password is missing, blank or too long.",
         content =
             @Content(
-                mediaType = "application/json",
-                schema = @Schema(ref = "#/components/schemas/ApiError"),
+                mediaType = MediaType.APPLICATION_JSON_VALUE,
+                schema = @Schema(ref = DocsConstants.API_ERROR_REF),
                 examples =
                     @ExampleObject(
                         name = "validation",
@@ -64,22 +63,22 @@ class TokenController {
         description = "The credentials were not accepted.",
         content =
             @Content(
-                mediaType = "application/json",
-                schema = @Schema(ref = "#/components/schemas/ApiError"),
+                mediaType = MediaType.APPLICATION_JSON_VALUE,
+                schema = @Schema(ref = DocsConstants.API_ERROR_REF),
                 examples =
                     @ExampleObject(
                         name = "invalid-credentials",
                         value = ApiExamples.TOKEN_INVALID_CREDENTIALS)))
   })
   @PostMapping(
-      value = "/token",
+      value = ApiPaths.TOKEN,
       consumes = MediaType.APPLICATION_JSON_VALUE,
       produces = MediaType.APPLICATION_JSON_VALUE)
   ResponseEntity<com.aerotrace.common.api.ApiResponse<TokenResponse>> token(
       @Valid @RequestBody TokenRequest request) {
     return ResponseEntity.ok()
         .cacheControl(CacheControl.noStore())
-        .header("Pragma", "no-cache")
+        .header(SecurityConstants.PRAGMA_HEADER, SecurityConstants.PRAGMA_NO_CACHE)
         .body(
             com.aerotrace.common.api.ApiResponse.success(
                 tokens.issue(request.username(), request.password())));

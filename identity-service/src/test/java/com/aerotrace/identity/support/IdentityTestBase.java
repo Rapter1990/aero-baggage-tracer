@@ -34,11 +34,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
       "management.logging.export.otlp.enabled=false",
       // A low BCrypt cost keeps the tests fast; production uses the default.
       "aerotrace.identity.bcrypt-strength=4",
-      // Test-only key-encryption key (bytes 0..31).
-      "aerotrace.identity.keys.encryption-key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
-      "aerotrace.identity.token.issuer=http://identity.test",
-      // Every cached context would otherwise run its own key maintenance on the shared database.
-      "aerotrace.identity.keys.maintenance-interval=PT24H",
+      "aerotrace.identity.jwt.issuer=http://identity.test",
       // Spring caches one context per distinct test configuration, each with its own pool; keep
       // the pools small so many cached contexts fit within the database's connection limit.
       "spring.datasource.hikari.maximum-pool-size=6",
