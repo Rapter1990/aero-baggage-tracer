@@ -1,0 +1,62 @@
+# OpenTelemetry Collector for local development.
+#   services --OTLP--> collector --> Tempo (traces), Loki (logs) and Prometheus (metrics, scraped on :8889) --> Grafana
+#
+# Services send traces and metrics to port 4318 (OTLP/HTTP); 4317 (OTLP/gRPC) is open too.
+#  - Metrics are exposed to Prometheus as they arrive.
+#  - Logs (each tagged with its trace id) are forwarded to Loki.
+#  - Traces are forwarded to Tempo (browse them in Grafana), turned into request-rate / error /
+#    latency metrics (span_metrics connector), and summarised in one line per batch in this log.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+connectors:
+  # Counts spans and records their duration per service, operation and status.
+  span_metrics:
+    namespace: traces.span.metrics
+    # Default is 60s, which makes dashboards lag behind; 15s matches the Prometheus scrape interval.
+    metrics_flush_interval: 15s
+    histogram:
+      explicit:
+        buckets: [10ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s]
+
+exporters:
+  # The trace store; Grafana reads traces from here.
+  otlp_grpc/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+  # The log store; Grafana reads logs from here. Loki accepts OTLP on /otlp (the exporter adds /v1/logs).
+  otlp_http/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    # Keep the service name as a label on every metric (service_name).
+    resource_constant_labels:
+      included: [service.name]
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [span_metrics, otlp_grpc/tempo, debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_http/loki]
+    metrics:
+      receivers: [otlp, span_metrics]
+      processors: [batch]
+      exporters: [prometheus]

@@ -37,6 +37,9 @@
         <spotless.version>2.46.1</spotless.version>
         <google-java-format.version>1.28.0</google-java-format.version>
         <jacoco.version>0.8.14</jacoco.version>
+
+        <!-- OpenTelemetry Logback bridge; the instrumentation line that matches the SDK Spring Boot manages (1.55.x). -->
+        <opentelemetry-instrumentation.version>2.21.0-alpha</opentelemetry-instrumentation.version>
     </properties>
 
     <dependencyManagement>
@@ -59,6 +62,11 @@
                 <groupId>com.aerotrace</groupId>
                 <artifactId>common-module</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.opentelemetry.instrumentation</groupId>
+                <artifactId>opentelemetry-logback-appender-1.0</artifactId>
+                <version>${opentelemetry-instrumentation.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

@@ -4,6 +4,15 @@ server:
 spring:
   application:
     name: discovery-server
+  config:
+    # Optional local settings (see the .env section of the README); real environment variables take precedence.
+    import: optional:file:.env[.properties],optional:file:../.env[.properties]
+  security:
+    user:
+      # Credentials every Eureka client and dashboard user must present (HTTP Basic). No default
+      # password: the server refuses to start without one rather than run open.
+      name: ${EUREKA_USER:eureka}
+      password: ${EUREKA_PASSWORD}
 
 eureka:
   instance:
@@ -30,3 +39,25 @@ management:
       probes:
         enabled: true
       show-details: never
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+    logging:
+      export:
+        otlp:
+          # Log lines go to the collector (and on to Loki), tagged with their trace id.
+          endpoint: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:http://localhost:4318/v1/logs}
+  otlp:
+    metrics:
+      export:
+        # Traces and metrics go to the OpenTelemetry collector (Tempo and Prometheus read from it).
+        url: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:http://localhost:4318/v1/metrics}
+        step: ${METRICS_EXPORT_STEP:15s}

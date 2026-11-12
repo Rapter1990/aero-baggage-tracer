@@ -13,7 +13,14 @@ import org.springframework.web.client.RestClient;
 
 @SpringBootTest(
     webEnvironment = WebEnvironment.RANDOM_PORT,
-    properties = "eureka.client.enabled=false")
+    properties = {
+      "eureka.client.enabled=false",
+      "EUREKA_PASSWORD=leaky-secret",
+      "EUREKA_USER=svc",
+      "management.otlp.metrics.export.enabled=false",
+      "management.tracing.export.otlp.enabled=false",
+      "management.logging.export.otlp.enabled=false"
+    })
 class ConfigServerApplicationTest {
 
   @LocalServerPort private int port;
@@ -70,6 +77,51 @@ class ConfigServerApplicationTest {
     assertThat(resolve("journey-service", "compose", "aerotrace.kafka.bootstrap-servers"))
         .isEqualTo("kafka:9092");
     assertThat(resolve("journey-service", "k8s", "aerotrace.db.host")).isEqualTo("postgres");
+  }
+
+  @Test
+  void eurekaUrlsCarryCredentialPlaceholdersTheClientResolvesItself() {
+    // The registry needs HTTP Basic credentials. They must never be stored in the repo or resolved
+    // (and so sent over the wire) by the config server: the client fills them from its own env.
+    for (String profile : List.of("dev", "compose")) {
+      Object zone = resolve("journey-service", profile, "eureka.client.service-url.defaultZone");
+
+      assertThat(zone).as("profile %s", profile).isInstanceOf(String.class);
+      assertThat((String) zone)
+          .contains("${EUREKA_USER:eureka}:${EUREKA_PASSWORD}@")
+          .doesNotContain("leaky-secret");
+    }
+  }
+
+  @Test
+  void sharedTelemetrySettingsPointEveryServiceAtTheCollector() {
+    for (String profile : List.of("default", "dev", "compose", "k8s")) {
+      assertThat(resolve("journey-service", profile, "management.otlp.metrics.export.url"))
+          .as("metrics url, profile %s", profile)
+          .isEqualTo("${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:http://localhost:4318/v1/metrics}");
+      assertThat(
+              resolve(
+                  "journey-service",
+                  profile,
+                  "management.opentelemetry.tracing.export.otlp.endpoint"))
+          .as("traces endpoint, profile %s", profile)
+          .isEqualTo("${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}");
+      assertThat(resolve("journey-service", profile, "management.tracing.sampling.probability"))
+          .as("sampling, profile %s", profile)
+          .isEqualTo("${TRACING_SAMPLING_PROBABILITY:1.0}");
+    }
+  }
+
+  @Test
+  void sharedEurekaInstanceIdFollowsTheApplicationHostPortFormat() {
+    // Every service registers as <application>:<hostname>:<port>; the client fills the
+    // placeholders.
+    for (String profile : List.of("default", "dev", "compose", "k8s")) {
+      assertThat(resolve("journey-service", profile, "eureka.instance.instance-id"))
+          .as("profile %s", profile)
+          .isEqualTo(
+              "${spring.application.name}:${EUREKA_INSTANCE_HOSTNAME:localhost}:${server.port}");
+    }
   }
 
   @Test

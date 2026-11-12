@@ -51,6 +51,13 @@ class ErrorContractTest {
   }
 
   @Test
+  void rateLimitedIsStable429AndMapsFromStatus() {
+    assertThat(ErrorCode.RATE_LIMITED.httpStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    assertThat(ErrorCode.fromStatus(429)).isEqualTo(ErrorCode.RATE_LIMITED);
+    assertThat(ProblemDetails.of(ErrorCode.RATE_LIMITED, "slow down").getStatus()).isEqualTo(429);
+  }
+
+  @Test
   void missingCorrelationIdOmitsProperty() {
     ProblemDetail pd = ProblemDetails.of(ErrorCode.ILLEGAL_TRANSITION, "RESOLVED -> IN_TRANSIT");
     assertThat(pd.getProperties()).doesNotContainKey("correlationId");

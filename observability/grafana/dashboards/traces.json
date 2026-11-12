@@ -1,0 +1,378 @@
+{
+  "uid": "aerotrace-traces",
+  "title": "AeroTrace - Traces",
+  "tags": ["aerotrace", "traces"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 3,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "links": [
+    {
+      "title": "Other AeroTrace dashboards",
+      "type": "dashboards",
+      "tags": ["aerotrace"],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(jvm_threads_live, service_name)", "refId": "service" },
+        "definition": "label_values(jvm_threads_live, service_name)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": { "selected": true, "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "min_duration",
+        "label": "Slower than",
+        "type": "custom",
+        "query": "0ms,10ms,50ms,100ms,250ms,500ms,1s,5s",
+        "options": [
+          { "text": "0ms", "value": "0ms", "selected": true },
+          { "text": "10ms", "value": "10ms", "selected": false },
+          { "text": "50ms", "value": "50ms", "selected": false },
+          { "text": "100ms", "value": "100ms", "selected": false },
+          { "text": "250ms", "value": "250ms", "selected": false },
+          { "text": "500ms", "value": "500ms", "selected": false },
+          { "text": "1s", "value": "1s", "selected": false },
+          { "text": "5s", "value": "5s", "selected": false }
+        ],
+        "current": { "selected": true, "text": "0ms", "value": "0ms" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "How to read this page",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "Pick one or more **services** and a minimum duration at the top. Each row is one step (a *span*) of a request. **Click the Trace ID in the first column** to open the whole request across services (you can also copy it into Explore > Trace ID).\n\n* **Requests handled** - what the service received (HTTP method, route, status, outcome).\n* **Failed requests** - only real failures: HTTP 4xx/5xx or an error. Empty means nothing failed in the time range.\n* **Slow requests** - 500 ms or more, whatever the status (a slow request can still be a 200).\n* **Calls to other services** - what the service sent out, without the Eureka chatter.\n* **Eureka registry traffic** - registrations, heartbeats (every 10 s per instance) and registry fetches, kept apart so they do not bury real traffic."
+      }
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Requests handled (server spans)",
+      "description": "Requests the selected services received. Route is the matched path template; it reads UNKNOWN for Eureka endpoints, so the full URL is shown too.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 6 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "fieldConfig": {
+        "defaults": { "custom": { "minWidth": 80 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "Span ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "spanID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "Time" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Service" }, "properties": [ { "id": "custom.width", "value": 150 } ] },
+          { "matcher": { "id": "byName", "options": "Method" }, "properties": [ { "id": "custom.width", "value": 90 } ] },
+          { "matcher": { "id": "byName", "options": "Route" }, "properties": [ { "id": "custom.width", "value": 110 } ] },
+          { "matcher": { "id": "byName", "options": "URL" }, "properties": [ { "id": "custom.width", "value": 380 } ] },
+          { "matcher": { "id": "byName", "options": "HTTP status" }, "properties": [ { "id": "custom.width", "value": 110 } ] },
+          { "matcher": { "id": "byName", "options": "Outcome" }, "properties": [ { "id": "custom.width", "value": 120 } ] },
+          { "matcher": { "id": "byName", "options": "Duration" }, "properties": [ { "id": "custom.width", "value": 100 } ] }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "query": "{ resource.service.name =~ \"${service:regex}\" && kind = server && duration >= ${min_duration} } | select(span.method, span.uri, span.http.url, span.status, span.outcome)",
+          "limit": 50,
+          "tableType": "spans"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
+            "indexByName": {
+              "traceIdHidden": 0, "Trace ID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "Name": 3, "name": 3,
+              "method": 4, "Method": 4, "uri": 5, "http.url": 6, "status": 7, "outcome": 8, "Duration": 9, "duration": 9,
+              "Trace Name": 10, "traceName": 10, "Span ID": 11, "spanID": 11
+            },
+            "renameByName": {
+              "traceIdHidden": "Trace ID", "Start time": "Time", "time": "Time", "service.name": "Service",
+              "Name": "Operation", "name": "Operation", "method": "Method", "uri": "Route", "http.url": "URL",
+              "status": "HTTP status", "outcome": "Outcome", "Trace Name": "Trace starts with", "traceName": "Trace starts with"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Failed requests (HTTP 4xx/5xx or errors)",
+      "description": "Only failures. No rows means nothing failed in the selected time range.",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "fieldConfig": {
+        "defaults": { "custom": { "minWidth": 80 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "Span ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "spanID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "Time" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Service" }, "properties": [ { "id": "custom.width", "value": 150 } ] },
+          { "matcher": { "id": "byName", "options": "Method" }, "properties": [ { "id": "custom.width", "value": 90 } ] },
+          { "matcher": { "id": "byName", "options": "Route" }, "properties": [ { "id": "custom.width", "value": 110 } ] },
+          { "matcher": { "id": "byName", "options": "URL" }, "properties": [ { "id": "custom.width", "value": 380 } ] },
+          { "matcher": { "id": "byName", "options": "HTTP status" }, "properties": [ { "id": "custom.width", "value": 110 } ] },
+          { "matcher": { "id": "byName", "options": "Outcome" }, "properties": [ { "id": "custom.width", "value": 120 } ] },
+          { "matcher": { "id": "byName", "options": "Duration" }, "properties": [ { "id": "custom.width", "value": 100 } ] }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "query": "{ resource.service.name =~ \"${service:regex}\" && kind = server && (status = error || span.outcome =~ \".*ERROR\" || span.status =~ \"[45][0-9][0-9]\") } | select(span.method, span.uri, span.http.url, span.status, span.outcome)",
+          "limit": 50,
+          "tableType": "spans"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
+            "indexByName": {
+              "traceIdHidden": 0, "Trace ID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "Name": 3, "name": 3,
+              "method": 4, "Method": 4, "uri": 5, "http.url": 6, "status": 7, "outcome": 8, "Duration": 9, "duration": 9,
+              "Trace Name": 10, "traceName": 10, "Span ID": 11, "spanID": 11
+            },
+            "renameByName": {
+              "traceIdHidden": "Trace ID", "Start time": "Time", "time": "Time", "service.name": "Service",
+              "Name": "Operation", "name": "Operation", "method": "Method", "uri": "Route", "http.url": "URL",
+              "status": "HTTP status", "outcome": "Outcome", "Trace Name": "Trace starts with", "traceName": "Trace starts with"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Slow requests (500 ms or more)",
+      "description": "Requests that took 500 ms or longer, whatever their status.",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 23 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "fieldConfig": {
+        "defaults": { "custom": { "minWidth": 80 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "Span ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "spanID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "Time" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Service" }, "properties": [ { "id": "custom.width", "value": 150 } ] },
+          { "matcher": { "id": "byName", "options": "Method" }, "properties": [ { "id": "custom.width", "value": 90 } ] },
+          { "matcher": { "id": "byName", "options": "Route" }, "properties": [ { "id": "custom.width", "value": 110 } ] },
+          { "matcher": { "id": "byName", "options": "URL" }, "properties": [ { "id": "custom.width", "value": 380 } ] },
+          { "matcher": { "id": "byName", "options": "HTTP status" }, "properties": [ { "id": "custom.width", "value": 110 } ] },
+          { "matcher": { "id": "byName", "options": "Outcome" }, "properties": [ { "id": "custom.width", "value": 120 } ] },
+          { "matcher": { "id": "byName", "options": "Duration" }, "properties": [ { "id": "custom.width", "value": 100 } ] }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "query": "{ resource.service.name =~ \"${service:regex}\" && kind = server && duration >= 500ms } | select(span.method, span.uri, span.http.url, span.status, span.outcome)",
+          "limit": 50,
+          "tableType": "spans"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
+            "indexByName": {
+              "traceIdHidden": 0, "Trace ID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "Name": 3, "name": 3,
+              "method": 4, "Method": 4, "uri": 5, "http.url": 6, "status": 7, "outcome": 8, "Duration": 9, "duration": 9,
+              "Trace Name": 10, "traceName": 10, "Span ID": 11, "spanID": 11
+            },
+            "renameByName": {
+              "traceIdHidden": "Trace ID", "Start time": "Time", "time": "Time", "service.name": "Service",
+              "Name": "Operation", "name": "Operation", "method": "Method", "uri": "Route", "http.url": "URL",
+              "status": "HTTP status", "outcome": "Outcome", "Trace Name": "Trace starts with", "traceName": "Trace starts with"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Calls to other services (client spans, without Eureka)",
+      "description": "Calls the selected services make to other services.",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 30 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "fieldConfig": {
+        "defaults": { "custom": { "minWidth": 80 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "Span ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "spanID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "Time" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Service" }, "properties": [ { "id": "custom.width", "value": 150 } ] },
+          { "matcher": { "id": "byName", "options": "Method" }, "properties": [ { "id": "custom.width", "value": 90 } ] },
+          { "matcher": { "id": "byName", "options": "Calls" }, "properties": [ { "id": "custom.width", "value": 520 } ] },
+          { "matcher": { "id": "byName", "options": "HTTP status" }, "properties": [ { "id": "custom.width", "value": 110 } ] },
+          { "matcher": { "id": "byName", "options": "Outcome" }, "properties": [ { "id": "custom.width", "value": 120 } ] },
+          { "matcher": { "id": "byName", "options": "Duration" }, "properties": [ { "id": "custom.width", "value": 100 } ] }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "query": "{ resource.service.name =~ \"${service:regex}\" && kind = client && span.http.url !~ \".*/eureka/.*\" && duration >= ${min_duration} } | select(span.method, span.http.url, span.status, span.outcome)",
+          "limit": 50,
+          "tableType": "spans"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "traceService": true, "Trace Service": true, "kind": true, "Kind": true },
+            "indexByName": {
+              "traceIdHidden": 0, "Trace ID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "Name": 3, "name": 3,
+              "method": 4, "Method": 4, "http.url": 5, "status": 6, "outcome": 7, "Duration": 8, "duration": 8,
+              "Trace Name": 9, "traceName": 9, "Span ID": 10, "spanID": 10
+            },
+            "renameByName": {
+              "traceIdHidden": "Trace ID", "Start time": "Time", "time": "Time", "service.name": "Service",
+              "Name": "Operation", "name": "Operation", "method": "Method", "http.url": "Calls", "status": "HTTP status",
+              "outcome": "Outcome", "Trace Name": "Trace starts with", "traceName": "Trace starts with"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Eureka registry traffic (client spans: registrations, heartbeats, fetches)",
+      "description": "Calls to the Eureka registry, kept apart from real traffic.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 37 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "fieldConfig": {
+        "defaults": { "custom": { "minWidth": 80 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Trace ID" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "traceIdHidden" }, "properties": [
+            { "id": "custom.hidden", "value": false },
+            { "id": "custom.hideFrom", "value": { "viz": false, "legend": false, "tooltip": false } },
+            { "id": "custom.width", "value": 290 },
+            { "id": "links", "value": [ { "title": "Open trace", "url": "", "internal": { "datasourceUid": "tempo", "datasourceName": "Tempo", "query": { "queryType": "traceql", "query": "${__value.raw}" } } } ] }
+          ] },
+          { "matcher": { "id": "byName", "options": "Span ID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "spanID" }, "properties": [ { "id": "custom.hidden", "value": true } ] },
+          { "matcher": { "id": "byName", "options": "Time" }, "properties": [ { "id": "custom.width", "value": 170 } ] },
+          { "matcher": { "id": "byName", "options": "Service" }, "properties": [ { "id": "custom.width", "value": 150 } ] },
+          { "matcher": { "id": "byName", "options": "Method" }, "properties": [ { "id": "custom.width", "value": 90 } ] },
+          { "matcher": { "id": "byName", "options": "Registry call" }, "properties": [ { "id": "custom.width", "value": 560 } ] },
+          { "matcher": { "id": "byName", "options": "HTTP status" }, "properties": [ { "id": "custom.width", "value": 110 } ] },
+          { "matcher": { "id": "byName", "options": "Outcome" }, "properties": [ { "id": "custom.width", "value": 120 } ] },
+          { "matcher": { "id": "byName", "options": "Duration" }, "properties": [ { "id": "custom.width", "value": 100 } ] }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "query": "{ resource.service.name =~ \"${service:regex}\" && kind = client && span.http.url =~ \".*/eureka/.*\" && duration >= ${min_duration} } | select(span.method, span.http.url, span.status, span.outcome)",
+          "limit": 30,
+          "tableType": "spans"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "traceService": true, "Trace Service": true, "kind": true, "Kind": true, "Name": true, "name": true, "Trace Name": true, "traceName": true },
+            "indexByName": {
+              "traceIdHidden": 0, "Trace ID": 0, "Start time": 1, "time": 1, "Service": 2, "service.name": 2, "method": 3, "Method": 3,
+              "http.url": 4, "status": 5, "outcome": 6, "Duration": 7, "duration": 7, "Span ID": 8, "spanID": 8
+            },
+            "renameByName": {
+              "traceIdHidden": "Trace ID", "Start time": "Time", "time": "Time", "service.name": "Service",
+              "method": "Method", "http.url": "Registry call", "status": "HTTP status", "outcome": "Outcome"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

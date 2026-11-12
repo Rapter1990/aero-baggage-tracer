@@ -1,0 +1,26 @@
+# Grafana Tempo for local development, as one process. The OpenTelemetry Collector forwards the
+# services' traces here over OTLP/gRPC (port 4317); Grafana reads them from the HTTP API (3200).
+# Traces are kept in the container's volume only, so they are short-lived dev data.
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal
+
+# Drop old traces so the dev volume does not grow without bound (Tempo 3 keeps retention under
+# backend_worker; the 2.x "compactor" section no longer exists).
+backend_worker:
+  compaction:
+    block_retention: 24h
