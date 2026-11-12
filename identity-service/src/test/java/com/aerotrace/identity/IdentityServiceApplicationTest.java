@@ -28,18 +28,19 @@ class IdentityServiceApplicationTest extends IdentityTestBase {
 
   @Test
   void onlySafeActuatorEndpointsAreExposed() {
-    assertThat(get("/actuator/env").statusCode()).isEqualTo(404);
-    assertThat(get("/actuator/heapdump").statusCode()).isEqualTo(404);
+    // Anything not explicitly allowed is refused before it can even be looked up.
+    assertThat(get("/actuator/env").statusCode()).isEqualTo(401);
+    assertThat(get("/actuator/heapdump").statusCode()).isEqualTo(401);
   }
 
   @Test
   void errorResponsesNeverCarryMessagesOrStackTraces() {
     HttpResponse<String> response = get("/no-such-path");
 
-    assertThat(response.statusCode()).isEqualTo(404);
+    assertThat(response.statusCode()).isEqualTo(401);
     // The shared RFC 7807 contract, with nothing that reveals internals.
     assertThat(response.body())
-        .contains("\"errorCode\":\"NOT_FOUND\"")
+        .contains("\"errorCode\":\"UNAUTHENTICATED\"")
         .doesNotContain("stackTrace")
         .doesNotContain("Exception")
         .doesNotContain("\tat ");

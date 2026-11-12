@@ -54,6 +54,9 @@ class TelemetryHasNoSecretsTest extends IdentityTestBase {
     postJson("/api/v1/auth/token", "{\"username\":\"agent\",\"password\":\"" + wrong + "\"}");
     postJson("/api/v1/auth/token", "{\"username\":\"ghost-user\",\"password\":\"" + wrong + "\"}");
     String token = JsonMapper.builder().build().readTree(ok.body()).get("access_token").asString();
+    // A call that carries the token as a bearer credential must not leak it either.
+    send("GET", "/api/v1/auth/me", null, token);
+    send("GET", "/api/v1/auth/me", null, "forged." + token.substring(token.indexOf('.') + 1));
     String hash = users.findByUsername("agent").orElseThrow().passwordHash();
     LoggerFactory.getLogger("telemetry.test").info("marker after the sign-ins");
 

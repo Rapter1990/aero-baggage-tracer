@@ -356,6 +356,8 @@ abstract class AbstractTokenEndpointTest extends IdentityTestBase {
         .doesNotContain(token.substring(token.lastIndexOf('.') + 1))
         .doesNotContain(hash)
         .doesNotContain("Bearer ")
-        .doesNotContain("access_token");
+        .doesNotContain("access_token")
+        // Spring Security's default in-memory user would print a generated password.
+        .doesNotContainIgnoringCase("generated security password");
   }
 }

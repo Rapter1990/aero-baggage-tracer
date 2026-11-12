@@ -36,11 +36,17 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
       "aerotrace.identity.bcrypt-strength=4",
       // Test-only key-encryption key (bytes 0..31).
       "aerotrace.identity.keys.encryption-key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
-      "aerotrace.identity.token.issuer=http://identity.test"
+      "aerotrace.identity.token.issuer=http://identity.test",
+      // Spring caches one context per distinct test configuration, each with its own pool; keep
+      // the pools small so many cached contexts fit within the database's connection limit.
+      "spring.datasource.hikari.maximum-pool-size=6",
+      "spring.datasource.hikari.minimum-idle=0"
     })
 public abstract class IdentityTestBase {
 
-  private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18-alpine");
+  private static final PostgreSQLContainer POSTGRES =
+      new PostgreSQLContainer("postgres:18-alpine")
+          .withCommand("postgres", "-c", "max_connections=300");
 
   static {
     Runtime.getRuntime().addShutdownHook(new Thread(POSTGRES::stop));
@@ -79,6 +85,31 @@ public abstract class IdentityTestBase {
                   .POST(HttpRequest.BodyPublishers.ofString(body))
                   .build(),
               HttpResponse.BodyHandlers.ofString());
+    } catch (IOException e) {
+      throw new IllegalStateException(e);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(e);
+    }
+  }
+
+  /** Any method, with an optional JSON body and bearer token. */
+  protected HttpResponse<String> send(String method, String path, String body, String bearer) {
+    try {
+      HttpRequest.Builder request =
+          HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+              .method(
+                  method,
+                  body == null
+                      ? HttpRequest.BodyPublishers.noBody()
+                      : HttpRequest.BodyPublishers.ofString(body));
+      if (body != null) {
+        request.header("Content-Type", "application/json");
+      }
+      if (bearer != null) {
+        request.header("Authorization", "Bearer " + bearer);
+      }
+      return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString());
     } catch (IOException e) {
       throw new IllegalStateException(e);
     } catch (InterruptedException e) {
