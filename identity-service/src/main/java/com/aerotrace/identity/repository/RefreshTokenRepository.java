@@ -23,14 +23,22 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshTokenEntity
   @Transactional
   @Modifying(flushAutomatically = true, clearAutomatically = true)
   @Query(
-      "update RefreshTokenEntity t set t.revokedAt = :now where t.id = :id and t.revokedAt is null")
-  int revoke(@Param("id") UUID id, @Param("now") Instant now);
+      "update RefreshTokenEntity t set t.revokedAt = :now, t.revokedReason = :reason "
+          + "where t.id = :id and t.revokedAt is null")
+  int revoke(@Param("id") UUID id, @Param("now") Instant now, @Param("reason") String reason);
 
   /** Revokes every token of a user that is still active; returns how many. */
   @Transactional
   @Modifying(flushAutomatically = true, clearAutomatically = true)
   @Query(
-      "update RefreshTokenEntity t set t.revokedAt = :now "
+      "update RefreshTokenEntity t set t.revokedAt = :now, t.revokedReason = :reason "
           + "where t.user.id = :userId and t.revokedAt is null")
-  int revokeAllActiveForUser(@Param("userId") UUID userId, @Param("now") Instant now);
+  int revokeAllActiveForUser(
+      @Param("userId") UUID userId, @Param("now") Instant now, @Param("reason") String reason);
+
+  /** Deletes tokens that expired before the cutoff; returns how many. */
+  @Transactional
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query("delete from RefreshTokenEntity t where t.expiresAt < :cutoff")
+  int deleteExpiredBefore(@Param("cutoff") Instant cutoff);
 }

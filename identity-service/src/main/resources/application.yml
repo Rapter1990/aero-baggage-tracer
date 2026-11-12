@@ -23,6 +23,8 @@ spring:
     # No default: the service refuses to start rather than guess a database password.
     password: ${DB_PASSWORD}
     hikari:
+      # Explicit, so it is a decision and not a default. Each request holds one connection.
+      maximum-pool-size: ${DB_POOL_SIZE:10}
       # Liquibase does not create the schema that holds its own tracking tables, so make sure it
       # exists before the first migration runs (a no-op once it does).
       connection-init-sql: CREATE SCHEMA IF NOT EXISTS identity

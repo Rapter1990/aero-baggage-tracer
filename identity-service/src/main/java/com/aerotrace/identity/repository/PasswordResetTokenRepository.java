@@ -31,4 +31,10 @@ public interface PasswordResetTokenRepository
       "update PasswordResetTokenEntity t set t.usedAt = :now "
           + "where t.user.id = :userId and t.usedAt is null")
   int invalidateAllForUser(@Param("userId") UUID userId, @Param("now") Instant now);
+
+  /** Deletes tokens that expired before the cutoff; returns how many. */
+  @Transactional
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query("delete from PasswordResetTokenEntity t where t.expiresAt < :cutoff")
+  int deleteExpiredBefore(@Param("cutoff") Instant cutoff);
 }

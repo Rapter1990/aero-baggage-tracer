@@ -12,7 +12,6 @@ import com.aerotrace.identity.security.jwt.JwtTokenService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.Arrays;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -43,13 +42,17 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 @Configuration(proxyBeanMethods = false)
 class SecurityConfig {
 
+  private static final java.util.Set<String> PUBLIC_AUTH_CALLS =
+      java.util.Set.of(ApiPaths.PUBLIC_AUTH_CALLS);
+
   /**
    * Reachable without a token. A token sent to one of these is ignored, never held against you.
    * Registration is not listed: it looks at the token, because a staff account needs an ADMIN.
    */
   private static boolean isPublic(HttpServletRequest request) {
-    String path = request.getRequestURI();
-    return Arrays.asList(ApiPaths.PUBLIC_AUTH_CALLS).contains(path)
+    // Without the context path, which the request matchers do not see either.
+    String path = request.getRequestURI().substring(request.getContextPath().length());
+    return PUBLIC_AUTH_CALLS.contains(path)
         || path.equals(ApiPaths.JWKS)
         || path.startsWith(ApiPaths.API_DOCS)
         || path.equals(ApiPaths.INFO)

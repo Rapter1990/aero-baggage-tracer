@@ -4,8 +4,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Instant;
 
 /**
- * The answer to a password reset request. It is the same whether or not the account exists. The
- * token and its expiry are only present when the service is told to return them (development).
+ * The answer to a password reset request. The message is the same whether or not the account
+ * exists, but only an existing, enabled account gets a token and an expiry. The token is returned
+ * to the caller because there is no mail service yet: see the README's known limitations.
  *
  * @param message a fixed text
  * @param resetToken the reset token, or absent

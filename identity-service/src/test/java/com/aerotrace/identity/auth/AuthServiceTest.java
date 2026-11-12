@@ -48,6 +48,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.springframework.transaction.support.TransactionOperations;
 
 class AuthServiceTest extends AbstractBaseServiceTest {
 
@@ -96,8 +97,9 @@ class AuthServiceTest extends AbstractBaseServiceTest {
     when(jwtTokens.generateToken(anyString(), any(), any())).thenReturn("signed.jwt.token");
     when(jwtTokens.ttl()).thenReturn(Duration.ofMinutes(15));
     when(userRepository.getReferenceById(id)).thenReturn(janeEntity);
-    when(refreshTokens.revoke(any(), any())).thenReturn(1);
+    when(refreshTokens.revoke(any(), any(), any())).thenReturn(1);
     when(resetTokens.markUsed(any(), any())).thenReturn(1);
+    when(users.encode(any())).thenReturn("new-hash");
   }
 
   private AuthService newService(AuthProperties props) {
@@ -112,7 +114,8 @@ class AuthServiceTest extends AbstractBaseServiceTest {
         props,
         new IdentityMapperImpl(),
         meters,
-        clock);
+        clock,
+        TransactionOperations.withoutTransaction());
   }
 
   private static RegisterRequest register(Role role) {
@@ -226,11 +229,16 @@ class AuthServiceTest extends AbstractBaseServiceTest {
   // ---- refresh ----
 
   private String issueRefreshToken(boolean revoked, Instant expiresAt) {
+    return issueRevokedRefreshToken(revoked ? "ROTATED" : null, NOW.minusSeconds(60), expiresAt);
+  }
+
+  private String issueRevokedRefreshToken(String reason, Instant revokedAt, Instant expiresAt) {
     String raw = TokenHashUtils.randomToken();
     RefreshTokenEntity stored =
         new RefreshTokenEntity(janeEntity, TokenHashUtils.sha256(raw), expiresAt, NOW);
-    if (revoked) {
-      org.springframework.test.util.ReflectionTestUtils.setField(stored, "revokedAt", NOW);
+    if (reason != null) {
+      org.springframework.test.util.ReflectionTestUtils.setField(stored, "revokedAt", revokedAt);
+      org.springframework.test.util.ReflectionTestUtils.setField(stored, "revokedReason", reason);
     }
     when(refreshTokens.findByTokenHash(TokenHashUtils.sha256(raw))).thenReturn(Optional.of(stored));
     return raw;
@@ -243,7 +251,7 @@ class AuthServiceTest extends AbstractBaseServiceTest {
     TokenResponse tokens = service.refreshToken(new RefreshTokenRequest(raw));
 
     assertThat(tokens.refreshToken()).isNotEqualTo(raw);
-    verify(refreshTokens).revoke(any(), eq(NOW));
+    verify(refreshTokens).revoke(any(), eq(NOW), eq("ROTATED"));
     verify(refreshTokens).save(any(RefreshTokenEntity.class));
     verify(audit).record(AuthEventType.TOKEN_REFRESHED, AuthOutcome.SUCCESS, "jane", jane.id());
   }
@@ -263,7 +271,7 @@ class AuthServiceTest extends AbstractBaseServiceTest {
 
     assertFails(
         () -> service.refreshToken(new RefreshTokenRequest(raw)), ErrorCode.UNAUTHENTICATED);
-    verify(refreshTokens, never()).revokeAllActiveForUser(any(), any());
+    verify(refreshTokens, never()).revokeAllActiveForUser(any(), any(), any());
   }
 
   @Test
@@ -273,16 +281,48 @@ class AuthServiceTest extends AbstractBaseServiceTest {
     assertFails(
         () -> service.refreshToken(new RefreshTokenRequest(raw)), ErrorCode.UNAUTHENTICATED);
 
-    verify(refreshTokens).revokeAllActiveForUser(jane.id(), NOW);
+    verify(refreshTokens).revokeAllActiveForUser(jane.id(), NOW, "REUSE");
     verify(audit)
         .record(AuthEventType.REFRESH_REUSE_DETECTED, AuthOutcome.FAILURE, "jane", jane.id());
     verify(refreshTokens, never()).save(any());
   }
 
   @Test
+  void shouldOnlyRefuseARetryOfAJustRotatedToken() {
+    String raw = issueRevokedRefreshToken("ROTATED", NOW.minusSeconds(3), NOW.plusSeconds(60));
+
+    assertFails(
+        () -> service.refreshToken(new RefreshTokenRequest(raw)), ErrorCode.UNAUTHENTICATED);
+
+    verify(refreshTokens, never()).revokeAllActiveForUser(any(), any(), any());
+    verify(audit, never()).record(eq(AuthEventType.REFRESH_REUSE_DETECTED), any(), any(), any());
+  }
+
+  @Test
+  void shouldNotTreatATokenRevokedByLogoutOrResetAsTheft() {
+    for (String reason : new String[] {"LOGOUT", "RESET", "REUSE"}) {
+      String raw = issueRevokedRefreshToken(reason, NOW.minusSeconds(3600), NOW.plusSeconds(60));
+
+      assertFails(
+          () -> service.refreshToken(new RefreshTokenRequest(raw)), ErrorCode.UNAUTHENTICATED);
+    }
+    verify(refreshTokens, never()).revokeAllActiveForUser(any(), any(), any());
+  }
+
+  @Test
+  void shouldCheckExpiryBeforeReuseSoAnOldStolenTokenCannotKeepKillingSessions() {
+    String raw = issueRevokedRefreshToken("ROTATED", NOW.minusSeconds(3600), NOW.minusSeconds(1));
+
+    assertFails(
+        () -> service.refreshToken(new RefreshTokenRequest(raw)), ErrorCode.UNAUTHENTICATED);
+
+    verify(refreshTokens, never()).revokeAllActiveForUser(any(), any(), any());
+  }
+
+  @Test
   void shouldRefuseWhenAnotherRequestUsedTheTokenFirst() {
     String raw = issueRefreshToken(false, NOW.plusSeconds(60));
-    when(refreshTokens.revoke(any(), any())).thenReturn(0);
+    when(refreshTokens.revoke(any(), any(), any())).thenReturn(0);
 
     assertFails(
         () -> service.refreshToken(new RefreshTokenRequest(raw)), ErrorCode.UNAUTHENTICATED);
@@ -372,8 +412,8 @@ class AuthServiceTest extends AbstractBaseServiceTest {
     var response = service.resetPassword(new ResetPasswordRequest(raw, "a-brand-new-password"));
 
     assertThat(response.message()).contains("reset successfully");
-    verify(users).changePassword(jane.id(), "a-brand-new-password");
-    verify(refreshTokens).revokeAllActiveForUser(jane.id(), NOW);
+    verify(users).changePasswordHash(jane.id(), "new-hash");
+    verify(refreshTokens).revokeAllActiveForUser(jane.id(), NOW, "RESET");
     verify(audit).record(AuthEventType.PASSWORD_RESET, AuthOutcome.SUCCESS, "jane", jane.id());
   }
 
@@ -388,7 +428,7 @@ class AuthServiceTest extends AbstractBaseServiceTest {
           () -> service.resetPassword(new ResetPasswordRequest(token, "a-brand-new-password")),
           ErrorCode.VALIDATION_ERROR);
     }
-    verify(users, never()).changePassword(any(), any());
+    verify(users, never()).changePasswordHash(any(), any());
   }
 
   @Test
@@ -399,7 +439,7 @@ class AuthServiceTest extends AbstractBaseServiceTest {
     assertFails(
         () -> service.resetPassword(new ResetPasswordRequest(raw, "a-brand-new-password")),
         ErrorCode.VALIDATION_ERROR);
-    verify(users, never()).changePassword(any(), any());
+    verify(users, never()).changePasswordHash(any(), any());
   }
 
   // ---- logout ----
@@ -411,7 +451,7 @@ class AuthServiceTest extends AbstractBaseServiceTest {
     var response = service.logout(new LogoutRequest(raw));
 
     assertThat(response.message()).isEqualTo("Logout completed successfully");
-    verify(refreshTokens).revoke(any(), eq(NOW));
+    verify(refreshTokens).revoke(any(), eq(NOW), eq("LOGOUT"));
     verify(audit).record(AuthEventType.LOGGED_OUT, AuthOutcome.SUCCESS, "jane", jane.id());
   }
 
@@ -421,6 +461,6 @@ class AuthServiceTest extends AbstractBaseServiceTest {
 
     assertThat(service.logout(new LogoutRequest("unknown")).message())
         .isEqualTo("Logout completed successfully");
-    verify(refreshTokens, never()).revoke(any(), any());
+    verify(refreshTokens, never()).revoke(any(), any(), any());
   }
 }

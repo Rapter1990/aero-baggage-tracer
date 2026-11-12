@@ -6,6 +6,7 @@ import com.aerotrace.common.security.Role;
 import com.aerotrace.identity.base.AbstractIntegrationTest;
 import com.aerotrace.identity.security.jwt.JwtTokenService;
 import com.aerotrace.identity.user.UserService;
+import com.aerotrace.identity.util.TokenHashUtils;
 import io.jsonwebtoken.Claims;
 import java.net.http.HttpResponse;
 import java.util.List;
@@ -17,7 +18,7 @@ import tools.jackson.databind.JsonNode;
 
 /**
  * The whole authentication API over HTTP against a real database: register, login, refresh-token,
- * forgot-password, reset-password and logout and logout.
+ * forgot-password, reset-password and logout.
  */
 class AuthFlowTest extends AbstractIntegrationTest {
 
@@ -31,6 +32,7 @@ class AuthFlowTest extends AbstractIntegrationTest {
   @Autowired private JwtTokenService tokens;
   @Autowired private JdbcClient jdbc;
   @Autowired private UserService users;
+  @Autowired private TokenPurgeJob purge;
 
   private HttpResponse<String> refresh(String refreshToken) {
     return postJson(REFRESH, body("refreshToken", refreshToken));
@@ -234,6 +236,8 @@ class AuthFlowTest extends AbstractIntegrationTest {
     String name = registerPassenger();
     String stolen = login(name, PASSWORD).get("refreshToken").asString();
     String legitimate = json(refresh(stolen)).get("data").get("refreshToken").asString();
+    // Some time passes: a replay right away would be taken for a client retry.
+    ageRevocation(stolen);
 
     // The thief replays the token the user has already used.
     assertThat(refresh(stolen).statusCode()).isEqualTo(401);
@@ -248,6 +252,176 @@ class AuthFlowTest extends AbstractIntegrationTest {
                 .query(Integer.class)
                 .single())
         .isGreaterThanOrEqualTo(1);
+  }
+
+  private void ageRevocation(String refreshToken) {
+    jdbc.sql(
+            "update identity.refresh_token set revoked_at = now() - interval '1 minute' "
+                + "where token_hash = :h")
+        .param("h", TokenHashUtils.sha256(refreshToken))
+        .update();
+  }
+
+  @Test
+  void aRetryRightAfterRotationIsRefusedButLeavesTheNewSessionAlone() {
+    String name = registerPassenger();
+    String first = login(name, PASSWORD).get("refreshToken").asString();
+    String second = json(refresh(first)).get("data").get("refreshToken").asString();
+
+    assertThat(refresh(first).statusCode()).isEqualTo(401);
+
+    assertThat(refresh(second).statusCode()).isEqualTo(200);
+  }
+
+  @Test
+  void aTokenRevokedByLogoutDoesNotEndTheOtherSessions() {
+    String name = registerPassenger();
+    String phone = login(name, PASSWORD).get("refreshToken").asString();
+    String laptop = login(name, PASSWORD).get("refreshToken").asString();
+    postJson(LOGOUT, body("refreshToken", phone));
+    ageRevocation(phone);
+
+    // A stale background refresh on the phone, long after it signed out.
+    assertThat(refresh(phone).statusCode()).isEqualTo(401);
+
+    assertThat(refresh(laptop).statusCode()).isEqualTo(200);
+  }
+
+  @Test
+  void anExpiredStolenTokenCannotKeepEndingSessions() {
+    String name = registerPassenger();
+    String stolen = login(name, PASSWORD).get("refreshToken").asString();
+    json(refresh(stolen));
+    jdbc.sql(
+            "update identity.refresh_token set revoked_at = now() - interval '2 days', "
+                + "expires_at = now() - interval '1 day' where token_hash = :h")
+        .param("h", TokenHashUtils.sha256(stolen))
+        .update();
+    String current = login(name, PASSWORD).get("refreshToken").asString();
+
+    assertThat(refresh(stolen).statusCode()).isEqualTo(401);
+
+    assertThat(refresh(current).statusCode()).isEqualTo(200);
+  }
+
+  @Test
+  void twoSimultaneousRefreshesOfOneTokenSucceedExactlyOnce() throws Exception {
+    String token = login(registerPassenger(), PASSWORD).get("refreshToken").asString();
+
+    List<Integer> statuses = inParallel(2, () -> refresh(token).statusCode());
+
+    assertThat(statuses).containsExactlyInAnyOrder(200, 401);
+  }
+
+  @Test
+  void twoSimultaneousResetsWithOneTokenSucceedExactlyOnce() throws Exception {
+    String name = registerPassenger();
+    String reset =
+        json(postJson(FORGOT, body("usernameOrEmail", name)))
+            .get("data")
+            .get("resetToken")
+            .asString();
+
+    List<Integer> statuses =
+        inParallel(
+            2,
+            () ->
+                postJson(RESET, body("resetToken", reset, "newPassword", "a-brand-new-password"))
+                    .statusCode());
+
+    assertThat(statuses).containsExactlyInAnyOrder(200, 400);
+  }
+
+  private static <T> List<T> inParallel(int count, java.util.concurrent.Callable<T> call)
+      throws Exception {
+    var pool = java.util.concurrent.Executors.newFixedThreadPool(count);
+    var start = new java.util.concurrent.CountDownLatch(1);
+    try {
+      List<java.util.concurrent.Future<T>> futures = new java.util.ArrayList<>();
+      for (int i = 0; i < count; i++) {
+        futures.add(
+            pool.submit(
+                () -> {
+                  start.await();
+                  return call.call();
+                }));
+      }
+      start.countDown();
+      List<T> results = new java.util.ArrayList<>();
+      for (var future : futures) {
+        results.add(future.get(30, java.util.concurrent.TimeUnit.SECONDS));
+      }
+      return results;
+    } finally {
+      pool.shutdownNow();
+    }
+  }
+
+  @Test
+  void aDisabledUserCannotLogInRefreshOrReset() {
+    String name = registerPassenger();
+    JsonNode session = login(name, PASSWORD);
+    String reset =
+        json(postJson(FORGOT, body("usernameOrEmail", name)))
+            .get("data")
+            .get("resetToken")
+            .asString();
+    jdbc.sql("update identity.app_user set enabled = false where username = :u")
+        .param("u", name)
+        .update();
+
+    assertThat(postJson(LOGIN, body("usernameOrEmail", name, "password", PASSWORD)).statusCode())
+        .isEqualTo(401);
+    assertThat(refresh(session.get("refreshToken").asString()).statusCode()).isEqualTo(401);
+    assertThat(
+            postJson(RESET, body("resetToken", reset, "newPassword", "a-brand-new-password"))
+                .statusCode())
+        .isEqualTo(400);
+    // And no new reset token is handed out.
+    assertThat(json(postJson(FORGOT, body("usernameOrEmail", name))).get("data").has("resetToken"))
+        .isFalse();
+  }
+
+  @Test
+  void refusesANewPasswordLongerThan72BytesAtReset() {
+    String name = registerPassenger();
+    String reset =
+        json(postJson(FORGOT, body("usernameOrEmail", name)))
+            .get("data")
+            .get("resetToken")
+            .asString();
+
+    HttpResponse<String> response =
+        postJson(RESET, body("resetToken", reset, "newPassword", "\u00e9".repeat(40)));
+
+    assertThat(response.statusCode()).isEqualTo(400);
+    // The token was not used up by the refused request.
+    assertThat(
+            postJson(RESET, body("resetToken", reset, "newPassword", "a-brand-new-password"))
+                .statusCode())
+        .isEqualTo(200);
+  }
+
+  @Test
+  void thePurgeJobDeletesOnlyTokensThatExpiredLongAgo() {
+    String name = registerPassenger();
+    String old = login(name, PASSWORD).get("refreshToken").asString();
+    String current = login(name, PASSWORD).get("refreshToken").asString();
+    jdbc.sql(
+            "update identity.refresh_token set expires_at = now() - interval '3 days' "
+                + "where token_hash = :h")
+        .param("h", TokenHashUtils.sha256(old))
+        .update();
+
+    purge.purge();
+
+    assertThat(refresh(current).statusCode()).isEqualTo(200);
+    assertThat(
+            jdbc.sql("select count(*) from identity.refresh_token where token_hash = :h")
+                .param("h", TokenHashUtils.sha256(old))
+                .query(Integer.class)
+                .single())
+        .isZero();
   }
 
   @Test

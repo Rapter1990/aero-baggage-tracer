@@ -7,6 +7,7 @@ import com.aerotrace.identity.audit.AuthAuditLog;
 import com.aerotrace.identity.audit.AuthEventType;
 import com.aerotrace.identity.audit.AuthOutcome;
 import com.aerotrace.identity.constant.ApiMessages;
+import com.aerotrace.identity.constant.AuthConstants;
 import com.aerotrace.identity.constant.MetricNames;
 import com.aerotrace.identity.constant.SecurityConstants;
 import com.aerotrace.identity.model.domain.AppUser;
@@ -40,6 +41,7 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionOperations;
 
 /**
  * Registration, sign-in, token refresh, password reset and sign-out.
@@ -50,8 +52,11 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>A failed sign-in always looks the same (unknown user, wrong password, disabled account),
  *       takes the same work, and is audited.
  *   <li>Refresh and reset tokens are random, stored only as hashes, and used once. Presenting a
- *       refresh token that was already used revokes every session of that user.
- *   <li>Asking for a password reset answers the same whether or not the account exists.
+ *       refresh token that was rotated away a while ago is treated as theft and revokes every
+ *       session of that user; a retry within seconds, or a token revoked by logout, is only
+ *       refused.
+ *   <li>Asking for a password reset returns the same message whether or not the account exists (but
+ *       only an existing account gets a token).
  *   <li>Nothing secret is logged, counted or put in a span: only the outcome is a metric label.
  * </ul>
  */
@@ -70,9 +75,14 @@ public class AuthService {
   private final IdentityMapper mapper;
   private final MeterRegistry meters;
   private final Clock clock;
+  private final TransactionOperations transactions;
 
   /** Who is calling: anonymous, or a signed-in user with these roles. */
   public record Caller(boolean authenticated, Set<Role> roles) {
+    public Caller {
+      roles = Set.copyOf(roles);
+    }
+
     public static Caller anonymous() {
       return new Caller(false, Set.of());
     }
@@ -137,16 +147,23 @@ public class AuthService {
             .orElseThrow(AuthService::invalidRefreshToken);
     AppUser user = mapper.toDomain(stored.getUser());
 
-    if (stored.isRevoked()) {
-      refreshTokens.revokeAllActiveForUser(user.id(), now);
-      audit.record(
-          AuthEventType.REFRESH_REUSE_DETECTED, AuthOutcome.FAILURE, user.username(), user.id());
-      throw invalidRefreshToken();
-    }
     if (stored.isExpired(now) || !user.enabled()) {
       throw invalidRefreshToken();
     }
-    if (refreshTokens.revoke(stored.getId(), now) == 0) {
+    if (stored.isRevoked()) {
+      boolean rotatedLongAgo =
+          AuthConstants.REVOKED_ROTATED.equals(stored.getRevokedReason())
+              && stored.getRevokedAt().plus(AuthConstants.REFRESH_REUSE_GRACE).isBefore(now);
+      if (rotatedLongAgo) {
+        // A token that was already exchanged is back: a copy of it is in someone else's hands.
+        refreshTokens.revokeAllActiveForUser(user.id(), now, AuthConstants.REVOKED_REUSE);
+        audit.record(
+            AuthEventType.REFRESH_REUSE_DETECTED, AuthOutcome.FAILURE, user.username(), user.id());
+      }
+      // Logged out, reset, or rotated moments ago (a retry or a second tab): refused, no more.
+      throw invalidRefreshToken();
+    }
+    if (refreshTokens.revoke(stored.getId(), now, AuthConstants.REVOKED_ROTATED) == 0) {
       // Another request used this token between our read and our update.
       throw invalidRefreshToken();
     }
@@ -184,14 +201,21 @@ public class AuthService {
     return new ForgotPasswordResponse(ApiMessages.PASSWORD_RESET_STARTED, token, expiresAt);
   }
 
-  /** Sets a new password with a reset token (once) and ends every session of the user. */
-  @Transactional(noRollbackFor = ApiException.class)
+  /**
+   * Sets a new password with a reset token (once) and ends every session of the user. The password
+   * is hashed before the transaction opens, so the slow hash does not hold a connection or a lock.
+   */
   public LogoutResponse resetPassword(ResetPasswordRequest request) {
     users.requireFitsBcrypt(request.newPassword());
+    String newHash = users.encode(request.newPassword());
+    return transactions.execute(status -> applyReset(request.resetToken(), newHash));
+  }
+
+  private LogoutResponse applyReset(String resetToken, String newHash) {
     Instant now = clock.instant();
     PasswordResetTokenEntity stored =
         resetTokens
-            .findByTokenHash(TokenHashUtils.sha256(request.resetToken()))
+            .findByTokenHash(TokenHashUtils.sha256(resetToken))
             .orElseThrow(AuthService::invalidResetToken);
     AppUser user = mapper.toDomain(stored.getUser());
 
@@ -201,8 +225,8 @@ public class AuthService {
     if (resetTokens.markUsed(stored.getId(), now) == 0) {
       throw invalidResetToken();
     }
-    users.changePassword(user.id(), request.newPassword());
-    refreshTokens.revokeAllActiveForUser(user.id(), now);
+    users.changePasswordHash(user.id(), newHash);
+    refreshTokens.revokeAllActiveForUser(user.id(), now, AuthConstants.REVOKED_RESET);
     audit.record(AuthEventType.PASSWORD_RESET, AuthOutcome.SUCCESS, user.username(), user.id());
     return new LogoutResponse(ApiMessages.PASSWORD_RESET_DONE);
   }
@@ -215,9 +239,12 @@ public class AuthService {
         .ifPresent(
             stored -> {
               AppUser user = mapper.toDomain(stored.getUser());
-              refreshTokens.revoke(stored.getId(), clock.instant());
-              audit.record(
-                  AuthEventType.LOGGED_OUT, AuthOutcome.SUCCESS, user.username(), user.id());
+              if (refreshTokens.revoke(
+                      stored.getId(), clock.instant(), AuthConstants.REVOKED_LOGOUT)
+                  == 1) {
+                audit.record(
+                    AuthEventType.LOGGED_OUT, AuthOutcome.SUCCESS, user.username(), user.id());
+              }
             });
     return new LogoutResponse(ApiMessages.LOGOUT_DONE);
   }

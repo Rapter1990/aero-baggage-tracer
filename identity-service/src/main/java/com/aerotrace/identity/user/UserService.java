@@ -14,7 +14,6 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -25,15 +24,22 @@ import org.springframework.transaction.annotation.Transactional;
  * case, so lookups do not depend on how someone typed them.
  */
 @Service
-@RequiredArgsConstructor
 public class UserService {
 
   private final AppUserRepository users;
   private final PasswordEncoder encoder;
   private final IdentityMapper mapper;
 
+  public UserService(AppUserRepository users, PasswordEncoder encoder, IdentityMapper mapper) {
+    this.users = users;
+    this.encoder = encoder;
+    this.mapper = mapper;
+    // Built once at start-up, so the first unknown-user sign-in costs the same as every other.
+    this.timingEqualizerHash = encoder.encode(UUID.randomUUID().toString());
+  }
+
   /** Checked against when no account matches, so that case costs a real hash comparison. */
-  private volatile String timingEqualizerHash;
+  private final String timingEqualizerHash;
 
   /**
    * Creates an account. Passengers get a generated passenger reference, staff get none.
@@ -90,26 +96,26 @@ public class UserService {
    */
   public boolean authenticates(Optional<AppUser> account, String rawPassword) {
     if (account.isEmpty() || !fitsBcrypt(rawPassword)) {
-      encoder.matches(withinBcryptLimit(rawPassword), timingEqualizer());
+      encoder.matches(withinBcryptLimit(rawPassword), timingEqualizerHash);
       return false;
     }
     boolean matches = encoder.matches(rawPassword, account.get().passwordHash());
     return matches && account.get().enabled();
   }
 
-  /**
-   * Replaces a user's password.
-   *
-   * @throws ApiException {@code VALIDATION_ERROR} when the password is longer than BCrypt can use
-   */
+  /** Hashes a password with the configured cost. */
+  public String encode(String rawPassword) {
+    return encoder.encode(rawPassword);
+  }
+
+  /** Stores an already hashed password for a user. */
   @Transactional
-  public void changePassword(UUID userId, String rawPassword) {
-    requireFitsBcrypt(rawPassword);
+  public void changePasswordHash(UUID userId, String passwordHash) {
     AppUserEntity user =
         users
             .findById(userId)
             .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "User not found"));
-    user.changePassword(encoder.encode(rawPassword));
+    user.changePassword(passwordHash);
   }
 
   /** Throws the validation error for a password BCrypt would silently cut short. */
@@ -117,15 +123,6 @@ public class UserService {
     if (!fitsBcrypt(rawPassword)) {
       throw new ApiException(ErrorCode.VALIDATION_ERROR, ApiMessages.PASSWORD_RULE);
     }
-  }
-
-  private String timingEqualizer() {
-    String hash = timingEqualizerHash;
-    if (hash == null) {
-      hash = encoder.encode(UUID.randomUUID().toString());
-      timingEqualizerHash = hash;
-    }
-    return hash;
   }
 
   private static ApiException alreadyExists() {

@@ -196,7 +196,7 @@ class UserServiceTest extends AbstractBaseServiceTest {
     AppUserEntity entity = stored("jane", PASSWORD, Set.of(Role.PASSENGER));
     when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
 
-    service.changePassword(entity.getId(), "a-brand-new-password");
+    service.changePasswordHash(entity.getId(), service.encode("a-brand-new-password"));
 
     assertThat(encoder.matches("a-brand-new-password", entity.getPasswordHash())).isTrue();
     assertThat(encoder.matches(PASSWORD, entity.getPasswordHash())).isFalse();
@@ -207,7 +207,7 @@ class UserServiceTest extends AbstractBaseServiceTest {
     UUID id = UUID.randomUUID();
     when(repository.findById(id)).thenReturn(Optional.empty());
 
-    assertThatThrownBy(() -> service.changePassword(id, PASSWORD))
+    assertThatThrownBy(() -> service.changePasswordHash(id, "hash"))
         .isInstanceOfSatisfying(
             ApiException.class, e -> assertThat(e.errorCode()).isEqualTo(ErrorCode.NOT_FOUND));
   }

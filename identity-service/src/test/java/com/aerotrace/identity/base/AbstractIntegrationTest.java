@@ -22,6 +22,7 @@ public abstract class AbstractIntegrationTest extends AbstractTestContainerConfi
 
   protected static final String PASSWORD = "correct-horse-battery";
 
+  private static final HttpClient CLIENT = HttpClient.newHttpClient();
   private static final JsonMapper JSON = JsonMapper.builder().build();
 
   @Value("${local.server.port}")
@@ -56,7 +57,7 @@ public abstract class AbstractIntegrationTest extends AbstractTestContainerConfi
       if (bearer != null) {
         request.header("Authorization", "Bearer " + bearer);
       }
-      return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString());
+      return CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofString());
     } catch (IOException e) {
       throw new IllegalStateException(e);
     } catch (InterruptedException e) {

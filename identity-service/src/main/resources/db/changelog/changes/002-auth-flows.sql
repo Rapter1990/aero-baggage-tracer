@@ -19,10 +19,15 @@ CREATE TABLE identity.refresh_token (
     token_hash varchar(64) NOT NULL,
     expires_at timestamptz NOT NULL,
     revoked_at timestamptz,
+    -- Why it was revoked: ROTATED (exchanged for a new one), LOGOUT, RESET or REUSE. Only a
+    -- rotated token that is presented again counts as theft.
+    revoked_reason varchar(16),
     created_at timestamptz NOT NULL,
+    CONSTRAINT ck_refresh_token_reason CHECK (revoked_reason IN ('ROTATED','LOGOUT','RESET','REUSE')),
     CONSTRAINT uq_refresh_token_hash UNIQUE (token_hash)
 );
 CREATE INDEX ix_refresh_token_user ON identity.refresh_token (user_id);
+CREATE INDEX ix_refresh_token_expiry ON identity.refresh_token (expires_at);
 --rollback DROP TABLE identity.refresh_token;
 
 --changeset identity:004-password-reset-token
@@ -37,4 +42,5 @@ CREATE TABLE identity.password_reset_token (
     CONSTRAINT uq_password_reset_token_hash UNIQUE (token_hash)
 );
 CREATE INDEX ix_password_reset_token_user ON identity.password_reset_token (user_id);
+CREATE INDEX ix_password_reset_token_expiry ON identity.password_reset_token (expires_at);
 --rollback DROP TABLE identity.password_reset_token;

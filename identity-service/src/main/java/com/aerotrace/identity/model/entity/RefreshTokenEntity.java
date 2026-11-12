@@ -43,6 +43,9 @@ public class RefreshTokenEntity {
   @Column(name = "revoked_at")
   private Instant revokedAt;
 
+  @Column(name = "revoked_reason", length = 16)
+  private String revokedReason;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
