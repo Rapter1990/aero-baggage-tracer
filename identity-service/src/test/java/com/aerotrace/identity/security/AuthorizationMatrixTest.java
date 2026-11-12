@@ -130,7 +130,7 @@ class AuthorizationMatrixTest extends IdentityTestBase {
         postJson(
             "/api/v1/auth/token",
             "{\"username\":\"" + username + "\",\"password\":\"seed-test-password-1\"}");
-    return JSON.readTree(response.body()).get("access_token").asString();
+    return JSON.readTree(response.body()).get("data").get("accessToken").asString();
   }
 
   private JWTClaimsSet.Builder claims(Instant expires) {

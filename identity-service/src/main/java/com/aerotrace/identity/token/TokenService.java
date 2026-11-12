@@ -9,6 +9,7 @@ import com.aerotrace.identity.audit.AuthEventType;
 import com.aerotrace.identity.audit.AuthOutcome;
 import com.aerotrace.identity.keys.JwtSigner;
 import com.aerotrace.identity.model.domain.AppUser;
+import com.aerotrace.identity.model.dto.response.TokenResponse;
 import com.aerotrace.identity.user.UserService;
 import com.nimbusds.jwt.JWTClaimsSet;
 import io.micrometer.core.instrument.MeterRegistry;

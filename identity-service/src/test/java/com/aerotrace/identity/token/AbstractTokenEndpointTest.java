@@ -73,7 +73,7 @@ abstract class AbstractTokenEndpointTest extends IdentityTestBase {
   String tokenFor(String username) {
     HttpResponse<String> response = login(username, PASSWORD);
     assertThat(response.statusCode()).isEqualTo(200);
-    return JSON.readTree(response.body()).get("access_token").asString();
+    return JSON.readTree(response.body()).get("data").get("accessToken").asString();
   }
 
   /** The decoder settings the api-gateway uses (see its SecurityConfig). */
@@ -103,9 +103,12 @@ abstract class AbstractTokenEndpointTest extends IdentityTestBase {
 
     assertThat(response.statusCode()).isEqualTo(200);
     JsonNode body = JSON.readTree(response.body());
-    assertThat(body.get("token_type").asString()).isEqualTo("Bearer");
-    assertThat(body.get("expires_in").asLong()).isEqualTo(900);
-    assertThat(body.get("access_token").asString()).matches("[\\w-]+\\.[\\w-]+\\.[\\w-]+");
+    assertThat(body.get("success").asBoolean()).isTrue();
+    assertThat(body.get("timestamp").asString()).isNotBlank();
+    JsonNode data = body.get("data");
+    assertThat(data.get("tokenType").asString()).isEqualTo("Bearer");
+    assertThat(data.get("expiresIn").asLong()).isEqualTo(900);
+    assertThat(data.get("accessToken").asString()).matches("[\\w-]+\\.[\\w-]+\\.[\\w-]+");
     assertThat(response.headers().firstValue("Cache-Control").orElse("")).contains("no-store");
   }
 
@@ -209,7 +212,7 @@ abstract class AbstractTokenEndpointTest extends IdentityTestBase {
     JsonNode problem = JSON.readTree(response.body());
     assertThat(problem.get("code").asString()).isEqualTo("UNAUTHENTICATED");
     assertThat(problem.get("status").asInt()).isEqualTo(401);
-    assertThat(response.body()).doesNotContain("access_token");
+    assertThat(response.body()).doesNotContain("accessToken");
   }
 
   @Test
@@ -254,6 +257,30 @@ abstract class AbstractTokenEndpointTest extends IdentityTestBase {
       assertThat(JSON.readTree(response.body()).get("code").asString())
           .isEqualTo("VALIDATION_ERROR");
     }
+  }
+
+  @Test
+  void validationNamesTheFieldsButNeverEchoesWhatWasSent() {
+    String longPassword = "p".repeat(300);
+
+    HttpResponse<String> response =
+        postJson(PATH, "{\"username\":\"\",\"password\":\"" + longPassword + "\"}");
+
+    assertThat(response.statusCode()).isEqualTo(400);
+    JsonNode error = JSON.readTree(response.body());
+    assertThat(error.get("code").asString()).isEqualTo("VALIDATION_ERROR");
+    assertThat(error.get("path").asString()).isEqualTo(PATH);
+    assertThat(error.get("validationErrors").propertyNames())
+        .containsExactlyInAnyOrder("username", "password");
+    assertThat(response.body()).doesNotContain("pppp");
+  }
+
+  @Test
+  void aMissingBodyIsRejectedWithoutAStackTrace() {
+    HttpResponse<String> response = send("POST", PATH, null, null);
+
+    assertThat(response.statusCode()).isIn(400, 415);
+    assertThat(response.body()).doesNotContain("Exception");
   }
 
   @Test
@@ -356,7 +383,7 @@ abstract class AbstractTokenEndpointTest extends IdentityTestBase {
         .doesNotContain(token.substring(token.lastIndexOf('.') + 1))
         .doesNotContain(hash)
         .doesNotContain("Bearer ")
-        .doesNotContain("access_token")
+        .doesNotContain("accessToken")
         // Spring Security's default in-memory user would print a generated password.
         .doesNotContainIgnoringCase("generated security password");
   }

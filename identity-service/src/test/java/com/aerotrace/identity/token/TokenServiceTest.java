@@ -10,6 +10,8 @@ import static org.mockito.Mockito.when;
 import com.aerotrace.common.error.ApiException;
 import com.aerotrace.identity.audit.AuthAuditLog;
 import com.aerotrace.identity.keys.JwtSigner;
+import com.aerotrace.identity.model.dto.request.TokenRequest;
+import com.aerotrace.identity.model.dto.response.TokenResponse;
 import com.aerotrace.identity.user.UserService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;

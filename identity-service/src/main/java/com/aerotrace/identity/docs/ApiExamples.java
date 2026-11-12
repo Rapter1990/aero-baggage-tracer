@@ -22,10 +22,12 @@ public final class ApiExamples {
       "timestamp":"2026-11-12T10:15:30.123Z","correlationId":"b6c1d1e0-3a4f-4f0e-9d2a-5d7f0c2f8a11"}\
       """;
 
+  /** Field name to rule; never the value that was sent. */
   public static final String TOKEN_VALIDATION_ERROR =
       """
-      {"code":"VALIDATION_ERROR","message":"username and password are required","status":400,\
-      "path":"/api/v1/auth/token","validationErrors":{},\
+      {"code":"VALIDATION_ERROR","message":"Request validation failed","status":400,\
+      "path":"/api/v1/auth/token",\
+      "validationErrors":{"username":"must not be blank","password":"must not be blank"},\
       "timestamp":"2026-11-12T10:15:30.123Z","correlationId":"b6c1d1e0-3a4f-4f0e-9d2a-5d7f0c2f8a11"}\
       """;
 
@@ -40,7 +42,8 @@ public final class ApiExamples {
   /** A placeholder: the shape of the answer, never a usable token. */
   public static final String TOKEN_ISSUED =
       """
-      {"access_token":"<signed JWT: header.payload.signature>","token_type":"Bearer","expires_in":900}\
+      {"success":true,"data":{"accessToken":"<signed JWT: header.payload.signature>",\
+      "tokenType":"Bearer","expiresIn":900},"timestamp":"2026-11-12T10:15:30.123Z"}\
       """;
 
   public static final String JWKS =

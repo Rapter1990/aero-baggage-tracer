@@ -40,7 +40,8 @@ class KeyRotationEndpointTest extends IdentityTestBase {
                     "/api/v1/auth/token",
                     "{\"username\":\"" + username + "\",\"password\":\"seed-test-password-1\"}")
                 .body())
-        .get("access_token")
+        .get("data")
+        .get("accessToken")
         .asString();
   }
 
@@ -53,7 +54,7 @@ class KeyRotationEndpointTest extends IdentityTestBase {
     HttpResponse<String> response = send("POST", "/api/v1/auth/keys/rotate", null, login("admin"));
 
     assertThat(response.statusCode()).isEqualTo(202);
-    String kid = JSON.readTree(response.body()).get("kid").asString();
+    String kid = JSON.readTree(response.body()).get("data").get("kid").asString();
     assertThat(kid).isNotEqualTo(before);
     assertThat(keys.publishedKeys().getKeyByKeyId(kid)).isNotNull();
     assertThat(keys.publishedKeys().getKeyByKeyId(before)).isNotNull();
@@ -65,10 +66,12 @@ class KeyRotationEndpointTest extends IdentityTestBase {
 
     String first =
         JSON.readTree(send("POST", "/api/v1/auth/keys/rotate", null, token).body())
+            .get("data")
             .get("kid")
             .asString();
     String second =
         JSON.readTree(send("POST", "/api/v1/auth/keys/rotate", null, token).body())
+            .get("data")
             .get("kid")
             .asString();
 

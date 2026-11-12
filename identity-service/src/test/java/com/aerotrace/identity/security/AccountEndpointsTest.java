@@ -32,7 +32,8 @@ class AccountEndpointsTest extends IdentityTestBase {
                     "/api/v1/auth/token",
                     "{\"username\":\"" + username + "\",\"password\":\"seed-test-password-1\"}")
                 .body())
-        .get("access_token")
+        .get("data")
+        .get("accessToken")
         .asString();
   }
 
@@ -41,7 +42,9 @@ class AccountEndpointsTest extends IdentityTestBase {
     HttpResponse<String> response = send("GET", "/api/v1/auth/me", null, login("dispatcher"));
 
     assertThat(response.statusCode()).isEqualTo(200);
-    JsonNode me = JSON.readTree(response.body());
+    JsonNode envelope = JSON.readTree(response.body());
+    assertThat(envelope.get("success").asBoolean()).isTrue();
+    JsonNode me = envelope.get("data");
     assertThat(me.get("subject").asString())
         .isEqualTo(users.findByUsername("dispatcher").orElseThrow().id().toString());
     assertThat(me.get("roles").get(0).asString()).isEqualTo("DISPATCHER");
@@ -60,7 +63,7 @@ class AccountEndpointsTest extends IdentityTestBase {
     HttpResponse<String> response = send("GET", "/api/v1/auth/policy", null, login("passenger"));
 
     assertThat(response.statusCode()).isEqualTo(200);
-    JsonNode permissions = JSON.readTree(response.body()).get("permissions");
+    JsonNode permissions = JSON.readTree(response.body()).get("data").get("permissions");
     List<String> names = permissions.valueStream().map(p -> p.get("name").asString()).toList();
     assertThat(names)
         .isEqualTo(policy.catalog().stream().map(AuthorizationPolicy.Entry::name).toList());

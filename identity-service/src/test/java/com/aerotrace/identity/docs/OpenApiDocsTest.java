@@ -56,7 +56,8 @@ class OpenApiDocsTest extends IdentityTestBase {
                     "/api/v1/auth/token",
                     "{\"username\":\"" + username + "\",\"password\":\"seed-test-password-1\"}")
                 .body())
-        .get("access_token")
+        .get("data")
+        .get("accessToken")
         .asString();
   }
 
@@ -168,7 +169,11 @@ class OpenApiDocsTest extends IdentityTestBase {
     String body =
         operation(docs(), "/api/v1/auth/token", "post").get("responses").get("200").toString();
 
-    assertThat(body).contains("access_token").contains("token_type").contains("expires_in");
+    assertThat(body)
+        .contains("success")
+        .contains("accessToken")
+        .contains("tokenType")
+        .contains("expiresIn");
     // A placeholder, not something that looks like a usable signed token.
     assertThat(body).doesNotContainPattern("eyJ[\\w-]{10,}\\.[\\w-]{10,}\\.[\\w-]{10,}");
   }
