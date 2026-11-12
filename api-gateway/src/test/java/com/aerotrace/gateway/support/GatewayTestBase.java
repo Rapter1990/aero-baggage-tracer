@@ -20,7 +20,8 @@ import tools.jackson.databind.JsonNode;
       "spring.data.redis.password=unused-in-tests",
       "management.health.redis.enabled=false",
       "management.otlp.metrics.export.enabled=false",
-      "management.tracing.export.otlp.enabled=false"
+      "management.tracing.export.otlp.enabled=false",
+      "management.logging.export.otlp.enabled=false"
     })
 @Import(GatewayTestConfig.class)
 public abstract class GatewayTestBase {

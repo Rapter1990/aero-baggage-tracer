@@ -15,7 +15,8 @@ import org.springframework.web.client.RestClient;
     properties = {
       "eureka.client.enabled=false",
       "management.otlp.metrics.export.enabled=false",
-      "management.tracing.export.otlp.enabled=false"
+      "management.tracing.export.otlp.enabled=false",
+      "management.logging.export.otlp.enabled=false"
     })
 @ActiveProfiles("compose")
 class ConfigServerExtraProfileTest {

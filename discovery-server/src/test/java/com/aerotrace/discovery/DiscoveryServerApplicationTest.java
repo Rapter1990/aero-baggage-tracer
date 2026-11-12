@@ -19,7 +19,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
       "spring.security.user.name=eureka",
       "spring.security.user.password=test-secret",
       "management.otlp.metrics.export.enabled=false",
-      "management.tracing.export.otlp.enabled=false"
+      "management.tracing.export.otlp.enabled=false",
+      "management.logging.export.otlp.enabled=false"
     })
 class DiscoveryServerApplicationTest {
 

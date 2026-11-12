@@ -4,16 +4,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.Tracer;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -59,6 +64,8 @@ class TelemetryExportTest {
 
   @LocalServerPort private int port;
 
+  @Autowired private Tracer tracer;
+
   @DynamicPropertySource
   static void collector(DynamicPropertyRegistry registry) {
     String base = "http://localhost:" + COLLECTOR.getAddress().getPort();
@@ -67,6 +74,7 @@ class TelemetryExportTest {
     registry.add(
         "management.opentelemetry.tracing.export.otlp.endpoint", () -> base + "/v1/traces");
     registry.add("management.tracing.sampling.probability", () -> "1.0");
+    registry.add("management.opentelemetry.logging.export.otlp.endpoint", () -> base + "/v1/logs");
   }
 
   private static <T> T await(String what, Supplier<Optional<T>> condition)
@@ -115,5 +123,47 @@ class TelemetryExportTest {
                     .findFirst());
 
     assertThat(push.contentType()).contains("protobuf");
+  }
+
+  @Test
+  void pushesItsLogsToTheCollector() throws InterruptedException {
+    LoggerFactory.getLogger("telemetry.test").info("hello from the  logs test");
+
+    Push push =
+        await(
+            "logs",
+            () ->
+                PUSHES.stream()
+                    .filter(p -> p.path().equals("/v1/logs"))
+                    .filter(p -> p.body().contains("hello from the  logs test"))
+                    .findFirst());
+
+    assertThat(push.contentType()).contains("protobuf");
+    assertThat(push.body()).contains("");
+  }
+
+  @Test
+  void logLinesWrittenInsideATraceCarryItsTraceId() throws InterruptedException {
+    Span span = tracer.nextSpan().name("logs-test").start();
+    String traceId = span.context().traceId();
+    try (Tracer.SpanInScope ignored = tracer.withSpan(span)) {
+      LoggerFactory.getLogger("telemetry.test").info("correlated line of the ");
+    } finally {
+      span.end();
+    }
+    // In OTLP protobuf the trace id is 16 raw bytes, which show up as plain characters here.
+    String rawTraceId =
+        new String(HexFormat.of().parseHex(traceId), java.nio.charset.StandardCharsets.ISO_8859_1);
+
+    Push push =
+        await(
+            "correlated logs",
+            () ->
+                PUSHES.stream()
+                    .filter(p -> p.path().equals("/v1/logs"))
+                    .filter(p -> p.body().contains("correlated line of the "))
+                    .findFirst());
+
+    assertThat(push.body()).contains(rawTraceId);
   }
 }

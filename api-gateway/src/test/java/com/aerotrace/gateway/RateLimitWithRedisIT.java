@@ -35,7 +35,8 @@ import tools.jackson.databind.JsonNode;
       "aerotrace.gateway.rate-limit.replenish-rate=1",
       "aerotrace.gateway.rate-limit.burst-capacity=3",
       "management.otlp.metrics.export.enabled=false",
-      "management.tracing.export.otlp.enabled=false"
+      "management.tracing.export.otlp.enabled=false",
+      "management.logging.export.otlp.enabled=false"
     })
 @Import(TestRoutesConfig.class)
 class RateLimitWithRedisIT extends AbstractTestContainerConfiguration {

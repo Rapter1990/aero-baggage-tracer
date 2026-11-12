@@ -80,6 +80,17 @@ services:
     networks:
       - aerotrace
 
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./observability/loki.yml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    networks:
+      - aerotrace
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
     container_name: otel-collector
@@ -92,6 +103,7 @@ services:
       - ./observability/otel-collector.yml:/etc/otelcol/config.yaml:ro
     depends_on:
       - tempo
+      - loki
     networks:
       - aerotrace
 
@@ -140,6 +152,7 @@ services:
 volumes:
   postgres-data:
   tempo-data:
+  loki-data:
 
 networks:
   aerotrace:

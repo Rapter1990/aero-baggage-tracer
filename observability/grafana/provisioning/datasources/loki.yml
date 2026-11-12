@@ -1,0 +1,21 @@
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 500
+      # Every log record carries its trace_id (structured metadata): turn it into a link to the trace.
+      # (A doubled dollar sign stops Grafana's provisioning from treating the variable as an
+      # environment variable.)
+      derivedFields:
+        - name: Trace
+          matcherType: label
+          matcherRegex: trace_id
+          url: "$${__value.raw}"
+          urlDisplayLabel: Open trace in Tempo
+          datasourceUid: tempo

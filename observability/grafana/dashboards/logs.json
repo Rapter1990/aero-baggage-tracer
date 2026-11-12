@@ -1,0 +1,217 @@
+{
+  "uid": "aerotrace-logs",
+  "title": "AeroTrace - Logs",
+  "tags": ["aerotrace", "logs"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "links": [
+    { "title": "Other AeroTrace dashboards", "type": "dashboards", "tags": ["aerotrace"], "asDropdown": true, "includeVars": false, "keepTime": true }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": { "label": "service_name", "stream": "", "type": 1, "refId": "LokiVariableQueryEditor-VariableQuery" },
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": { "selected": true, "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "level",
+        "label": "Level",
+        "type": "custom",
+        "query": "error,warn,info,debug,trace",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "options": [
+          { "text": "All", "value": "$__all", "selected": true },
+          { "text": "error", "value": "error", "selected": false },
+          { "text": "warn", "value": "warn", "selected": false },
+          { "text": "info", "value": "info", "selected": false },
+          { "text": "debug", "value": "debug", "selected": false },
+          { "text": "trace", "value": "trace", "selected": false }
+        ],
+        "current": { "selected": true, "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "search",
+        "label": "Contains",
+        "type": "textbox",
+        "query": "",
+        "current": { "selected": false, "text": "", "value": "" }
+      },
+      {
+        "name": "trace_id",
+        "label": "Trace ID",
+        "type": "textbox",
+        "query": ".+",
+        "current": { "selected": false, "text": ".+", "value": ".+" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "How to read this page",
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "Pick one or more **services**, a **level** and optional text at the top. Every log line is stored with the **trace id** of the request it was written in.\n\n* **Open a line** (click it) and use **Open trace in Tempo** to see the whole request across services.\n* In Tempo (the *Traces* dashboard or Explore), open a span and use **Logs for this span** to jump back to its log lines.\n* **Logs of one trace** shows every line, across all services, of the Trace ID typed in the box at the top (copy it from the *Traces* dashboard)."
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Errors",
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 5 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "queryType": "instant", "expr": "sum(count_over_time({service_name=~\"$service\"} | detected_level=\"error\" [$__range]))" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Warnings",
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 5 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "queryType": "instant", "expr": "sum(count_over_time({service_name=~\"$service\"} | detected_level=\"warn\" [$__range]))" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Log lines",
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 5 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "queryType": "instant", "expr": "sum(count_over_time({service_name=~\"$service\"} [$__range]))" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Log volume by level",
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 5 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (detected_level) (count_over_time({service_name=~\"$service\"} [$__auto]))", "legendFormat": "{{detected_level}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" }, "lineWidth": 0 },
+          "unit": "short"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "error" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } } ] },
+          { "matcher": { "id": "byName", "options": "warn" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } } ] },
+          { "matcher": { "id": "byName", "options": "info" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } } ] },
+          { "matcher": { "id": "byName", "options": "debug" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } } ] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Log volume by service",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 10 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (service_name) (count_over_time({service_name=~\"$service\"} [$__auto]))", "legendFormat": "{{service_name}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" }, "lineWidth": 0 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 7,
+      "type": "logs",
+      "title": "Errors and warnings",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "expr": "{service_name=~\"$service\"} | detected_level=~\"error|warn\" |~ \"(?i)$search\"", "queryType": "range", "maxLines": 200 }
+      ],
+      "options": { "showTime": true, "showLabels": false, "wrapLogMessage": true, "enableLogDetails": true, "sortOrder": "Descending", "dedupStrategy": "none", "prettifyLogMessage": false }
+    },
+    {
+      "id": 8,
+      "type": "logs",
+      "title": "Logs of the selected services",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 25 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "expr": "{service_name=~\"$service\"} | detected_level=~\"$level\" |~ \"(?i)$search\"", "queryType": "range", "maxLines": 500 }
+      ],
+      "options": { "showTime": true, "showLabels": true, "wrapLogMessage": true, "enableLogDetails": true, "sortOrder": "Descending", "dedupStrategy": "none", "prettifyLogMessage": false }
+    },
+    {
+      "id": 9,
+      "type": "logs",
+      "title": "Logs of one trace (all services)",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 37 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "expr": "{service_name=~\".+\"} | trace_id=~\"$trace_id\"", "queryType": "range", "maxLines": 200 }
+      ],
+      "options": { "showTime": true, "showLabels": true, "wrapLogMessage": true, "enableLogDetails": true, "sortOrder": "Ascending", "dedupStrategy": "none", "prettifyLogMessage": false }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Recent traces of the selected services (click a Trace ID, then \"Logs for this span\")",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 46 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        { "refId": "A", "queryType": "traceql", "query": "{ resource.service.name =~ \"$service\" }", "limit": 20, "tableType": "traces" }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true }
+    }
+  ]
+}

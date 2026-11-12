@@ -18,7 +18,8 @@ import org.springframework.web.client.RestClient;
       "EUREKA_PASSWORD=leaky-secret",
       "EUREKA_USER=svc",
       "management.otlp.metrics.export.enabled=false",
-      "management.tracing.export.otlp.enabled=false"
+      "management.tracing.export.otlp.enabled=false",
+      "management.logging.export.otlp.enabled=false"
     })
 class ConfigServerApplicationTest {
 

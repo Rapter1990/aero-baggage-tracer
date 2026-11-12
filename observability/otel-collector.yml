@@ -1,8 +1,9 @@
 # OpenTelemetry Collector for local development.
-#   services --OTLP--> collector --> Tempo (traces) and Prometheus (metrics, scraped on :8889) --> Grafana
+#   services --OTLP--> collector --> Tempo (traces), Loki (logs) and Prometheus (metrics, scraped on :8889) --> Grafana
 #
 # Services send traces and metrics to port 4318 (OTLP/HTTP); 4317 (OTLP/gRPC) is open too.
 #  - Metrics are exposed to Prometheus as they arrive.
+#  - Logs (each tagged with its trace id) are forwarded to Loki.
 #  - Traces are forwarded to Tempo (browse them in Grafana), turned into request-rate / error /
 #    latency metrics (span_metrics connector), and summarised in one line per batch in this log.
 receivers:
@@ -32,6 +33,11 @@ exporters:
     endpoint: tempo:4317
     tls:
       insecure: true
+  # The log store; Grafana reads logs from here. Loki accepts OTLP on /otlp (the exporter adds /v1/logs).
+  otlp_http/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
   prometheus:
     endpoint: 0.0.0.0:8889
     # Keep the service name as a label on every metric (service_name).
@@ -46,6 +52,10 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [span_metrics, otlp_grpc/tempo, debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_http/loki]
     metrics:
       receivers: [otlp, span_metrics]
       processors: [batch]
