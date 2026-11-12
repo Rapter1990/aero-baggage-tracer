@@ -142,6 +142,9 @@ services:
       DB_USER: ${POSTGRES_USER:-aerotrace}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
       # Must equal what the gateway expects (JWT_ISSUER above).
+      # "dev" also creates the dummy accounts (dummy.agent, ...; password dummy-password-1). Set
+      # LIQUIBASE_CONTEXTS=schema in .env to start without them.
+      LIQUIBASE_CONTEXTS: ${LIQUIBASE_CONTEXTS:-dev}
       IDENTITY_ISSUER: ${COMPOSE_JWT_ISSUER:-http://identity-service:1112}
       # The RSA key pair (PEM) that signs the tokens. Empty: the development pair bundled in
       # the image is used, whose private key is in the repository. Use your own for

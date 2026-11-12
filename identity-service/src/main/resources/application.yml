@@ -40,6 +40,9 @@ spring:
   liquibase:
     # This service owns the "identity" schema; Liquibase tracks its changes there too.
     change-log: classpath:db/changelog/db.changelog-master.yaml
+    # Only changesets without a context, or with one of these, run. The dummy accounts are in the
+    # "dev" context, so they exist only where LIQUIBASE_CONTEXTS=dev is set explicitly.
+    contexts: ${LIQUIBASE_CONTEXTS:schema}
     default-schema: identity
     liquibase-schema: identity
 

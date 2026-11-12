@@ -3,3 +3,5 @@ databaseChangeLog:
       file: db/changelog/changes/001-identity-schema.sql
   - include:
       file: db/changelog/changes/002-auth-flows.sql
+  - include:
+      file: db/changelog/changes/003-sample-data.sql

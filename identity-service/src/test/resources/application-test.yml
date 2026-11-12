@@ -1,6 +1,8 @@
 # Defaults for every Spring test. A profile file sits below @TestPropertySource, so single tests
 # (the OTLP export tests, for one) can still switch things back on.
 spring:
+  liquibase:
+    contexts: dev
   datasource:
     hikari:
       # Spring caches one context per distinct configuration, each with its own pool: keep them

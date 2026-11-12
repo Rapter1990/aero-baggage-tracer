@@ -66,6 +66,8 @@ In `docker-compose.yml` and `docker-compose-local.yml`, the services that need t
 
 Anyone can register a passenger. Staff accounts (`AGENT`, `DISPATCHER`, `ADMIN`) can only be created by an administrator through `POST /register` with an ADMIN access token, so the first administrator is made once by hand. The API docs are on by default (`DOCS_ENABLED=false` in `.env` turns them off).
 
+Compose starts the identity-service with `LIQUIBASE_CONTEXTS=dev`, which also runs changeset `003-sample-data.sql`: five dummy accounts (`dummy.passenger`, `dummy.passenger2`, `dummy.agent`, `dummy.dispatcher`, `dummy.admin`) that all have the password `dummy-password-1`. That gives you an administrator right away. Without the `dev` context (the default outside Compose, or `LIQUIBASE_CONTEXTS=schema` in `.env`) the accounts are not created. Never run a real deployment with the `dev` context.
+
 To create the first administrator, register a passenger, then give that user the role in the database:
 
 ```sql
