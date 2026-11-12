@@ -19,6 +19,28 @@ class KeyCipherTest {
 
   private static final byte[] SECRET = "pkcs8-private-key-bytes".getBytes(StandardCharsets.UTF_8);
 
+  private static String unversioned(String stored) {
+    return stored.substring("v1:".length());
+  }
+
+  @Test
+  void theStoredFormCarriesAVersion() {
+    assertThat(KeyCipher.fromBase64(newKek()).encrypt(SECRET, "kid-1")).startsWith("v1:");
+  }
+
+  @Test
+  void aValueOfAnotherOrNoVersionIsRefused() {
+    KeyCipher cipher = KeyCipher.fromBase64(newKek());
+    String bare = unversioned(cipher.encrypt(SECRET, "kid-1"));
+
+    assertThatThrownBy(() -> cipher.decrypt(bare, "kid-1"))
+        .isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(() -> cipher.decrypt("v2:" + bare, "kid-1"))
+        .isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(() -> cipher.decrypt(null, "kid-1"))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
   @Test
   void decryptsWhatItEncrypted() {
     KeyCipher cipher = KeyCipher.fromBase64(newKek());
@@ -33,7 +55,9 @@ class KeyCipherTest {
     String stored = KeyCipher.fromBase64(newKek()).encrypt(SECRET, "kid-1");
 
     assertThat(stored).doesNotContain("pkcs8");
-    assertThat(new String(Base64.getDecoder().decode(stored), StandardCharsets.ISO_8859_1))
+    assertThat(
+            new String(
+                Base64.getDecoder().decode(unversioned(stored)), StandardCharsets.ISO_8859_1))
         .doesNotContain("pkcs8-private");
   }
 
@@ -64,9 +88,9 @@ class KeyCipherTest {
   @Test
   void aTamperedCiphertextIsRejected() {
     KeyCipher cipher = KeyCipher.fromBase64(newKek());
-    byte[] raw = Base64.getDecoder().decode(cipher.encrypt(SECRET, "kid-1"));
+    byte[] raw = Base64.getDecoder().decode(unversioned(cipher.encrypt(SECRET, "kid-1")));
     raw[raw.length - 1] ^= 1;
-    String tampered = Base64.getEncoder().encodeToString(raw);
+    String tampered = "v1:" + Base64.getEncoder().encodeToString(raw);
 
     assertThatThrownBy(() -> cipher.decrypt(tampered, "kid-1"))
         .isInstanceOf(IllegalStateException.class);

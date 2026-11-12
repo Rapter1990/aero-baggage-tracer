@@ -11,14 +11,16 @@ import javax.crypto.spec.SecretKeySpec;
 
 /**
  * Encrypts private keys for storage with AES-256-GCM. The key id is bound in as associated data, so
- * a ciphertext copied onto another key's row fails to decrypt. The stored form is base64(nonce ||
- * ciphertext-and-tag).
+ * a ciphertext copied onto another key's row fails to decrypt. The stored form is "v1:" +
+ * base64(nonce || ciphertext-and-tag); the version prefix leaves room to move to another
+ * key-encryption key or algorithm later without guessing what a stored value is.
  */
 public final class KeyCipher {
 
   private static final int KEY_BYTES = 32;
   private static final int NONCE_BYTES = 12;
   private static final int TAG_BITS = 128;
+  private static final String VERSION = "v1:";
 
   private final SecretKey kek;
   private final SecureRandom random = new SecureRandom();
@@ -55,7 +57,7 @@ public final class KeyCipher {
       byte[] sealed = cipher.doFinal(plain);
       byte[] out = Arrays.copyOf(nonce, NONCE_BYTES + sealed.length);
       System.arraycopy(sealed, 0, out, NONCE_BYTES, sealed.length);
-      return Base64.getEncoder().encodeToString(out);
+      return VERSION + Base64.getEncoder().encodeToString(out);
     } catch (GeneralSecurityException e) {
       throw new IllegalStateException("Could not encrypt a signing key", e);
     }
@@ -63,7 +65,10 @@ public final class KeyCipher {
 
   byte[] decrypt(String stored, String kid) {
     try {
-      byte[] in = Base64.getDecoder().decode(stored);
+      if (stored == null || !stored.startsWith(VERSION)) {
+        throw new IllegalStateException("Stored signing key has an unknown format");
+      }
+      byte[] in = Base64.getDecoder().decode(stored.substring(VERSION.length()));
       if (in.length <= NONCE_BYTES) {
         throw new IllegalStateException("Stored signing key is malformed");
       }

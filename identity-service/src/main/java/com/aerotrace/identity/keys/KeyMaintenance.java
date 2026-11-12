@@ -31,11 +31,16 @@ class KeyMaintenance implements ApplicationRunner {
       initialDelayString = "${aerotrace.identity.keys.maintenance-interval:PT5M}",
       fixedDelayString = "${aerotrace.identity.keys.maintenance-interval:PT5M}")
   void maintain() {
+    // Separate attempts: a failure introducing a key must not stop expired keys being erased.
+    attempt("introduce a signing key when one is due", keys::rotateIfDue);
+    attempt("retire expired signing keys", keys::retireExpired);
+  }
+
+  private static void attempt(String what, Runnable action) {
     try {
-      keys.rotateIfDue();
-      keys.retireExpired();
+      action.run();
     } catch (RuntimeException e) {
-      log.warn("Signing key maintenance failed ({})", e.getClass().getSimpleName());
+      log.warn("Signing key maintenance could not {}", what, e);
     }
   }
 }
