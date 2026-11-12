@@ -143,12 +143,15 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
       # Must equal what the gateway expects (JWT_ISSUER above).
       IDENTITY_ISSUER: ${COMPOSE_JWT_ISSUER:-http://identity-service:8081}
-      # Dev-only key that encrypts the signing keys in the database: generate your own with
-      # `openssl rand -base64 32` for anything but a throwaway stack.
-      IDENTITY_KEY_ENCRYPTION_KEY: ${IDENTITY_KEY_ENCRYPTION_KEY:-ZGV2LW9ubHktaWRlbnRpdHkta2V5LWVuY3J5cHQtMDE=}
-      # Dev-only test users: passenger, passenger2, agent, dispatcher, admin share this password.
-      IDENTITY_SEED_ENABLED: ${IDENTITY_SEED_ENABLED:-true}
-      IDENTITY_SEED_PASSWORD: ${IDENTITY_SEED_PASSWORD:-aerotrace-dev-password}
+      # No defaults for secrets: the key that encrypts the signing keys in the database must
+      # be yours (openssl rand -base64 32). Left empty, the service refuses to start. For a
+      # throwaway development stack add the override file: docker-compose.dev.yml.
+      IDENTITY_KEY_ENCRYPTION_KEY: ${IDENTITY_KEY_ENCRYPTION_KEY:-}
+      # Test users (passenger, passenger2, agent, dispatcher, admin share one password).
+      # Off unless you switch it on; never in production.
+      IDENTITY_SEED_ENABLED: ${IDENTITY_SEED_ENABLED:-false}
+      IDENTITY_SEED_PASSWORD: ${IDENTITY_SEED_PASSWORD:-}
+      DOCS_ENABLED: ${DOCS_ENABLED:-false}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
@@ -182,6 +185,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redis}
       JWT_ISSUER: ${COMPOSE_JWT_ISSUER:-http://identity-service:8081}
       JWK_SET_URI: ${COMPOSE_JWK_SET_URI:-http://identity-service:8081/.well-known/jwks.json}
+      DOCS_ENABLED: ${DOCS_ENABLED:-false}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
@@ -194,7 +198,8 @@ services:
       identity-service:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      # Loopback only: put a reverse proxy with TLS in front of it to expose it further.
+      - "127.0.0.1:8080:8080"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
       interval: 10s

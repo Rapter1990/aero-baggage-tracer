@@ -13,6 +13,7 @@ import com.aerotrace.identity.model.dto.response.TokenResponse;
 import com.aerotrace.identity.user.UserService;
 import com.nimbusds.jwt.JWTClaimsSet;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Date;
@@ -67,18 +68,22 @@ class TokenService {
   TokenResponse issue(String username, String password) {
     Optional<AppUser> found = users.findByUsername(username);
     boolean authenticated;
-    if (found.isEmpty()) {
-      encoder.matches(password, timingEqualizerHash);
+    if (found.isEmpty() || !fitsBcrypt(password)) {
+      // An unknown user, or a password BCrypt would silently cut short (so "right prefix plus
+      // junk" would pass): refuse, after the same amount of work as a real check.
+      encoder.matches(withinBcryptLimit(password), timingEqualizerHash);
       authenticated = false;
     } else {
       authenticated = users.passwordMatches(found.get(), password) && found.get().enabled();
     }
 
     if (!authenticated) {
+      // The typed username is only kept when it names a real account: people paste passwords and
+      // email addresses into that box, and the audit trail can never be cleaned up.
       audit.record(
           AuthEventType.LOGIN_FAILED,
           AuthOutcome.FAILURE,
-          username,
+          found.map(AppUser::username).orElse(null),
           found.map(AppUser::id).orElse(null));
       count("failure");
       throw new ApiException(ErrorCode.UNAUTHENTICATED, INVALID_CREDENTIALS);
@@ -103,6 +108,30 @@ class TokenService {
     audit.record(AuthEventType.TOKEN_ISSUED, AuthOutcome.SUCCESS, user.username(), user.id());
     count("success");
     return new TokenResponse(token, "Bearer", properties.ttl().toSeconds());
+  }
+
+  private static boolean fitsBcrypt(String password) {
+    return password.getBytes(StandardCharsets.UTF_8).length <= UserService.MAX_PASSWORD_BYTES;
+  }
+
+  /** The longest start of the password that BCrypt accepts, cut on a character boundary. */
+  private static String withinBcryptLimit(String password) {
+    if (fitsBcrypt(password)) {
+      return password;
+    }
+    StringBuilder kept = new StringBuilder();
+    int bytes = 0;
+    for (int i = 0; i < password.length(); ) {
+      int codePoint = password.codePointAt(i);
+      String character = new String(Character.toChars(codePoint));
+      bytes += character.getBytes(StandardCharsets.UTF_8).length;
+      if (bytes > UserService.MAX_PASSWORD_BYTES) {
+        break;
+      }
+      kept.append(character);
+      i += Character.charCount(codePoint);
+    }
+    return kept.toString();
   }
 
   private static List<String> roleNames(AppUser user) {

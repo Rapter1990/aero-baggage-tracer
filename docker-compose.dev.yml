@@ -1,0 +1,25 @@
+# DEVELOPMENT ONLY. Never use this file on a shared, cloud or production host.
+#
+# Adds what is convenient on a developer machine to docker-compose.yml, using values that are
+# published in this repository and therefore known to everyone:
+#   - test users (passenger, passenger2, agent, dispatcher, admin) with one shared password,
+#   - a key-encryption key for the signing keys in the database,
+#   - the OpenAPI definitions and the Swagger UI.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# IDENTITY_ALLOW_DEV_DEFAULTS=true is what lets identity-service accept those published values;
+# without it the service refuses to start with them, so a copy of this setup cannot reach
+# production unnoticed. Override any value in .env to use your own.
+services:
+  identity-service:
+    environment:
+      IDENTITY_ALLOW_DEV_DEFAULTS: "true"
+      IDENTITY_KEY_ENCRYPTION_KEY: ${IDENTITY_KEY_ENCRYPTION_KEY:-ZGV2LW9ubHktaWRlbnRpdHkta2V5LWVuY3J5cHQtMDE=}
+      IDENTITY_SEED_ENABLED: "true"
+      IDENTITY_SEED_PASSWORD: ${IDENTITY_SEED_PASSWORD:-aerotrace-dev-password}
+      DOCS_ENABLED: "true"
+
+  api-gateway:
+    environment:
+      DOCS_ENABLED: "true"

@@ -54,7 +54,15 @@ public abstract class IdentityTestBase {
 
   @BeforeAll
   static void startDatabase() {
-    assumeTrue(DockerClientFactory.instance().isDockerAvailable(), "Docker is not available");
+    boolean docker = DockerClientFactory.instance().isDockerAvailable();
+    if (System.getenv("CI") != null) {
+      // A build server without Docker must fail, not quietly skip the integration tests.
+      if (!docker) {
+        throw new AssertionError("Docker is required to run the identity-service tests in CI");
+      }
+    } else {
+      assumeTrue(docker, "Docker is not available");
+    }
     synchronized (POSTGRES) {
       if (!POSTGRES.isRunning()) {
         POSTGRES.start();

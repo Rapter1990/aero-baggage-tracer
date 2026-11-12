@@ -1,6 +1,7 @@
 package com.aerotrace.identity.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.aerotrace.identity.keys.JwtSigner;
 import com.aerotrace.identity.keys.SigningKeyService;
@@ -191,9 +192,8 @@ class AuthorizationMatrixTest extends IdentityTestBase {
   void refusalsUseTheSharedProblemFormatAndRevealNothing(Endpoint endpoint, Caller caller)
       throws Exception {
     int expected = expectedStatus(endpoint, caller);
-    if (expected != 401 && expected != 403) {
-      return;
-    }
+    // Only refusals have a format to check; the other combinations are skipped, not passed.
+    assumeTrue(expected == 401 || expected == 403);
 
     HttpResponse<String> response =
         send(endpoint.method(), endpoint.path(), endpoint.body(), tokenFor(caller));

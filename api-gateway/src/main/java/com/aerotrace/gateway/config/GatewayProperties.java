@@ -30,7 +30,7 @@ public record GatewayProperties(
     Assert.hasText(jwkSetUri, "aerotrace.gateway.jwk-set-uri must be set");
     roleRules = roleRules == null ? List.of() : List.copyOf(roleRules);
     rateLimit = rateLimit == null ? new RateLimit(10, 20) : rateLimit;
-    docs = docs == null ? new Docs(true) : docs;
+    docs = docs == null ? new Docs(false) : docs;
   }
 
   /** Whether Swagger UI and the proxied service definitions are reachable without a token. */

@@ -43,12 +43,15 @@ spring:
 
 aerotrace:
   identity:
+    # Set only for a throwaway development run: allows the key-encryption key and the seed
+    # password that are published in the repository (see DevDefaultsGuard).
+    allow-dev-defaults: ${IDENTITY_ALLOW_DEV_DEFAULTS:false}
     # BCrypt cost factor for password hashes.
     bcrypt-strength: ${IDENTITY_BCRYPT_STRENGTH:12}
     docs:
       # The OpenAPI definition at /v3/api-docs, which the gateway's Swagger UI reads. It is served
       # without a token, so turn it off outside development.
-      enabled: ${DOCS_ENABLED:true}
+      enabled: ${DOCS_ENABLED:false}
     keys:
       # RS256 or ES256, for newly generated signing keys.
       algorithm: ${IDENTITY_KEY_ALGORITHM:RS256}

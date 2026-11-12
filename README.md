@@ -55,9 +55,34 @@ In `docker-compose.yml` and `docker-compose-local.yml`, the services that need t
 | `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD` | Grafana (optional, defaults `admin` / `grafana`) |
 | `JWT_ISSUER`, `JWT_AUDIENCE`, `JWK_SET_URI` | api-gateway started outside Docker (inside Compose it uses `COMPOSE_JWT_ISSUER` / `COMPOSE_JWK_SET_URI`) |
 | `DB_PASSWORD` (also `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`; defaults `localhost`, `5433`, `aerotrace`, `aerotrace`) | identity-service started outside Docker (inside Compose it takes the `POSTGRES_*` values) |
-| `IDENTITY_ISSUER`, `IDENTITY_KEY_ENCRYPTION_KEY` | identity-service, no defaults. The issuer must equal the gateway's `JWT_ISSUER`. The key (`openssl rand -base64 32`) encrypts the token-signing keys stored in the database; Compose has a dev-only default |
-| `IDENTITY_SEED_ENABLED`, `IDENTITY_SEED_PASSWORD` | identity-service: creates the test users `passenger`, `passenger2`, `agent`, `dispatcher` and `admin` with this password (at least 12 characters, no default). Compose enables it with a dev-only password; never enable it in production |
-| `DOCS_ENABLED` | api-gateway and identity-service: serve the OpenAPI definitions (default `true`; turn off outside development) |
+| `IDENTITY_ISSUER`, `IDENTITY_KEY_ENCRYPTION_KEY` | identity-service, no defaults. The issuer must equal the gateway's `JWT_ISSUER`. The key (`openssl rand -base64 32`) encrypts the token-signing keys stored in the database; if it is lost or changed the stored keys can no longer be read, and the service then creates a fresh signing key (earlier tokens stay verifiable through the published public keys until they expire) |
+| `IDENTITY_SEED_ENABLED`, `IDENTITY_SEED_PASSWORD` | identity-service: creates the test users `passenger`, `passenger2`, `agent`, `dispatcher` and `admin` sharing this password (at least 12 characters, no default). Off unless switched on; never enable it in production. Turning it off later does not delete the accounts it made |
+| `IDENTITY_ALLOW_DEV_DEFAULTS` | identity-service: set to `true` only for a throwaway development run. Without it the service refuses to start with the key-encryption key or seed password that are published in this repository |
+| `DOCS_ENABLED` | api-gateway and identity-service: serve the OpenAPI definitions and Swagger UI (default `false`, because they map every endpoint without a token) |
+
+## Running the stack with Docker Compose
+
+`docker-compose.yml` has no secrets of its own: put `IDENTITY_KEY_ENCRYPTION_KEY` (and whatever else you need) in `.env` and start it with `docker compose up -d`. The gateway listens on `127.0.0.1:8080` only; put a reverse proxy with TLS in front of it to expose it further.
+
+For a developer machine, `docker-compose.dev.yml` adds the test users, a key-encryption key and the API docs, using values that are published in this repository and therefore known to everyone:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+```
+
+Then `POST http://localhost:8080/api/v1/auth/token` with `{"username":"agent","password":"aerotrace-dev-password"}` returns `{"success":true,"data":{"accessToken":"...","tokenType":"Bearer","expiresIn":900},"timestamp":"..."}`. Never use the override file on a shared, cloud or production host: identity-service refuses to start with those published values unless `IDENTITY_ALLOW_DEV_DEFAULTS=true`, which only that file sets.
+
+## API response format
+
+Every service answers with the same two envelopes from `common-module`: `ApiResponse` for success (`success`, `data`, `timestamp`) and `ApiError` for failures (`code`, `message`, `status`, `path`, `validationErrors`, `timestamp`, `correlationId`). `code` is a stable value such as `VALIDATION_ERROR`, `UNAUTHENTICATED` or `BAG_TAG_DUPLICATE`; `validationErrors` names the invalid fields and the rule they broke, never the value that was sent. Responses whose format a standard fixes, such as the JWK Set at `/.well-known/jwks.json`, are not wrapped.
+
+## Known limitations of the identity-service
+
+- No per-account lockout or backoff and no cap on concurrent password hashing; the gateway's per-address rate limit is the only brake today.
+- Access tokens cannot be revoked; a token stays valid until it expires (15 minutes plus a minute of clock skew).
+- The audit trail's immutability is enforced by database triggers, but the service connects as the schema owner and could drop them; use a restricted runtime role where that matters.
+- Erasing a retired private key sets the column to null; the encrypted value can remain in old row versions, write-ahead logs and backups, protected only by the key-encryption key.
+- The key-encryption key has no automatic rotation; the stored format is versioned (`v1:`) so one can be added.
 
 ## Observability (OpenTelemetry Collector, Tempo, Loki, Prometheus, Grafana)
 

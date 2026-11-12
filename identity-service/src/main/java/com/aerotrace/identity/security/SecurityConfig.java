@@ -83,7 +83,7 @@ class SecurityConfig {
       HttpSecurity http,
       JwtDecoder jwtDecoder,
       ApiErrorWriter errors,
-      @Value("${aerotrace.identity.docs.enabled:true}") boolean docsEnabled)
+      @Value("${aerotrace.identity.docs.enabled:false}") boolean docsEnabled)
       throws Exception {
     AuthenticationEntryPoint unauthorized =
         (request, response, ex) -> {

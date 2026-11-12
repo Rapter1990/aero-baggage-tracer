@@ -104,7 +104,7 @@ aerotrace:
         roles: ADMIN
     docs:
       # Turn off outside development: Swagger UI and the definitions are served without a token.
-      enabled: ${DOCS_ENABLED:true}
+      enabled: ${DOCS_ENABLED:false}
     rate-limit:
       replenish-rate: ${RATE_LIMIT_REPLENISH_RATE:10}
       burst-capacity: ${RATE_LIMIT_BURST_CAPACITY:20}

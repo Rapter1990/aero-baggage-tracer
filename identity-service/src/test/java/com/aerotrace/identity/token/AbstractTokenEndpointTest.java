@@ -315,8 +315,34 @@ abstract class AbstractTokenEndpointTest extends IdentityTestBase {
   }
 
   @Test
-  void aFailedSignInForAnUnknownUserIsAuditedWithoutAUserId() {
-    String name = "ghost-" + UUID.randomUUID().toString().substring(0, 8);
+  void aFailedSignInForAnUnknownUserDoesNotStoreWhatWasTyped() {
+    // People paste passwords and email addresses into the username box: that must not be kept.
+    String typed = "ghost-" + UUID.randomUUID().toString().substring(0, 8);
+    int anonymousBefore = anonymousFailures();
+
+    login(typed, "not-the-right-password");
+
+    assertThat(
+            jdbc.sql("SELECT count(*) FROM identity.auth_audit WHERE username = :u")
+                .param("u", typed)
+                .query(Integer.class)
+                .single())
+        .isZero();
+    assertThat(anonymousFailures()).isEqualTo(anonymousBefore + 1);
+  }
+
+  private int anonymousFailures() {
+    return jdbc.sql(
+            "SELECT count(*) FROM identity.auth_audit "
+                + "WHERE event_type = 'LOGIN_FAILED' AND username IS NULL AND user_id IS NULL")
+        .query(Integer.class)
+        .single();
+  }
+
+  @Test
+  void aWrongPasswordForARealAccountIsAuditedAgainstThatAccount() {
+    String name = "known-" + UUID.randomUUID().toString().substring(0, 8);
+    AppUser user = users.register(name, PASSWORD, Set.of(Role.AGENT), null);
 
     login(name, "not-the-right-password");
 
@@ -325,8 +351,45 @@ abstract class AbstractTokenEndpointTest extends IdentityTestBase {
             jdbc.sql("SELECT user_id FROM identity.auth_audit WHERE username = :u")
                 .param("u", name)
                 .query(UUID.class)
-                .optional())
-        .isEmpty();
+                .single())
+        .isEqualTo(user.id());
+  }
+
+  // --- passwords longer than BCrypt reads --------------------------------------------------
+
+  private static final String SEVENTY_TWO = "p".repeat(72);
+
+  @Test
+  void aPasswordPastTheBcryptLimitIsAnOrdinaryWrongPasswordNotAnError() {
+    String name = "longpw-" + UUID.randomUUID().toString().substring(0, 8);
+    users.register(name, SEVENTY_TWO, Set.of(Role.AGENT), null);
+
+    HttpResponse<String> response = login(name, SEVENTY_TWO + "junk");
+
+    assertThat(response.statusCode()).isEqualTo(401);
+    assertThat(JSON.readTree(response.body()).get("code").asString()).isEqualTo("UNAUTHENTICATED");
+    assertThat(auditCount(name, "LOGIN_FAILED", "FAILURE")).isEqualTo(1);
+  }
+
+  @Test
+  void theExactLimitStillWorks() {
+    String name = "limitpw-" + UUID.randomUUID().toString().substring(0, 8);
+    users.register(name, SEVENTY_TWO, Set.of(Role.AGENT), null);
+
+    assertThat(login(name, SEVENTY_TWO).statusCode()).isEqualTo(200);
+  }
+
+  @Test
+  void multiByteCharactersCountAsBytesNotCharacters() {
+    // 40 characters, 80 bytes: under the 256-character request limit, over the 72-byte one.
+    HttpResponse<String> response = login("agent", "\u00e9".repeat(40));
+
+    assertThat(response.statusCode()).isEqualTo(401);
+  }
+
+  @Test
+  void anOversizedPasswordForAnUnknownUserIsRefusedTheSameWay() {
+    assertThat(login("nobody-here", "p".repeat(200)).statusCode()).isEqualTo(401);
   }
 
   private int auditCount(String username, String type, String outcome) {

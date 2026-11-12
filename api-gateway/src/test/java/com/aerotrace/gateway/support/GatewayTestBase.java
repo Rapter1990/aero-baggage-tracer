@@ -14,6 +14,7 @@ import tools.jackson.databind.JsonNode;
     webEnvironment = WebEnvironment.RANDOM_PORT,
     properties = {
       "eureka.client.enabled=false",
+      "aerotrace.gateway.docs.enabled=true",
       "spring.cloud.discovery.enabled=false",
       "aerotrace.gateway.issuer=" + TestJwks.ISSUER,
       "aerotrace.gateway.audience=" + TestJwks.AUDIENCE,

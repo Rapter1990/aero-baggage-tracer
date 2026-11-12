@@ -18,6 +18,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 @TestPropertySource(
     properties = {
+      "aerotrace.identity.docs.enabled=true",
       "aerotrace.identity.seed.enabled=true",
       "aerotrace.identity.seed.password=seed-test-password-1"
     })

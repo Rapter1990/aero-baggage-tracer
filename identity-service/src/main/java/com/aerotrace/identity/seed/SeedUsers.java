@@ -70,6 +70,10 @@ public class SeedUsers implements ApplicationRunner {
         }
       }
     }
-    log.info("Seeded {} test user(s); {} already existed", created, SEEDS.length - created);
+    log.warn(
+        "Test users are enabled ({} created, {} already existed). They share one password: "
+            + "never run this way in production.",
+        created,
+        SEEDS.length - created);
   }
 }
