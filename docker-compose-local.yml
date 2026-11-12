@@ -64,7 +64,7 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql
+      - postgres-18-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -164,7 +164,11 @@ services:
       - aerotrace
 
 volumes:
-  postgres-data:
+  # postgres-18-data: PostgreSQL 18 needs its own volume. The old postgres-data volume was made by an
+  # older, Alpine-based or version 17 image (data owned by uid 70, layout of 17), so the current
+  # image cannot start on it and the container exits. It is left untouched; remove it with
+  # `docker volume rm aero-baggage-tracer_postgres-data` once you no longer need its contents.
+  postgres-18-data:
   tempo-data:
   loki-data:
 
