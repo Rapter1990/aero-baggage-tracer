@@ -17,6 +17,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
@@ -51,6 +52,7 @@ class SecurityConfig {
     String path = request.getRequestURI();
     return path.equals("/api/v1/auth/token")
         || path.equals("/.well-known/jwks.json")
+        || path.startsWith("/v3/api-docs")
         || path.equals("/actuator/info")
         || path.equals("/actuator/health")
         || path.startsWith("/actuator/health/");
@@ -77,7 +79,11 @@ class SecurityConfig {
 
   @Bean
   SecurityFilterChain securityFilterChain(
-      HttpSecurity http, JwtDecoder jwtDecoder, ProblemWriter problems) throws Exception {
+      HttpSecurity http,
+      JwtDecoder jwtDecoder,
+      ProblemWriter problems,
+      @Value("${aerotrace.identity.docs.enabled:true}") boolean docsEnabled)
+      throws Exception {
     AuthenticationEntryPoint unauthorized =
         (request, response, ex) -> {
           response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
@@ -100,22 +106,31 @@ class SecurityConfig {
         .logout(AbstractHttpConfigurer::disable)
         .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(
-            requests ->
+            requests -> {
+              requests
+                  .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info")
+                  .permitAll()
+                  .requestMatchers(HttpMethod.GET, "/.well-known/jwks.json")
+                  .permitAll()
+                  // Any method: the controller answers a wrong one with 405, not a login prompt.
+                  .requestMatchers("/api/v1/auth/token")
+                  .permitAll();
+              if (docsEnabled) {
+                // The definition only; the endpoints it describes still need their own rules.
                 requests
-                    .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info")
-                    .permitAll()
-                    .requestMatchers(HttpMethod.GET, "/.well-known/jwks.json")
-                    .permitAll()
-                    // Any method: the controller answers a wrong one with 405, not a login prompt.
-                    .requestMatchers("/api/v1/auth/token")
-                    .permitAll()
-                    .requestMatchers(HttpMethod.POST, "/api/v1/auth/keys/rotate")
-                    .hasAnyRole(rotators)
-                    .requestMatchers(HttpMethod.GET, "/api/v1/auth/me", "/api/v1/auth/policy")
-                    .hasAnyRole(everyRole)
-                    // Anything new must be given an explicit rule above.
-                    .anyRequest()
-                    .denyAll())
+                    .requestMatchers(
+                        HttpMethod.GET, "/v3/api-docs", "/v3/api-docs/**", "/v3/api-docs.yaml")
+                    .permitAll();
+              }
+              requests
+                  .requestMatchers(HttpMethod.POST, "/api/v1/auth/keys/rotate")
+                  .hasAnyRole(rotators)
+                  .requestMatchers(HttpMethod.GET, "/api/v1/auth/me", "/api/v1/auth/policy")
+                  .hasAnyRole(everyRole)
+                  // Anything new must be given an explicit rule above.
+                  .anyRequest()
+                  .denyAll();
+            })
         .exceptionHandling(
             handling ->
                 handling.authenticationEntryPoint(unauthorized).accessDeniedHandler(forbidden))

@@ -2,6 +2,14 @@ package com.aerotrace.identity.token;
 
 import com.aerotrace.common.error.ApiException;
 import com.aerotrace.common.error.ErrorCode;
+import com.aerotrace.identity.docs.ProblemExamples;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -16,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/auth")
+@Tag(name = "Tokens")
 class TokenController {
 
   /** Generous upper bound that stops oversized credentials before they reach the hash function. */
@@ -27,6 +36,44 @@ class TokenController {
     this.tokens = tokens;
   }
 
+  @Operation(
+      summary = "Exchange a username and password for an access token",
+      description =
+          "The one call that needs no token. An unknown user, a wrong password and a disabled "
+              + "account all get the same 401, so the answer reveals nothing about which usernames exist.",
+      security = {})
+  @ApiResponses({
+    @ApiResponse(
+        responseCode = "200",
+        description = "Signed access token. Send it as `Authorization: Bearer <token>`.",
+        content =
+            @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = TokenResponse.class),
+                examples = @ExampleObject(name = "issued", value = ProblemExamples.TOKEN_ISSUED))),
+    @ApiResponse(
+        responseCode = "400",
+        description = "username or password is missing, blank or too long.",
+        content =
+            @Content(
+                mediaType = "application/problem+json",
+                schema = @Schema(ref = "#/components/schemas/Problem"),
+                examples =
+                    @ExampleObject(
+                        name = "validation",
+                        value = ProblemExamples.TOKEN_VALIDATION_FAILED))),
+    @ApiResponse(
+        responseCode = "401",
+        description = "The credentials were not accepted.",
+        content =
+            @Content(
+                mediaType = "application/problem+json",
+                schema = @Schema(ref = "#/components/schemas/Problem"),
+                examples =
+                    @ExampleObject(
+                        name = "invalid-credentials",
+                        value = ProblemExamples.TOKEN_INVALID_CREDENTIALS)))
+  })
   @PostMapping(
       value = "/token",
       consumes = MediaType.APPLICATION_JSON_VALUE,

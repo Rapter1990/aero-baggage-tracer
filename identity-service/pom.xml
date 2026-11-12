@@ -14,6 +14,10 @@
     <name>identity-service</name>
     <description>Issues signed JWT access tokens, publishes the JWKS and owns users and roles (servlet, Spring MVC)</description>
 
+    <properties>
+        <springdoc.version>3.0.3</springdoc.version>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>com.aerotrace</groupId>
@@ -43,6 +47,13 @@
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!-- OpenAPI definition only (/v3/api-docs); the Swagger UI is served by the api-gateway. -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
+            <version>${springdoc.version}</version>
+        </dependency>
+
         <!-- Servlet JWT resource-server security (the service verifies its own tokens) and BCrypt. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

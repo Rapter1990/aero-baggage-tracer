@@ -36,6 +36,10 @@ aerotrace:
   identity:
     # BCrypt cost factor for password hashes.
     bcrypt-strength: ${IDENTITY_BCRYPT_STRENGTH:12}
+    docs:
+      # The OpenAPI definition at /v3/api-docs, which the gateway's Swagger UI reads. It is served
+      # without a token, so turn it off outside development.
+      enabled: ${DOCS_ENABLED:true}
     keys:
       # RS256 or ES256, for newly generated signing keys.
       algorithm: ${IDENTITY_KEY_ALGORITHM:RS256}
@@ -105,3 +109,7 @@ management:
         # Metrics go to the OpenTelemetry collector, which Prometheus scrapes (no token needed).
         url: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:http://localhost:4318/v1/metrics}
         step: ${METRICS_EXPORT_STEP:15s}
+
+springdoc:
+  api-docs:
+    enabled: ${aerotrace.identity.docs.enabled}
