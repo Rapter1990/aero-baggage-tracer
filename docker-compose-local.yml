@@ -2,6 +2,9 @@
 # localhost:9092, localhost:6379, localhost:5433). Run services from the IDE or Maven.
 #   docker compose -f docker-compose-local.yml up -d
 # Dev-only credentials; override via env vars. Never reuse them outside local development.
+# One project name for both compose files and every checkout or worktree: the containers have fixed
+# names and the network is shared, so a second project name would collide with the first.
+name: aerotrace
 services:
   kafka:
     image: apache/kafka:latest
