@@ -5,9 +5,10 @@
 # localhost:29092.
 # Use docker-compose-local.yml for dev-only infrastructure (Kafka, Redis, Postgres on localhost).
 # Dev-only credentials; override via env vars. Never reuse them outside local development.
-# One project name for both compose files and every checkout or worktree: the containers have fixed
-# names and the network is shared, so a second project name would collide with the first.
-name: aerotrace
+# One project name for both compose files and every checkout or worktree (it is the name the main
+# checkout already uses, so existing volumes keep working): the containers have fixed names and the
+# network is shared, so a second project name would collide with the first.
+name: aero-baggage-tracer
 services:
   kafka:
     image: apache/kafka:latest
