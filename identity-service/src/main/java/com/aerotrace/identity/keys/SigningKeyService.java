@@ -14,6 +14,7 @@ import java.security.PublicKey;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
@@ -49,6 +50,17 @@ public class SigningKeyService {
 
   private static final int LOCK_SIGNING_KEYS = 1;
 
+  /** How many of the newest signing candidates are tried when looking for one that can be read. */
+  private static final int CANDIDATES = 10;
+
+  /** At most this many keys are created within the window to replace unreadable ones. */
+  private static final int STORM_LIMIT = 3;
+
+  private static final Duration STORM_WINDOW = Duration.ofMinutes(10);
+
+  /** After a failed refresh, how long to keep serving the last loaded keys without asking again. */
+  private static final Duration FAILURE_BACKOFF = Duration.ofSeconds(2);
+
   private record Snapshot(Instant loadedAt, SigningKey signing, JWKSet published) {}
 
   private record Rotation(String kid, boolean created) {}
@@ -64,6 +76,7 @@ public class SigningKeyService {
 
   private final ReentrantLock refreshLock = new ReentrantLock();
   private volatile Snapshot snapshot;
+  private volatile Instant lastFailureAt;
 
   SigningKeyService(
       SigningKeyRepository repository,
@@ -94,19 +107,22 @@ public class SigningKeyService {
     require(!tokens.clockSkew().isNegative(), "token.clock-skew must not be negative");
     require(!keys.cacheTtl().isNegative(), "keys.cache-ttl must not be negative");
     require(
-        keys.cacheTtl().compareTo(tokens.clockSkew()) < 0,
-        "keys.cache-ttl must be shorter than token.clock-skew: a replica that has not yet "
-            + "refreshed would still sign with the old key after the retirement allowance");
+        keys.maxStale().compareTo(keys.cacheTtl()) >= 0,
+        "keys.max-stale must be at least keys.cache-ttl");
+    // A replica holding keys this old can still sign with a key that has since been replaced. That
+    // key is kept for the token lifetime plus the skew only, so its tokens must not outlive it.
     require(
-        keys.publishLead().compareTo(keys.cacheTtl()) >= 0,
-        "keys.publish-lead must be at least keys.cache-ttl");
+        keys.maxStale().compareTo(tokens.clockSkew()) <= 0,
+        "keys.max-stale must not be longer than token.clock-skew: a replica serving stale keys "
+            + "could sign with a key that retires before the tokens it signs expire");
+    // A verifier holding keys this old must still learn of a new key before a token carries it.
+    require(
+        keys.publishLead().compareTo(keys.maxStale()) >= 0,
+        "keys.publish-lead must be at least keys.max-stale");
     require(
         keys.rotationInterval().compareTo(keys.publishLead().plus(lifetime)) > 0,
         "keys.rotation-interval must be longer than keys.publish-lead + token.ttl + "
             + "token.clock-skew, or keys would be replaced faster than they retire");
-    require(
-        keys.maxStale().compareTo(keys.cacheTtl()) >= 0,
-        "keys.max-stale must be at least keys.cache-ttl");
     require(
         !keys.maintenanceInterval().isNegative() && !keys.maintenanceInterval().isZero(),
         "keys.maintenance-interval must be positive");
@@ -191,11 +207,34 @@ public class SigningKeyService {
     repository.lock(LOCK_NAMESPACE, LOCK_SIGNING_KEYS);
   }
 
+  /**
+   * Creates a signing key unless one that can sign already exists. A newer key this replica cannot
+   * read is left alone when an older one can be used: another replica may hold the right
+   * key-encryption key for it. Only when nothing at all can be read are the unreadable keys retired
+   * (their tokens stay verifiable until they expire) and a replacement created, and never more than
+   * a few times in a short while, so replicas that disagree about the key-encryption key cannot
+   * keep replacing each other's keys.
+   */
   private void ensureSigningKeyLocked(Instant now) {
-    Optional<SigningKeyEntity> candidate =
-        repository.findSigning(now, Limit.of(1)).stream().findFirst();
-    if (candidate.isPresent() && decrypt(candidate.get()).isPresent()) {
-      return;
+    List<SigningKeyEntity> candidates = repository.findSigning(now, Limit.of(CANDIDATES));
+    List<String> unreadable = new ArrayList<>();
+    for (SigningKeyEntity candidate : candidates) {
+      if (decrypt(candidate).isPresent()) {
+        return;
+      }
+      unreadable.add(candidate.getKid());
+    }
+    if (repository.countCreatedSince(now.minus(STORM_WINDOW)) >= STORM_LIMIT) {
+      throw new IllegalStateException(
+          "Signing keys keep failing to decrypt and "
+              + STORM_LIMIT
+              + " were created in the last "
+              + STORM_WINDOW.toMinutes()
+              + " minutes. Check that every replica has the same key-encryption key"
+              + " (IDENTITY_KEY_ENCRYPTION_KEY).");
+    }
+    if (!unreadable.isEmpty()) {
+      repository.retireKeys(unreadable, now.plus(tokens.ttl().plus(tokens.clockSkew())));
     }
     String kid = create(now, now);
     log.info("Created signing key {} because none could sign", kid);
@@ -251,11 +290,28 @@ public class SigningKeyService {
 
   private Snapshot current(boolean needSigningKey) {
     Snapshot cached = snapshot;
-    if (usable(cached, clock.instant(), needSigningKey)) {
+    Instant seen = clock.instant();
+    if (usable(cached, seen, needSigningKey)) {
       return cached;
     }
-    // One caller refreshes; the others wait and then share the result instead of all querying.
-    refreshLock.lock();
+    // When there is a last loaded set that is still fresh enough to serve, nobody has to wait for
+    // the database: one caller refreshes, the others carry on with what was loaded, and after a
+    // failure nobody asks again for a moment.
+    boolean canServeStale =
+        cached != null
+            && withinMaxStale(cached, seen)
+            && (!needSigningKey || cached.signing() != null);
+    if (canServeStale) {
+      Instant failedAt = lastFailureAt;
+      if (failedAt != null && seen.isBefore(failedAt.plus(FAILURE_BACKOFF))) {
+        return cached;
+      }
+      if (!refreshLock.tryLock()) {
+        return cached;
+      }
+    } else {
+      refreshLock.lock();
+    }
     try {
       cached = snapshot;
       Instant now = clock.instant();
@@ -276,8 +332,10 @@ public class SigningKeyService {
           }
         }
         snapshot = loaded;
+        lastFailureAt = null;
         return loaded;
       } catch (RuntimeException e) {
+        lastFailureAt = now;
         if (cached != null
             && withinMaxStale(cached, now)
             && (!needSigningKey || cached.signing() != null)) {
@@ -309,17 +367,24 @@ public class SigningKeyService {
   }
 
   private Snapshot load(Instant now) {
-    List<JWK> jwks =
-        repository.findPublished(now).stream()
-            .map(
-                key ->
-                    SigningAlgorithm.parse(key.getAlgorithm())
-                        .toJwk(decodePublic(key), key.getKid()))
-            .toList();
+    // One damaged row must not take the whole key set down: skip it, say so, keep the rest.
+    List<JWK> jwks = new ArrayList<>();
+    for (SigningKeyEntity key : repository.findPublished(now)) {
+      try {
+        jwks.add(SigningAlgorithm.parse(key.getAlgorithm()).toJwk(decodePublic(key), key.getKid()));
+      } catch (RuntimeException e) {
+        log.error(
+            "Published signing key {} is unreadable and is left out ({})",
+            key.getKid(),
+            e.getClass().getSimpleName());
+      }
+    }
+    // The newest key this replica can actually use, not merely the newest key.
     SigningKey signing =
-        repository.findSigning(now, Limit.of(1)).stream()
+        repository.findSigning(now, Limit.of(CANDIDATES)).stream()
+            .map(this::decrypt)
+            .flatMap(Optional::stream)
             .findFirst()
-            .flatMap(this::decrypt)
             .orElse(null);
     return new Snapshot(now, signing, new JWKSet(jwks));
   }
@@ -340,12 +405,12 @@ public class SigningKeyService {
               key.getAlgorithm(),
               decodePublic(key),
               keyAlgorithm.decodePrivate(pkcs8)));
-    } catch (IllegalStateException e) {
+    } catch (RuntimeException e) {
       log.error(
           "Signing key {} cannot be used to sign (was the key-encryption key changed, or the row "
               + "damaged?): {}",
           key.getKid(),
-          e.getMessage());
+          e.getClass().getSimpleName());
       return Optional.empty();
     }
   }

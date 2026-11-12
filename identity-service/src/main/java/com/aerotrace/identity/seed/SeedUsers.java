@@ -4,6 +4,8 @@ import com.aerotrace.common.error.ApiException;
 import com.aerotrace.common.error.ErrorCode;
 import com.aerotrace.common.security.Role;
 import com.aerotrace.identity.user.UserService;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +36,9 @@ public class SeedUsers implements ApplicationRunner {
     new Seed("dispatcher", Role.DISPATCHER, null),
     new Seed("admin", Role.ADMIN, null)
   };
+
+  /** The accounts this class creates; also what a start-up check looks for. */
+  public static final List<String> USERNAMES = Arrays.stream(SEEDS).map(Seed::username).toList();
 
   private final UserService users;
   private final SeedProperties properties;

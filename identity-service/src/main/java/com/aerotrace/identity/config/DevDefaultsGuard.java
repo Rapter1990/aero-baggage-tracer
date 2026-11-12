@@ -2,6 +2,8 @@ package com.aerotrace.identity.config;
 
 import com.aerotrace.identity.keys.KeyProperties;
 import com.aerotrace.identity.seed.SeedProperties;
+import java.util.Arrays;
+import java.util.Base64;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -11,15 +13,19 @@ import org.springframework.stereotype.Component;
  * those, so a deployment that kept them would let anyone with a database dump decrypt the signing
  * keys, or sign in as the seeded admin. A development run says so with {@code
  * aerotrace.identity.allow-dev-defaults=true}.
+ *
+ * <p>The key is compared by what it decodes to, not as text: the same key written without padding,
+ * or with a trailing newline (as a Kubernetes secret made with {@code echo} has), is still the
+ * published key. Accounts a development run created earlier are caught by {@link
+ * SeededAccountsGuard}.
  */
 @Component
 class DevDefaultsGuard {
 
   /** The values docker-compose.dev.yml uses; also in the README and this repository. */
-  private static final String PUBLISHED_KEY_ENCRYPTION_KEY =
-      "ZGV2LW9ubHktaWRlbnRpdHkta2V5LWVuY3J5cHQtMDE=";
+  static final String PUBLISHED_KEY_ENCRYPTION_KEY = "ZGV2LW9ubHktaWRlbnRpdHkta2V5LWVuY3J5cHQtMDE=";
 
-  private static final String PUBLISHED_SEED_PASSWORD = "aerotrace-dev-password";
+  static final String PUBLISHED_SEED_PASSWORD = "aerotrace-dev-password";
 
   DevDefaultsGuard(
       KeyProperties keys,
@@ -28,7 +34,7 @@ class DevDefaultsGuard {
     if (allowDevDefaults) {
       return;
     }
-    if (PUBLISHED_KEY_ENCRYPTION_KEY.equals(keys.encryptionKey())) {
+    if (isPublishedKey(keys.encryptionKey())) {
       throw new IllegalStateException(
           "The published development key-encryption key is in use. Set IDENTITY_KEY_ENCRYPTION_KEY"
               + " to your own value (openssl rand -base64 32), or set"
@@ -39,6 +45,19 @@ class DevDefaultsGuard {
           "The published development seed password is in use with seeding switched on. Set"
               + " IDENTITY_SEED_PASSWORD to your own value, switch seeding off, or set"
               + " IDENTITY_ALLOW_DEV_DEFAULTS=true for a throwaway development run.");
+    }
+  }
+
+  static boolean isPublishedKey(String configured) {
+    if (configured == null) {
+      return false;
+    }
+    try {
+      return Arrays.equals(
+          Base64.getDecoder().decode(configured.trim()),
+          Base64.getDecoder().decode(PUBLISHED_KEY_ENCRYPTION_KEY));
+    } catch (IllegalArgumentException notBase64) {
+      return false;
     }
   }
 }

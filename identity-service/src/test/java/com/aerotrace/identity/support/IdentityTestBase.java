@@ -37,6 +37,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
       // Test-only key-encryption key (bytes 0..31).
       "aerotrace.identity.keys.encryption-key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
       "aerotrace.identity.token.issuer=http://identity.test",
+      // Every cached context would otherwise run its own key maintenance on the shared database.
+      "aerotrace.identity.keys.maintenance-interval=PT24H",
       // Spring caches one context per distinct test configuration, each with its own pool; keep
       // the pools small so many cached contexts fit within the database's connection limit.
       "spring.datasource.hikari.maximum-pool-size=6",

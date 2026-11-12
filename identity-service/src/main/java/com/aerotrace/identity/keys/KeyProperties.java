@@ -24,7 +24,7 @@ public record KeyProperties(
     @DefaultValue("30d") Duration rotationInterval,
     @DefaultValue("10m") Duration publishLead,
     @DefaultValue("10s") Duration cacheTtl,
-    @DefaultValue("5m") Duration maxStale,
+    @DefaultValue("30s") Duration maxStale,
     @DefaultValue("5m") Duration maintenanceInterval) {
 
   @Override

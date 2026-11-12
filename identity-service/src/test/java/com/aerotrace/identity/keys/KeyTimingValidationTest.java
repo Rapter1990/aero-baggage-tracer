@@ -1,6 +1,5 @@
 package com.aerotrace.identity.keys;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -33,7 +32,7 @@ class KeyTimingValidationTest {
         Duration.ofDays(30),
         Duration.ofMinutes(10),
         Duration.ofSeconds(10),
-        Duration.ofMinutes(5),
+        Duration.ofSeconds(30),
         Duration.ofMinutes(5));
   }
 
@@ -44,65 +43,20 @@ class KeyTimingValidationTest {
   }
 
   @Test
-  void aCacheAsLongAsTheClockSkewIsRefused() {
+  void aStaleAllowanceLongerThanTheClockSkewIsRefused() {
+    // A replica serving old keys could sign with a key that retires before its tokens expire.
     KeyProperties bad =
         keys(
             Duration.ofDays(30),
             Duration.ofMinutes(10),
-            Duration.ofMinutes(1),
+            Duration.ofSeconds(10),
             Duration.ofMinutes(5),
             Duration.ofMinutes(5));
 
     assertThatThrownBy(() -> SigningKeyService.validateTimings(bad, TOKENS))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("cache-ttl")
+        .hasMessageContaining("max-stale")
         .hasMessageContaining("clock-skew");
-  }
-
-  @Test
-  void aPublishLeadShorterThanTheCacheIsRefused() {
-    KeyProperties bad =
-        keys(
-            Duration.ofDays(30),
-            Duration.ofSeconds(5),
-            Duration.ofSeconds(10),
-            Duration.ofMinutes(5),
-            Duration.ofMinutes(5));
-
-    assertThatThrownBy(() -> SigningKeyService.validateTimings(bad, TOKENS))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("publish-lead");
-  }
-
-  @Test
-  void rotatingFasterThanKeysRetireIsRefused() {
-    // 10 min lead + 15 min ttl + 1 min skew = 26 min needed.
-    KeyProperties bad =
-        keys(
-            Duration.ofMinutes(20),
-            Duration.ofMinutes(10),
-            Duration.ofSeconds(10),
-            Duration.ofMinutes(5),
-            Duration.ofMinutes(5));
-
-    assertThatThrownBy(() -> SigningKeyService.validateTimings(bad, TOKENS))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("rotation-interval");
-  }
-
-  @Test
-  void aMaintenanceIntervalOfZeroIsRefused() {
-    KeyProperties bad =
-        keys(
-            Duration.ofDays(30),
-            Duration.ofMinutes(10),
-            Duration.ofSeconds(10),
-            Duration.ofMinutes(5),
-            Duration.ZERO);
-
-    assertThatThrownBy(() -> SigningKeyService.validateTimings(bad, TOKENS))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("maintenance-interval");
   }
 
   @Test
@@ -121,6 +75,53 @@ class KeyTimingValidationTest {
   }
 
   @Test
+  void aPublishLeadShorterThanTheStaleAllowanceIsRefused() {
+    // A verifier holding old keys must still learn of the new key before tokens carry its id.
+    KeyProperties bad =
+        keys(
+            Duration.ofDays(30),
+            Duration.ofSeconds(5),
+            Duration.ofSeconds(10),
+            Duration.ofSeconds(30),
+            Duration.ofMinutes(5));
+
+    assertThatThrownBy(() -> SigningKeyService.validateTimings(bad, TOKENS))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("publish-lead");
+  }
+
+  @Test
+  void rotatingFasterThanKeysRetireIsRefused() {
+    // 10 min lead + 15 min ttl + 1 min skew = 26 min needed.
+    KeyProperties bad =
+        keys(
+            Duration.ofMinutes(20),
+            Duration.ofMinutes(10),
+            Duration.ofSeconds(10),
+            Duration.ofSeconds(30),
+            Duration.ofMinutes(5));
+
+    assertThatThrownBy(() -> SigningKeyService.validateTimings(bad, TOKENS))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("rotation-interval");
+  }
+
+  @Test
+  void aMaintenanceIntervalOfZeroIsRefused() {
+    KeyProperties bad =
+        keys(
+            Duration.ofDays(30),
+            Duration.ofMinutes(10),
+            Duration.ofSeconds(10),
+            Duration.ofSeconds(30),
+            Duration.ZERO);
+
+    assertThatThrownBy(() -> SigningKeyService.validateTimings(bad, TOKENS))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("maintenance-interval");
+  }
+
+  @Test
   void aTokenThatNeverExpiresIsRefused() {
     TokenProperties bad =
         new TokenProperties(
@@ -132,16 +133,15 @@ class KeyTimingValidationTest {
   }
 
   @Test
-  void testsMayUseNoCacheAndNoLead() {
+  void testsMayUseNoCacheNoStaleAllowanceAndNoLead() {
     KeyProperties relaxed =
         keys(
             Duration.ofDays(30),
             Duration.ZERO,
             Duration.ZERO,
-            Duration.ofMinutes(5),
+            Duration.ZERO,
             Duration.ofMinutes(5));
 
-    assertThat(relaxed.cacheTtl()).isZero();
     assertThatCode(() -> SigningKeyService.validateTimings(relaxed, TOKENS))
         .doesNotThrowAnyException();
   }

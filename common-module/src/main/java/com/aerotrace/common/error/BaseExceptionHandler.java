@@ -7,16 +7,19 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.TypeMismatchException;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
-import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.AuthenticationTrustResolver;
+import org.springframework.security.authentication.AuthenticationTrustResolverImpl;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.FieldError;
-import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.ServletWebRequest;
@@ -38,6 +41,9 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 public class BaseExceptionHandler extends ResponseEntityExceptionHandler {
 
   private static final Logger LOG = LoggerFactory.getLogger(BaseExceptionHandler.class);
+  private static final AuthenticationTrustResolver TRUST_RESOLVER =
+      new AuthenticationTrustResolverImpl();
+  private static final String INVALID_FORMAT = "has an invalid format";
 
   @ExceptionHandler(ApiException.class)
   public ResponseEntity<ApiError> handleApiException(ApiException ex, HttpServletRequest request) {
@@ -45,9 +51,21 @@ public class BaseExceptionHandler extends ResponseEntityExceptionHandler {
     return ResponseEntity.status(ex.errorCode().httpStatus()).body(error);
   }
 
+  /**
+   * 403 for a signed-in caller who lacks the role. A caller who is not signed in at all (method
+   * security on a route that does not require a token) is answered 401, not 403, because this
+   * advice runs before the security filters' entry point could.
+   */
   @ExceptionHandler(AccessDeniedException.class)
   public ResponseEntity<ApiError> handleAccessDenied(
       AccessDeniedException ex, HttpServletRequest request) {
+    Authentication caller = SecurityContextHolder.getContext().getAuthentication();
+    if (caller == null || TRUST_RESOLVER.isAnonymous(caller)) {
+      ApiError error =
+          ApiError.of(
+              ErrorCode.UNAUTHENTICATED, "Authentication is required.", request.getRequestURI());
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
+    }
     ApiError error =
         ApiError.of(ErrorCode.ACCESS_DENIED, "Access is denied.", request.getRequestURI());
     return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
@@ -68,6 +86,8 @@ public class BaseExceptionHandler extends ResponseEntityExceptionHandler {
     // The message is masked because persistence/validation errors can embed passenger data.
     LOG.error(
         "Unhandled exception {}: {}", ex.getClass().getName(), LogMasker.mask(ex.getMessage()));
+    // The trace is for debugging a specific problem and is only written when asked for.
+    LOG.debug("Unhandled exception trace", ex);
     ApiError error =
         ApiError.of(
             ErrorCode.INTERNAL_ERROR, "An unexpected error occurred.", request.getRequestURI());
@@ -85,7 +105,12 @@ public class BaseExceptionHandler extends ResponseEntityExceptionHandler {
       WebRequest request) {
     Map<String, String> errors = new LinkedHashMap<>();
     for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
-      errors.putIfAbsent(fieldError.getField(), fieldError.getDefaultMessage());
+      // Binding failures describe the offending input in their default text; say only the rule.
+      String rule =
+          "typeMismatch".equals(fieldError.getCode())
+              ? INVALID_FORMAT
+              : fieldError.getDefaultMessage();
+      errors.putIfAbsent(fieldError.getField(), rule);
     }
     ex.getBindingResult()
         .getGlobalErrors()
@@ -124,7 +149,22 @@ public class BaseExceptionHandler extends ResponseEntityExceptionHandler {
     return ResponseEntity.badRequest().headers(headers).body(error);
   }
 
-  /** Spring MVC's own errors (405, 415, unreadable body, no handler...) in the shared shape. */
+  /**
+   * A parameter of the wrong type (a text where a number is expected). Spring's own text quotes the
+   * value that was sent; this names only the parameter and the rule.
+   */
+  @Override
+  protected ResponseEntity<Object> handleTypeMismatch(
+      TypeMismatchException ex, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+    String name = ex.getPropertyName() != null ? ex.getPropertyName() : "parameter";
+    return validationResponse(Map.of(name, INVALID_FORMAT), headers, request);
+  }
+
+  /**
+   * Spring MVC's own errors (405, 415, unreadable body, no handler...) in the shared shape. The
+   * message is fixed for the status: Spring's texts are built from what the client sent (the
+   * content type, the path, a rejected value) and must not be reflected back.
+   */
   @Override
   protected ResponseEntity<Object> handleExceptionInternal(
       Exception ex,
@@ -132,22 +172,26 @@ public class BaseExceptionHandler extends ResponseEntityExceptionHandler {
       HttpHeaders headers,
       HttpStatusCode statusCode,
       WebRequest request) {
-    ProblemDetail framework =
-        body instanceof ProblemDetail problem
-            ? problem
-            : ex instanceof ErrorResponse errorResponse ? errorResponse.getBody() : null;
-    String message = framework != null ? framework.getDetail() : null;
-    if (message == null || message.isBlank()) {
-      HttpStatus known = HttpStatus.resolve(statusCode.value());
-      message = known != null ? known.getReasonPhrase() : "Request failed.";
-    }
     ApiError error =
         ApiError.of(
             ErrorCode.fromStatus(statusCode.value()).name(),
-            message,
+            fixedMessage(statusCode.value()),
             statusCode.value(),
             path(request));
     return ResponseEntity.status(statusCode).headers(headers).body(error);
+  }
+
+  private static String fixedMessage(int status) {
+    return switch (status) {
+      case 400 -> "The request could not be processed.";
+      case 404 -> "Resource not found.";
+      case 405 -> "Method not allowed.";
+      case 406 -> "Not acceptable.";
+      case 409 -> "Conflict.";
+      case 415 -> "Unsupported media type.";
+      case 429 -> "Too many requests.";
+      default -> status >= 500 ? "An unexpected error occurred." : "The request was rejected.";
+    };
   }
 
   private static String path(WebRequest request) {

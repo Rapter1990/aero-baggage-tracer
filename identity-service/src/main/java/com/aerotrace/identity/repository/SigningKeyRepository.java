@@ -2,6 +2,7 @@ package com.aerotrace.identity.repository;
 
 import com.aerotrace.identity.model.entity.SigningKeyEntity;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Limit;
@@ -61,4 +62,16 @@ public interface SigningKeyRepository extends JpaRepository<SigningKeyEntity, St
   @Query(
       "update SigningKeyEntity k set k.privateKeyEnc = null where k.retireAt <= :now and k.privateKeyEnc is not null")
   int eraseRetiredPrivateKeys(@Param("now") Instant now);
+
+  /** How many keys were created at or after the given moment. */
+  @Query("select count(k) from SigningKeyEntity k where k.createdAt >= :since")
+  long countCreatedSince(@Param("since") Instant since);
+
+  /** Sets the retirement of the given keys (those that cannot be read), unless already earlier. */
+  @Transactional
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query(
+      "update SigningKeyEntity k set k.retireAt = :retireAt "
+          + "where k.kid in :kids and (k.retireAt is null or k.retireAt > :retireAt)")
+  int retireKeys(@Param("kids") Collection<String> kids, @Param("retireAt") Instant retireAt);
 }

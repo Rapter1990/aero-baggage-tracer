@@ -3,11 +3,15 @@ package com.aerotrace.common.error;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.aerotrace.common.api.ApiError;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.context.request.ServletWebRequest;
 
@@ -16,8 +20,18 @@ class SecurityAndFrameworkErrorsTest {
   private final BaseExceptionHandler handler = new BaseExceptionHandler();
   private final MockHttpServletRequest request = new MockHttpServletRequest("DELETE", "/bags");
 
+  @AfterEach
+  void clearSecurityContext() {
+    SecurityContextHolder.clearContext();
+  }
+
   @Test
   void accessDeniedIs403NotInternalError() {
+    SecurityContextHolder.getContext()
+        .setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(
+                "alice", "n/a", AuthorityUtils.createAuthorityList("ROLE_PASSENGER")));
+
     var response = handler.handleAccessDenied(new AccessDeniedException("nope"), request);
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
@@ -54,6 +68,6 @@ class SecurityAndFrameworkErrorsTest {
     assertThat(error.status()).isEqualTo(405);
     assertThat(error.code()).isEqualTo("REQUEST_REJECTED");
     assertThat(error.path()).isEqualTo("/bags");
-    assertThat(error.message()).isNotBlank();
+    assertThat(error.message()).isEqualTo("Method not allowed.");
   }
 }

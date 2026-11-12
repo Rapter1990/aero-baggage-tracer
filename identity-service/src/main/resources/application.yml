@@ -62,6 +62,8 @@ aerotrace:
       # A new key is published this long before it signs, so gateways have cached it by then.
       publish-lead: 10m
       cache-ttl: 10s
+      # Never longer than token.clock-skew (see SigningKeyService.validateTimings).
+      max-stale: 30s
       maintenance-interval: PT5M
     token:
       # The iss claim; the gateway's JWT_ISSUER must be the same. No default.

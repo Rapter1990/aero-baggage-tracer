@@ -38,7 +38,7 @@ class TokenServiceTest {
         mock(JwtSigner.class),
         mock(AuthAuditLog.class),
         encoder,
-        Clock.systemUTC(),
+        new TokenTime(Clock.systemUTC()),
         new TokenProperties(issuer, "aerotrace-api", Duration.ofMinutes(15), Duration.ofMinutes(1)),
         new SimpleMeterRegistry());
   }

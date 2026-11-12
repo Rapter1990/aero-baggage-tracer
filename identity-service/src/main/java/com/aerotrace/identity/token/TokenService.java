@@ -49,7 +49,7 @@ class TokenService {
       JwtSigner signer,
       AuthAuditLog audit,
       PasswordEncoder encoder,
-      Clock clock,
+      TokenTime tokenTime,
       TokenProperties properties,
       MeterRegistry meters) {
     if (properties.issuer() == null || properties.issuer().isBlank()) {
@@ -59,7 +59,7 @@ class TokenService {
     this.signer = signer;
     this.audit = audit;
     this.encoder = encoder;
-    this.clock = clock;
+    this.clock = tokenTime.clock();
     this.properties = properties;
     this.meters = meters;
     this.timingEqualizerHash = encoder.encode(UUID.randomUUID().toString());

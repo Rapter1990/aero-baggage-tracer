@@ -75,4 +75,31 @@ class DevDefaultsGuardTest {
                     keys(PUBLISHED_KEY), new SeedProperties(true, PUBLISHED_PASSWORD), true))
         .doesNotThrowAnyException();
   }
+
+  @Test
+  void thePublishedKeyWithoutItsPaddingIsStillThePublishedKey() {
+    String unpadded = PUBLISHED_KEY.replace("=", "");
+
+    assertThatThrownBy(
+            () -> new DevDefaultsGuard(keys(unpadded), new SeedProperties(false, null), false))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void thePublishedKeyWithATrailingNewlineIsStillThePublishedKey() {
+    // What a Kubernetes secret made with `echo` contains; the key loader ignores the whitespace.
+    String withNewline = PUBLISHED_KEY + "\n";
+
+    assertThatThrownBy(
+            () -> new DevDefaultsGuard(keys(withNewline), new SeedProperties(false, null), false))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void textThatIsNotBase64IsNotMistakenForThePublishedKey() {
+    assertThatCode(
+            () ->
+                new DevDefaultsGuard(keys("not base64 !!"), new SeedProperties(false, null), false))
+        .doesNotThrowAnyException();
+  }
 }

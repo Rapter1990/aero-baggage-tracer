@@ -46,7 +46,8 @@ import tools.jackson.databind.json.JsonMapper;
       "aerotrace.identity.seed.enabled=true",
       "aerotrace.identity.seed.password=seed-test-password-1",
       "aerotrace.identity.keys.cache-ttl=0s",
-      "aerotrace.identity.keys.publish-lead=0s"
+      "aerotrace.identity.keys.publish-lead=0s",
+      "aerotrace.identity.keys.max-stale=0s"
     })
 abstract class AbstractTokenEndpointTest extends IdentityTestBase {
 

@@ -1,7 +1,6 @@
 package com.aerotrace.identity.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.aerotrace.identity.keys.JwtSigner;
 import com.aerotrace.identity.keys.SigningKeyService;
@@ -101,6 +100,17 @@ class AuthorizationMatrixTest extends IdentityTestBase {
     return ENDPOINTS.stream().flatMap(e -> Stream.of(Caller.values()).map(c -> Arguments.of(e, c)));
   }
 
+  /** Only the combinations that are refused have an error format to check. */
+  static Stream<Arguments> refusals() {
+    return matrix()
+        .filter(
+            arguments -> {
+              int status =
+                  expectedStatus((Endpoint) arguments.get()[0], (Caller) arguments.get()[1]);
+              return status == 401 || status == 403;
+            });
+  }
+
   static int expectedStatus(Endpoint endpoint, Caller caller) {
     return switch (endpoint.access()) {
       // Public means public: a stale or bad token sent along is ignored, not punished.
@@ -188,12 +198,10 @@ class AuthorizationMatrixTest extends IdentityTestBase {
   }
 
   @ParameterizedTest(name = "{0} as {1}")
-  @MethodSource("matrix")
-  void refusalsUseTheSharedProblemFormatAndRevealNothing(Endpoint endpoint, Caller caller)
+  @MethodSource("refusals")
+  void refusalsUseTheSharedErrorFormatAndRevealNothing(Endpoint endpoint, Caller caller)
       throws Exception {
     int expected = expectedStatus(endpoint, caller);
-    // Only refusals have a format to check; the other combinations are skipped, not passed.
-    assumeTrue(expected == 401 || expected == 403);
 
     HttpResponse<String> response =
         send(endpoint.method(), endpoint.path(), endpoint.body(), tokenFor(caller));
