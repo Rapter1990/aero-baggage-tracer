@@ -139,14 +139,13 @@ The api-gateway, the identity-service, the config-server and the discovery-serve
 
 **"AeroTrace - Logs"** shows the logs of each service from Loki: error / warning / line counters, log volume by level and by service, the errors and warnings, and all lines of the selected services (dropdowns for service and level, plus a text filter). Every line carries the `trace_id` of the request it was written in: click a line and use **Open trace in Tempo**, or, in a trace (*Traces* dashboard or Explore), open a span and use **Logs for this span**. The "Logs of one trace" panel lists every line of one trace across all services: paste the ID into the *Trace ID* box at the top. Logs reach the collector through Spring Boot's OTLP log export (`OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, default `localhost:4318`) and a Logback appender declared in each service's `logback-spring.xml`; the console output is unchanged.
 
-**"AeroTrace - Coverage"** charts the JaCoCo test coverage of every module: line, branch, instruction and method coverage (green at or above the api-gateway build gate of 90 % lines / 60 % branches), a table per module with the number of uncovered lines and the age of the report, trends over time, and the classes with the most uncovered lines. Grafana cannot read JaCoCo reports itself, so push them after a build (Pushgateway and Prometheus must be running):
+**"AeroTrace - Coverage"** charts the JaCoCo test coverage of every module: line, branch, instruction and method coverage (green at or above the api-gateway build gate of 90 % lines / 60 % branches), a table per module with the number of uncovered lines and the age of the report, trends over time, and the classes with the most uncovered lines. Grafana cannot read JaCoCo reports itself, so run the script, which builds and then pushes (Pushgateway and Prometheus must be running, and Docker, because the tests use Testcontainers):
 
 ```bash
-mvn verify
-pwsh ./observability/push-jacoco.ps1      # or: powershell ./observability/push-jacoco.ps1
+powershell -ExecutionPolicy Bypass -File ./observability/push-jacoco.ps1
 ```
 
-The script reads `<module>/target/site/jacoco/jacoco.csv` and sends it to `http://localhost:9091` (override with `-PushgatewayUrl` or `PUSHGATEWAY_URL`). Pushing again replaces a module's numbers; the trend charts build up from Prometheus' history, which is lost when the Prometheus container is removed. Modules without branches show "n/a" for branch coverage.
+It runs `mvn verify` first and pushes nothing if the build fails. Add `-SkipBuild` to push the reports of an earlier build, or `-MavenArgs '-pl','identity-service','-am'` to build only some modules. The script reads `<module>/target/site/jacoco/jacoco.csv` and sends it to `http://localhost:9091` (override with `-PushgatewayUrl` or `PUSHGATEWAY_URL`). Pushing again replaces a module's numbers; the trend charts build up from Prometheus' history, which is lost when the Prometheus container is removed. Modules without branches show "n/a" for branch coverage.
 
 If you add a dashboard file while Grafana is already running, restart Grafana (`docker restart grafana`) to load it.
 

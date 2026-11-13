@@ -66,7 +66,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "JaCoCo test coverage per module. The numbers are loaded by `observability/push-jacoco.ps1` after a build:\n\n```\nmvn verify\n./observability/push-jacoco.ps1\n```\n\nPick one or more **modules** at the top. Green means at or above the build gate (**90 %** of lines, **60 %** of branches in the api-gateway). *Report age* shows when a module was last pushed; the trend charts grow with every push."
+        "content": "JaCoCo test coverage per module. The numbers are loaded by `observability/push-jacoco.ps1`, which runs `mvn verify` and then pushes the reports:\n\n```\n./observability/push-jacoco.ps1\n```\n\nPick one or more **modules** at the top. Green means at or above the build gate (**90 %** of lines, **60 %** of branches in the api-gateway). *Report age* shows when a module was last pushed; the trend charts grow with every push."
       }
     },
     {
