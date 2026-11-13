@@ -4,17 +4,17 @@ import com.aerotrace.common.error.ApiErrorWriter;
 import com.aerotrace.common.error.ErrorCode;
 import com.aerotrace.common.security.AeroTraceJwtValidators;
 import com.aerotrace.common.security.JwtClaims;
+import com.aerotrace.common.security.PemKeyUtils;
 import com.aerotrace.common.security.Role;
 import com.aerotrace.gateway.ratelimit.RateLimitFilter;
 import com.aerotrace.gateway.ratelimit.RateLimiter;
-import java.time.Duration;
+import java.security.interfaces.RSAPublicKey;
 import java.util.List;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -28,12 +28,11 @@ import org.springframework.security.oauth2.server.resource.web.authentication.Be
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
-import org.springframework.web.client.RestTemplate;
 
 /**
  * Servlet JWT resource-server security at the edge. The signature is checked with the public key
- * identity-service publishes (JWKS), and exp, iss and aud are verified here; 401 for
- * missing/invalid tokens, 403 for a valid token without the required role.
+ * matching identity-service's private key (public.pem), and exp, iss and aud are verified here; 401
+ * for missing/invalid tokens, 403 for a valid token without the required role.
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(GatewayProperties.class)
@@ -49,23 +48,18 @@ class SecurityConfig {
     "/api/v1/auth/logout"
   };
 
+  /**
+   * Verifies the tokens with the RSA public key that matches identity-service's signing key (RS256
+   * only), and checks the expiry, the fixed issuer and the audience.
+   */
   @Bean
   JwtDecoder jwtDecoder(GatewayProperties properties) {
-    SimpleClientHttpRequestFactory http = new SimpleClientHttpRequestFactory();
-    http.setConnectTimeout(Duration.ofSeconds(2));
-    http.setReadTimeout(Duration.ofSeconds(2));
-
+    RSAPublicKey key =
+        (RSAPublicKey)
+            PemKeyUtils.readPublicKey(properties.publicKey(), properties.publicKeyLocation());
     NimbusJwtDecoder decoder =
-        NimbusJwtDecoder.withJwkSetUri(properties.jwkSetUri())
-            .jwsAlgorithms(
-                algorithms -> {
-                  algorithms.add(SignatureAlgorithm.RS256);
-                  algorithms.add(SignatureAlgorithm.ES256);
-                })
-            .restOperations(new RestTemplate(http))
-            .build();
-    decoder.setJwtValidator(
-        AeroTraceJwtValidators.create(properties.issuer(), properties.audience()));
+        NimbusJwtDecoder.withPublicKey(key).signatureAlgorithm(SignatureAlgorithm.RS256).build();
+    decoder.setJwtValidator(AeroTraceJwtValidators.create(JwtClaims.ISSUER, properties.audience()));
     return decoder;
   }
 

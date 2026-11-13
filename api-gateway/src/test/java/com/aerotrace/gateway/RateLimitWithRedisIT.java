@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.aerotrace.gateway.support.AbstractTestContainerConfiguration;
 import com.aerotrace.gateway.support.GatewayClient;
-import com.aerotrace.gateway.support.TestJwks;
 import com.aerotrace.gateway.support.TestRoutesConfig;
+import com.aerotrace.gateway.support.TestTokens;
 import com.nimbusds.jose.jwk.RSAKey;
 import java.net.http.HttpResponse;
 import java.util.List;
@@ -29,8 +29,7 @@ import tools.jackson.databind.JsonNode;
     properties = {
       "eureka.client.enabled=false",
       "spring.cloud.discovery.enabled=false",
-      "aerotrace.gateway.issuer=" + TestJwks.ISSUER,
-      "aerotrace.gateway.audience=" + TestJwks.AUDIENCE,
+      "aerotrace.gateway.audience=" + TestTokens.AUDIENCE,
       // A small bucket with a slow refill keeps the outcome independent of test timing.
       "aerotrace.gateway.rate-limit.replenish-rate=1",
       "aerotrace.gateway.rate-limit.burst-capacity=3",
@@ -49,17 +48,17 @@ class RateLimitWithRedisIT extends AbstractTestContainerConfiguration {
   private int port;
 
   @DynamicPropertySource
-  static void jwks(DynamicPropertyRegistry registry) {
-    registry.add("aerotrace.gateway.jwk-set-uri", TestJwks::uri);
+  static void publicKey(DynamicPropertyRegistry registry) {
+    registry.add("aerotrace.gateway.public-key", TestTokens::publicKeyPem);
   }
 
   @BeforeAll
   static void publishKey() {
-    key = TestJwks.publish("kid-redis-it");
+    key = TestTokens.trusted();
   }
 
   private static String tokenFor(String subject) {
-    return TestJwks.sign(key, TestJwks.claims(subject, List.of("AGENT")).build());
+    return TestTokens.sign(key, TestTokens.claims(subject, List.of("AGENT")).build());
   }
 
   private HttpResponse<String> call(String token) {

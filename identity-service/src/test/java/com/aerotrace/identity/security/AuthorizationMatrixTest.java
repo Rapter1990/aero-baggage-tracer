@@ -111,7 +111,6 @@ class AuthorizationMatrixTest extends AbstractIntegrationTest {
               "/api/v1/auth/forgot-password",
               () -> body("usernameOrEmail", "nobody-" + unique()),
               Access.PUBLIC),
-          new Endpoint("GET", "/.well-known/jwks.json", () -> null, Access.PUBLIC),
           new Endpoint("GET", "/actuator/health", () -> null, Access.PUBLIC),
           new Endpoint("GET", "/api/v1/auth/login", () -> null, Access.WRONG_METHOD),
           new Endpoint("GET", "/api/v1/auth/me", () -> null, Access.NOT_EXPOSED),
@@ -149,8 +148,7 @@ class AuthorizationMatrixTest extends AbstractIntegrationTest {
 
   /** A token signed with the real private key, with exactly the claims a test wants. */
   private String signed(String issuer, String audience, List<String> roles, Instant expires) {
-    return TestKeys.token(
-        TestKeys.bundledPrivateKey(), tokens.keyId(), issuer, audience, roles, expires);
+    return TestKeys.token(TestKeys.bundledPrivateKey(), null, issuer, audience, roles, expires);
   }
 
   private static Instant soon() {
@@ -183,9 +181,7 @@ class AuthorizationMatrixTest extends AbstractIntegrationTest {
         // An admin token signed by a key the service never published, claiming the real key id.
         RSAKey attacker = new RSAKeyGenerator(2048).generate();
         SignedJWT forged =
-            new SignedJWT(
-                new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(tokens.keyId()).build(),
-                adminClaims());
+            new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).build(), adminClaims());
         forged.sign(new RSASSASigner(attacker));
         yield forged.serialize();
       }

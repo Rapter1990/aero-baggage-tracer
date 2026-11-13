@@ -18,6 +18,6 @@ class OpenApiDocsDisabledTest extends AbstractIntegrationTest {
 
   @Test
   void theServiceItselfKeepsWorking() {
-    assertThat(get("/.well-known/jwks.json").statusCode()).isEqualTo(200);
+    assertThat(get("/actuator/health").statusCode()).isEqualTo(200);
   }
 }

@@ -53,7 +53,6 @@ class SecurityConfig {
     // Without the context path, which the request matchers do not see either.
     String path = request.getRequestURI().substring(request.getContextPath().length());
     return PUBLIC_AUTH_CALLS.contains(path)
-        || path.equals(ApiPaths.JWKS)
         || path.startsWith(ApiPaths.API_DOCS)
         || path.equals(ApiPaths.INFO)
         || path.equals(ApiPaths.HEALTH)
@@ -126,8 +125,6 @@ class SecurityConfig {
             requests -> {
               requests
                   .requestMatchers(ApiPaths.HEALTH, ApiPaths.HEALTH_ALL, ApiPaths.INFO)
-                  .permitAll()
-                  .requestMatchers(HttpMethod.GET, ApiPaths.JWKS)
                   .permitAll()
                   // Any method: the controller answers a wrong one with 405, not a login prompt.
                   .requestMatchers(ApiPaths.PUBLIC_AUTH_CALLS)

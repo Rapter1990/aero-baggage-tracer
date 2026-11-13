@@ -1871,42 +1871,6 @@
           }
         },
         {
-          "name": "JWKS (public key set)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('200 with one RS256 signature key and no private material', () => {",
-                  "  pm.response.to.have.status(200);",
-                  "  const keys = pm.response.json().keys;",
-                  "  pm.expect(keys).to.have.lengthOf(1);",
-                  "  pm.expect(keys[0].alg).to.eql('RS256');",
-                  "  pm.expect(keys[0].kid).to.be.a('string');",
-                  "  pm.expect(keys[0]).to.not.have.property('d');",
-                  "});",
-                  "pm.test('not wrapped in the ApiResponse envelope: its format is fixed by standard', () => pm.expect(pm.response.json()).to.not.have.property('success'));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{identityUrl}}/.well-known/jwks.json",
-              "host": [
-                "{{identityUrl}}"
-              ],
-              "path": [
-                ".well-known",
-                "jwks.json"
-              ]
-            }
-          }
-        },
-        {
           "name": "Login directly",
           "event": [
             {

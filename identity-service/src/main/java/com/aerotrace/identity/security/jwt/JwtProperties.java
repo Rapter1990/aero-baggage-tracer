@@ -10,10 +10,9 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *
  * <p>The key pair is read from PEM, either inline or from a location (a Spring resource such as
  * {@code classpath:keys/private.pem}, or a file path). Inline text wins over a location. When
- * nothing is configured the development pair that ships inside the service is used.
+ * nothing is configured the development pair that ships inside the service is used. The issuer of
+ * the tokens is fixed ({@code JwtClaims.ISSUER}), so it is not a setting.
  *
- * @param issuer the {@code iss} claim; resource servers are configured with the same value. No
- *     default: the service refuses to start without it rather than guess.
  * @param audience the {@code aud} claim resource servers require
  * @param ttl access token lifetime
  * @param clockSkew the clock difference tolerated when checking {@code exp}
@@ -24,7 +23,6 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  */
 @ConfigurationProperties(JwtConstants.PROPERTY_PREFIX)
 public record JwtProperties(
-    String issuer,
     @DefaultValue(JwtConstants.DEFAULT_AUDIENCE) String audience,
     @DefaultValue(JwtConstants.DEFAULT_TTL) Duration ttl,
     @DefaultValue(JwtConstants.DEFAULT_CLOCK_SKEW) Duration clockSkew,
@@ -55,6 +53,6 @@ public record JwtProperties(
   /** Never prints key material. */
   @Override
   public String toString() {
-    return "JwtProperties[issuer=" + issuer + ", audience=" + audience + ", ttl=" + ttl + "]";
+    return "JwtProperties[audience=" + audience + ", ttl=" + ttl + "]";
   }
 }

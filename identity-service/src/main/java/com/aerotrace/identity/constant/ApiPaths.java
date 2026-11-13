@@ -15,9 +15,6 @@ public final class ApiPaths {
   public static final String RESET_PASSWORD = AUTH_BASE + "/reset-password";
   public static final String LOGOUT = AUTH_BASE + "/logout";
 
-  /** Fixed by the JWK Set standard's discovery convention; the gateway is configured with it. */
-  public static final String JWKS = "/.well-known/jwks.json";
-
   public static final String API_DOCS = "/v3/api-docs";
   public static final String API_DOCS_ALL = "/v3/api-docs/**";
   public static final String API_DOCS_YAML = "/v3/api-docs.yaml";

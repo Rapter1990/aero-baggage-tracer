@@ -55,8 +55,6 @@ aerotrace:
       # without a token. Set DOCS_ENABLED=false to turn it off where the API map should stay private.
       enabled: ${DOCS_ENABLED:true}
     jwt:
-      # The iss claim; the gateway's JWT_ISSUER must be the same. No default.
-      issuer: ${IDENTITY_ISSUER}
       audience: ${IDENTITY_AUDIENCE:aerotrace-api}
       ttl: 15m
       clock-skew: 1m

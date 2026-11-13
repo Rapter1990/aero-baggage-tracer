@@ -25,12 +25,5 @@ public final class JwtConstants {
   /** RSA with SHA-256, the algorithm the gateway's decoder accepts. */
   public static final String SIGNATURE_ALGORITHM = "RS256";
 
-  public static final String KEY_ALGORITHM = "RSA";
   public static final String HEADER_TYPE = "JWT";
-
-  public static final String PEM_PUBLIC_KEY = "PUBLIC KEY";
-  public static final String PEM_PRIVATE_KEY = "PRIVATE KEY";
-  public static final String PEM_BEGIN_PREFIX = "-----BEGIN ";
-  public static final String PEM_END_PREFIX = "-----END ";
-  public static final String PEM_SUFFIX = "-----";
 }

@@ -1,87 +1,102 @@
-package com.aerotrace.identity.security.jwt;
+package com.aerotrace.common.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.aerotrace.identity.support.TestKeys;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.util.Base64;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Reading the RSA key pair from PEM: inline, from the classpath, or from a file. */
+/** Reading an RSA key pair from PEM: inline, from the classpath or a file URL, or from a path. */
 class PemKeyUtilsTest {
+
+  private static KeyPair pair;
 
   @TempDir Path directory;
 
-  @Test
-  void readsTheBundledPairFromTheClasspath() {
-    PublicKey publicKey = PemKeyUtils.readPublicKey(null, "classpath:keys/public.pem");
-    PrivateKey privateKey = PemKeyUtils.readPrivateKey(null, "classpath:keys/private.pem");
+  @BeforeAll
+  static void generate() throws Exception {
+    KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+    generator.initialize(2048);
+    pair = generator.generateKeyPair();
+  }
 
-    assertThat(publicKey.getAlgorithm()).isEqualTo("RSA");
-    assertThat(publicKey.getEncoded()).isEqualTo(TestKeys.bundledPublicKey().getEncoded());
-    assertThat(privateKey.getEncoded()).isEqualTo(TestKeys.bundledPrivateKey().getEncoded());
+  private static String pem(String type, byte[] der) {
+    String body =
+        Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.UTF_8)).encodeToString(der);
+    return "-----BEGIN " + type + "-----\n" + body + "\n-----END " + type + "-----\n";
+  }
+
+  private static String publicPem() {
+    return pem("PUBLIC KEY", pair.getPublic().getEncoded());
+  }
+
+  private static String privatePem() {
+    return pem("PRIVATE KEY", pair.getPrivate().getEncoded());
   }
 
   @Test
   void readsInlinePemText() {
-    KeyPair pair = TestKeys.generate();
+    PublicKey publicKey = PemKeyUtils.readPublicKey(publicPem(), null);
+    PrivateKey privateKey = PemKeyUtils.readPrivateKey(privatePem(), null);
 
-    PublicKey publicKey = PemKeyUtils.readPublicKey(TestKeys.publicPem(pair.getPublic()), null);
-    PrivateKey privateKey =
-        PemKeyUtils.readPrivateKey(TestKeys.privatePem(pair.getPrivate()), null);
-
+    assertThat(publicKey.getAlgorithm()).isEqualTo("RSA");
     assertThat(publicKey.getEncoded()).isEqualTo(pair.getPublic().getEncoded());
     assertThat(privateKey.getEncoded()).isEqualTo(pair.getPrivate().getEncoded());
   }
 
   @Test
   void readsAFileThatIsGivenAsAPlainPathOrAsAFileUrl() throws IOException {
-    KeyPair pair = TestKeys.generate();
-    Path file = directory.resolve("private.pem");
-    Files.writeString(file, TestKeys.privatePem(pair.getPrivate()), StandardCharsets.UTF_8);
+    Path file = directory.resolve("public.pem");
+    Files.writeString(file, publicPem(), StandardCharsets.UTF_8);
 
-    PrivateKey fromPath = PemKeyUtils.readPrivateKey(null, file.toString());
-    PrivateKey fromUrl = PemKeyUtils.readPrivateKey(null, file.toUri().toString());
+    PublicKey fromPath = PemKeyUtils.readPublicKey(null, file.toString());
+    PublicKey fromUrl = PemKeyUtils.readPublicKey(null, file.toUri().toString());
 
-    assertThat(fromPath.getEncoded()).isEqualTo(pair.getPrivate().getEncoded());
-    assertThat(fromUrl.getEncoded()).isEqualTo(pair.getPrivate().getEncoded());
+    assertThat(fromPath.getEncoded()).isEqualTo(pair.getPublic().getEncoded());
+    assertThat(fromUrl.getEncoded()).isEqualTo(pair.getPublic().getEncoded());
+  }
+
+  @Test
+  void readsAClasspathResource() {
+    PublicKey publicKey = PemKeyUtils.readPublicKey(null, "classpath:test-keys/public.pem");
+
+    assertThat(publicKey.getAlgorithm()).isEqualTo("RSA");
   }
 
   @Test
   void inlineTextWinsOverALocation() {
-    KeyPair inline = TestKeys.generate();
-
     PublicKey publicKey =
-        PemKeyUtils.readPublicKey(
-            TestKeys.publicPem(inline.getPublic()), "classpath:keys/public.pem");
+        PemKeyUtils.readPublicKey(publicPem(), directory.resolve("nope.pem").toString());
 
-    assertThat(publicKey.getEncoded()).isEqualTo(inline.getPublic().getEncoded());
+    assertThat(publicKey.getEncoded()).isEqualTo(pair.getPublic().getEncoded());
   }
 
   @Test
   void toleratesLineBreaksAndIndentationInsideThePem() {
-    String squashed = TestKeys.publicPem(TestKeys.bundledPublicKey()).replace("\n", "\r\n   ");
+    String squashed = publicPem().replace("\n", "\r\n   ");
 
     assertThat(PemKeyUtils.readPublicKey(squashed, null).getEncoded())
-        .isEqualTo(TestKeys.bundledPublicKey().getEncoded());
+        .isEqualTo(pair.getPublic().getEncoded());
   }
 
   @Test
-  void saysWhichSettingsAreMissing() {
+  void saysThatAKeyIsMissing() {
     assertThatThrownBy(() -> PemKeyUtils.readPrivateKey(null, " "))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("private key")
-        .hasMessageContaining("aerotrace.identity.jwt.private-key");
+        .hasMessageContaining("private key");
     assertThatThrownBy(() -> PemKeyUtils.readPublicKey("", null))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("aerotrace.identity.jwt.public-key");
+        .hasMessageContaining("public key");
   }
 
   @Test

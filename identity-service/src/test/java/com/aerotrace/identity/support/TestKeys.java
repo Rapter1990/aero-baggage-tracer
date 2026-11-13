@@ -1,5 +1,6 @@
 package com.aerotrace.identity.support;
 
+import com.aerotrace.common.security.JwtClaims;
 import io.jsonwebtoken.Jwts;
 import java.io.IOException;
 import java.io.InputStream;
@@ -21,7 +22,7 @@ import java.util.UUID;
 /** RSA keys and tokens for tests: the bundled development pair, other pairs, and any claims. */
 public final class TestKeys {
 
-  public static final String ISSUER = "http://identity.test";
+  public static final String ISSUER = JwtClaims.ISSUER;
   public static final String AUDIENCE = "aerotrace-api";
 
   private TestKeys() {}

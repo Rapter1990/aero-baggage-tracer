@@ -94,10 +94,13 @@ spring:
 
 aerotrace:
   gateway:
-    # No defaults for the trust anchors: the gateway must fail at startup rather than guess.
-    issuer: ${JWT_ISSUER}
     audience: ${JWT_AUDIENCE:aerotrace-api}
-    jwk-set-uri: ${JWK_SET_URI}
+    # The RSA public key (PEM) that verifies the tokens identity-service signs, inline or from a
+    # location (a Spring resource or a file path). With both empty the gateway uses the copy of
+    # identity-service's keys/public.pem that is packaged at build time (a development key pair
+    # whose private key is in the repository: use your own pair wherever the tokens matter).
+    public-key: ${JWT_PUBLIC_KEY:}
+    public-key-location: ${JWT_PUBLIC_KEY_LOCATION:}
     # Coarse edge authorization; resource services still enforce their own rules.
     role-rules:
       - pattern: /api/v1/admin/**

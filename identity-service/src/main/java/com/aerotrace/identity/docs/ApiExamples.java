@@ -91,13 +91,8 @@ public final class ApiExamples {
 
   public static final String PASSWORD_RESET_STARTED =
       """
-      {"success":true,"data":{"message":"If the account exists, a password reset has been started."},\
+      {"success":true,"data":{"message":"If the account exists, a password reset has been started.",\
+      "resetToken":"<opaque random token>","expiresAt":"2026-11-12T10:30:30Z"},\
       "timestamp":"2026-11-12T10:15:30.123Z"}\
-      """;
-
-  public static final String JWKS =
-      """
-      {"keys":[{"kty":"RSA","use":"sig","alg":"RS256","kid":"<RFC 7638 thumbprint>",\
-      "n":"<base64url modulus>","e":"AQAB"}]}\
       """;
 }

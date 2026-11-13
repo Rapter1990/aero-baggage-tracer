@@ -7,7 +7,7 @@ import java.time.Instant;
  *
  * <p>This wrapper provides a consistent response structure across all services. It includes a
  * success flag, response data, and response creation timestamp. Responses whose format is fixed by
- * a standard (such as the JWK Set at {@code /.well-known/jwks.json}) are not wrapped.
+ * a standard are not wrapped.
  *
  * @param <T> type of the response data
  * @param success indicates whether the request was successful

@@ -75,8 +75,11 @@ class OpenApiDocsTest extends AbstractIntegrationTest {
 
     assertThat(docs.get("paths").propertyNames())
         .containsAll(AUTH_PATHS)
-        .contains("/.well-known/jwks.json")
-        .doesNotContain("/api/v1/auth/token", "/api/v1/auth/me", "/api/v1/auth/policy");
+        .doesNotContain(
+            "/api/v1/auth/token",
+            "/api/v1/auth/me",
+            "/api/v1/auth/policy",
+            "/.well-known/jwks.json");
     assertThat(docs.get("info").get("title").asString()).isEqualTo("AeroTrace Identity Service");
   }
 
@@ -93,8 +96,6 @@ class OpenApiDocsTest extends AbstractIntegrationTest {
       JsonNode security = operation(docs, path, "post").get("security");
       assertThat(security == null || security.isEmpty()).as(path).isTrue();
     }
-    JsonNode jwks = operation(docs, "/.well-known/jwks.json", "get").get("security");
-    assertThat(jwks == null || jwks.isEmpty()).isTrue();
   }
 
   @Test

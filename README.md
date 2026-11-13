@@ -53,9 +53,8 @@ In `docker-compose.yml` and `docker-compose-local.yml`, the services that need t
 | `REDIS_PASSWORD` | Redis, api-gateway |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | PostgreSQL |
 | `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD` | Grafana (optional, defaults `admin` / `grafana`) |
-| `JWT_ISSUER`, `JWT_AUDIENCE`, `JWK_SET_URI` | api-gateway started outside Docker (inside Compose it uses `COMPOSE_JWT_ISSUER` / `COMPOSE_JWK_SET_URI`) |
+| `JWT_PUBLIC_KEY_LOCATION` (or the PEM text in `JWT_PUBLIC_KEY`), `JWT_AUDIENCE` | api-gateway: the RSA public key (PEM) that verifies the tokens, and the expected audience. With no key set the gateway uses the copy of identity-service's `keys/public.pem` that is packaged into it at build time (the development pair). The token issuer is fixed in the code |
 | `DB_PASSWORD` (also `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`; defaults `localhost`, `5433`, `aerotrace`, `aerotrace`) | identity-service started outside Docker (inside Compose it takes the `POSTGRES_*` values) |
-| `IDENTITY_ISSUER` | identity-service, no default. Must equal the gateway's `JWT_ISSUER` |
 | `IDENTITY_JWT_PRIVATE_KEY_LOCATION`, `IDENTITY_JWT_PUBLIC_KEY_LOCATION` (or the PEM text itself in `IDENTITY_JWT_PRIVATE_KEY`, `IDENTITY_JWT_PUBLIC_KEY`) | identity-service: the RSA key pair (PEM; the private key in PKCS#8, `BEGIN PRIVATE KEY`) that signs and verifies the access tokens. A location is a Spring resource (`file:/run/secrets/private.pem`, `classpath:...`) or a file path; inline text wins over a location. Unset, the development pair in `identity-service/src/main/resources/keys` is used, **whose private key is in this repository** |
 | `IDENTITY_REFRESH_TOKEN_TTL`, `IDENTITY_PASSWORD_RESET_TTL` | identity-service: lifetime of a refresh token (default `7d`) and of a password reset token (default `15m`) |
 | `DOCS_ENABLED` | api-gateway and identity-service: serve the OpenAPI definitions and Swagger UI (default `true`; they are served without a token and map every endpoint, so set `false` where that should stay private) |
@@ -75,7 +74,7 @@ INSERT INTO identity.user_role (user_id, role)
 SELECT id, 'ADMIN' FROM identity.app_user WHERE username = 'your-username';
 ```
 
-The identity-service listens on port 1112 (published by Compose, so its own endpoints, such as `/.well-known/jwks.json`, `/actuator/health` and `/v3/api-docs`, can be called directly). The authentication API (all under `http://localhost:8080/api/v1/auth` through the gateway, or `http://localhost:1112/api/v1/auth` directly, answers wrapped as `{"success":true,"data":...,"timestamp":...}`):
+The identity-service listens on port 1112 (published by Compose, so its own endpoints, such as `/actuator/health` and `/v3/api-docs`, can be called directly). The authentication API (all under `http://localhost:8080/api/v1/auth` through the gateway, or `http://localhost:1112/api/v1/auth` directly, answers wrapped as `{"success":true,"data":...,"timestamp":...}`):
 
 | Call | What it does |
 |---|---|
@@ -95,7 +94,7 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out private.pem
 openssl rsa -in private.pem -pubout -out public.pem
 ```
 
-then mount both files into the identity-service container and set `IDENTITY_JWT_PRIVATE_KEY_LOCATION` and `IDENTITY_JWT_PUBLIC_KEY_LOCATION` to their paths (for example `file:/run/secrets/private.pem`).
+then mount the files into the containers and set `IDENTITY_JWT_PRIVATE_KEY_LOCATION` and `IDENTITY_JWT_PUBLIC_KEY_LOCATION` (identity-service) and `JWT_PUBLIC_KEY_LOCATION` (api-gateway, public key only) to their paths (for example `file:/run/secrets/private.pem`). The gateway verifies the tokens with that public key; there is no key-set (JWKS) endpoint and no issuer setting.
 
 ## Postman collection
 
@@ -113,7 +112,7 @@ Every service answers with the same two envelopes from `common-module`: `ApiResp
 - Refresh tokens are revoked with a reason. Only a token that was rotated away more than 10 seconds ago and is presented again counts as theft and ends all sessions of that user. Expired token rows are deleted hourly once they are a day past expiry.
 - Access tokens cannot be revoked (logout and password reset revoke refresh tokens only); a token stays valid until it expires (15 minutes plus a minute of clock skew).
 - The audit trail's immutability is enforced by database triggers, but the service connects as the schema owner and could drop them; use a restricted runtime role where that matters.
-- The signing key pair is one static pair read at start-up. There is no automatic rotation and no second key id: replacing the pair means restarting identity-service, and tokens signed with the old pair stop verifying (at most 15 minutes of tokens, plus the gateway's key cache of about a minute).
+- The signing key pair is one static pair read at start-up, and the gateway holds a copy of the public key (packaged at build time, or from `JWT_PUBLIC_KEY_LOCATION`). There is no key-set endpoint, no `kid`, and no rotation: replacing the pair means restarting identity-service and the gateway, and tokens signed with the old pair stop verifying.
 - The development key pair that ships with the service has its private key in the repository (see above).
 
 ## Observability (OpenTelemetry Collector, Tempo, Loki, Prometheus, Grafana)

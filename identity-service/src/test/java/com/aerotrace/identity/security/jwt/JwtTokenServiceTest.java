@@ -5,8 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.aerotrace.identity.support.MutableClock;
 import com.aerotrace.identity.support.TestKeys;
-import com.nimbusds.jose.jwk.JWKSet;
-import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.PlainJWT;
 import com.nimbusds.jwt.SignedJWT;
@@ -33,11 +31,11 @@ class JwtTokenServiceTest {
   private final MutableClock clock = new MutableClock(NOW);
 
   private JwtProperties bundled() {
-    return properties(TestKeys.ISSUER, TestKeys.AUDIENCE, Duration.ofMinutes(15));
+    return properties(TestKeys.AUDIENCE, Duration.ofMinutes(15));
   }
 
-  private static JwtProperties properties(String issuer, String audience, Duration ttl) {
-    return new JwtProperties(issuer, audience, ttl, Duration.ofMinutes(1), null, null, null, null);
+  private static JwtProperties properties(String audience, Duration ttl) {
+    return new JwtProperties(audience, ttl, Duration.ofMinutes(1), null, null, null, null);
   }
 
   private JwtTokenService service() {
@@ -76,14 +74,13 @@ class JwtTokenServiceTest {
   }
 
   @Test
-  void theHeaderNamesTheKeySoVerifiersCanFindItInThePublishedSet() throws Exception {
+  void theHeaderStatesTheAlgorithmAndType() throws Exception {
     JwtTokenService service = service();
 
     SignedJWT jwt = SignedJWT.parse(service.generateToken("u", List.of("AGENT"), null));
 
     assertThat(jwt.getHeader().getAlgorithm().getName()).isEqualTo("RS256");
     assertThat(jwt.getHeader().getType().getType()).isEqualTo("JWT");
-    assertThat(jwt.getHeader().getKeyID()).isEqualTo(service.keyId());
   }
 
   @Test
@@ -122,7 +119,7 @@ class JwtTokenServiceTest {
     String forged =
         TestKeys.token(
             attacker.getPrivate(),
-            service.keyId(),
+            null,
             TestKeys.ISSUER,
             TestKeys.AUDIENCE,
             List.of("ADMIN"),
@@ -133,17 +130,21 @@ class JwtTokenServiceTest {
 
   @Test
   void aTokenForAnotherIssuerOrAudienceIsRefused() {
-    JwtTokenService other =
-        new JwtTokenService(
-            properties("http://someone-else", "another-api", Duration.ofMinutes(15)), clock);
     JwtTokenService service = service();
 
-    String foreign = other.generateToken("u", List.of("AGENT"), null);
+    // Signed with the right key, but by someone who calls themselves another issuer.
+    String foreign =
+        TestKeys.token(
+            TestKeys.bundledPrivateKey(),
+            null,
+            "http://someone-else",
+            TestKeys.AUDIENCE,
+            List.of("AGENT"),
+            NOW.plus(Duration.ofMinutes(5)));
 
     assertThatThrownBy(() -> service.parseClaims(foreign)).isInstanceOf(JwtException.class);
     String wrongAudience =
-        new JwtTokenService(
-                properties(TestKeys.ISSUER, "another-api", Duration.ofMinutes(15)), clock)
+        new JwtTokenService(properties("another-api", Duration.ofMinutes(15)), clock)
             .generateToken("u", List.of("AGENT"), null);
     assertThatThrownBy(() -> service.parseClaims(wrongAudience)).isInstanceOf(JwtException.class);
   }
@@ -209,25 +210,10 @@ class JwtTokenServiceTest {
   // --- the key pair ------------------------------------------------------------------------
 
   @Test
-  void theKeyIdIsTheThumbprintOfThePublicKeyAndTheSetHoldsNothingPrivate() throws Exception {
-    JwtTokenService service = service();
-
-    JWKSet set = JWKSet.parse(service.jwksJson());
-
-    assertThat(set.getKeys()).hasSize(1);
-    RSAKey key = (RSAKey) set.getKeys().get(0);
-    assertThat(key.getKeyID()).isEqualTo(service.keyId());
-    assertThat(key.computeThumbprint().toString()).isEqualTo(service.keyId());
-    assertThat(key.isPrivate()).isFalse();
-    assertThat(service.jwksJson()).doesNotContain("\"d\"", "\"p\"", "\"q\"");
-  }
-
-  @Test
   void aPrivateAndPublicKeyThatAreNotAPairStopTheStart() {
     KeyPair other = TestKeys.generate();
     JwtProperties mismatched =
         new JwtProperties(
-            TestKeys.ISSUER,
             TestKeys.AUDIENCE,
             Duration.ofMinutes(15),
             Duration.ofMinutes(1),
@@ -242,26 +228,9 @@ class JwtTokenServiceTest {
   }
 
   @Test
-  void anIssuerIsRequired() {
-    assertThatThrownBy(
-            () ->
-                new JwtTokenService(
-                    properties(" ", TestKeys.AUDIENCE, Duration.ofMinutes(1)), clock))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("issuer");
-    assertThatThrownBy(
-            () ->
-                new JwtTokenService(
-                    properties(null, TestKeys.AUDIENCE, Duration.ofMinutes(1)), clock))
-        .isInstanceOf(IllegalStateException.class);
-  }
-
-  @Test
   void aTokenThatNeverExpiresCannotBeConfigured() {
     assertThatThrownBy(
-            () ->
-                new JwtTokenService(
-                    properties(TestKeys.ISSUER, TestKeys.AUDIENCE, Duration.ZERO), clock))
+            () -> new JwtTokenService(properties(TestKeys.AUDIENCE, Duration.ZERO), clock))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("ttl");
   }
@@ -271,7 +240,6 @@ class JwtTokenServiceTest {
     KeyPair own = TestKeys.generate();
     JwtProperties custom =
         new JwtProperties(
-            TestKeys.ISSUER,
             TestKeys.AUDIENCE,
             Duration.ofMinutes(15),
             Duration.ofMinutes(1),
@@ -303,7 +271,6 @@ class JwtTokenServiceTest {
     String pem = TestKeys.privatePem(own.getPrivate());
     JwtProperties custom =
         new JwtProperties(
-            TestKeys.ISSUER,
             TestKeys.AUDIENCE,
             Duration.ofMinutes(15),
             Duration.ofMinutes(1),

@@ -1,12 +1,8 @@
 package com.aerotrace.identity.security.jwt;
 
 import com.aerotrace.common.security.JwtClaims;
+import com.aerotrace.common.security.PemKeyUtils;
 import com.aerotrace.identity.constant.JwtConstants;
-import com.nimbusds.jose.JOSEException;
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.jwk.JWKSet;
-import com.nimbusds.jose.jwk.KeyUse;
-import com.nimbusds.jose.jwk.RSAKey;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.Jwts;
@@ -15,7 +11,6 @@ import java.security.GeneralSecurityException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.Signature;
-import java.security.interfaces.RSAPublicKey;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -28,10 +23,10 @@ import org.springframework.stereotype.Service;
 /**
  * Signs and verifies the access tokens with the RSA key pair read from PEM.
  *
- * <p>A token is an RS256 JWT carrying the issuer, the audience, the subject, the roles, the
- * passenger reference (passengers only), a unique id and the issue and expiry times. Its header
- * names the key ({@code kid}, the RFC 7638 thumbprint of the public key) so verifiers that read the
- * published key set can find it.
+ * <p>A token is an RS256 JWT carrying the issuer ({@link JwtClaims#ISSUER}), the audience, the
+ * subject, the roles, the passenger reference (passengers only), a unique id and the issue and
+ * expiry times. The api-gateway verifies it with the matching public key, which it reads from its
+ * own copy of {@code public.pem}.
  *
  * <p>Verification checks the signature, the issuer, the audience and the expiry (a token without an
  * expiry is refused), and only accepts the configured RSA public key: an unsigned token, or one
@@ -45,8 +40,6 @@ public class JwtTokenService {
   private final Clock clock;
   private final PrivateKey privateKey;
   private final PublicKey publicKey;
-  private final String keyId;
-  private final String jwksJson;
 
   /**
    * Reads the key pair and checks it.
@@ -57,9 +50,6 @@ public class JwtTokenService {
    *     two keys are not a pair
    */
   public JwtTokenService(JwtProperties properties, Clock clock) {
-    if (properties.issuer() == null || properties.issuer().isBlank()) {
-      throw new IllegalStateException(JwtConstants.PROPERTY_PREFIX + ".issuer must be set");
-    }
     if (properties.ttl().isNegative() || properties.ttl().isZero()) {
       throw new IllegalStateException(JwtConstants.PROPERTY_PREFIX + ".ttl must be positive");
     }
@@ -70,15 +60,13 @@ public class JwtTokenService {
     this.privateKey =
         PemKeyUtils.readPrivateKey(properties.privateKey(), properties.privateKeyLocation());
     requireMatchingPair(privateKey, publicKey);
-    RSAKey jwk = describe(publicKey, null);
-    this.keyId = thumbprint(jwk);
-    this.jwksJson = new JWKSet(describe(publicKey, keyId)).toString();
     if (properties.usesBundledKeys()) {
       log.warn(
           "The development key pair that ships with identity-service is in use. Its private key is"
               + " in the repository, so anyone can sign tokens that this platform accepts. Set"
-              + " IDENTITY_JWT_PRIVATE_KEY_LOCATION and IDENTITY_JWT_PUBLIC_KEY_LOCATION to your"
-              + " own key pair before relying on these tokens.");
+              + " IDENTITY_JWT_PRIVATE_KEY_LOCATION and IDENTITY_JWT_PUBLIC_KEY_LOCATION (and the"
+              + " gateway's JWT_PUBLIC_KEY_LOCATION) to your own key pair before relying on these"
+              + " tokens.");
     }
   }
 
@@ -95,10 +83,9 @@ public class JwtTokenService {
     JwtBuilder builder =
         Jwts.builder()
             .header()
-            .keyId(keyId)
             .type(JwtConstants.HEADER_TYPE)
             .and()
-            .issuer(properties.issuer())
+            .issuer(JwtClaims.ISSUER)
             .subject(subject)
             .audience()
             .add(properties.audience())
@@ -128,7 +115,7 @@ public class JwtTokenService {
     Claims claims =
         Jwts.parser()
             .verifyWith(publicKey)
-            .requireIssuer(properties.issuer())
+            .requireIssuer(JwtClaims.ISSUER)
             .requireAudience(properties.audience())
             .clockSkewSeconds(properties.clockSkew().toSeconds())
             .clock(() -> Date.from(clock.instant()))
@@ -141,38 +128,9 @@ public class JwtTokenService {
     return claims;
   }
 
-  /** The id of the signing key, as it appears in the token header and the published key set. */
-  public String keyId() {
-    return keyId;
-  }
-
-  /** The published key set (JWKS) as JSON: the public key only. */
-  public String jwksJson() {
-    return jwksJson;
-  }
-
   /** How long a token is valid. */
   public Duration ttl() {
     return properties.ttl();
-  }
-
-  private static RSAKey describe(PublicKey key, String kid) {
-    RSAKey.Builder builder =
-        new RSAKey.Builder((RSAPublicKey) key)
-            .keyUse(KeyUse.SIGNATURE)
-            .algorithm(JWSAlgorithm.RS256);
-    if (kid != null) {
-      builder.keyID(kid);
-    }
-    return builder.build();
-  }
-
-  private static String thumbprint(RSAKey key) {
-    try {
-      return key.computeThumbprint().toString();
-    } catch (JOSEException e) {
-      throw new IllegalStateException("Could not derive a key id from the public key", e);
-    }
   }
 
   /** A mismatched pair would sign tokens nobody can verify; stop at start-up instead. */

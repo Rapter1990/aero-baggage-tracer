@@ -3,7 +3,7 @@ package com.aerotrace.gateway;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.aerotrace.gateway.support.GatewayTestBase;
-import com.aerotrace.gateway.support.TestJwks;
+import com.aerotrace.gateway.support.TestTokens;
 import com.nimbusds.jose.jwk.RSAKey;
 import java.net.http.HttpResponse;
 import java.util.List;
@@ -18,12 +18,12 @@ class CorrelationAndForwardingTest extends GatewayTestBase {
 
   @BeforeAll
   static void publishKey() {
-    key = TestJwks.publish("kid-fwd");
+    key = TestTokens.trusted();
   }
 
   private static String token() {
-    return TestJwks.sign(
-        key, TestJwks.claims(UUID.randomUUID().toString(), List.of("AGENT")).build());
+    return TestTokens.sign(
+        key, TestTokens.claims(UUID.randomUUID().toString(), List.of("AGENT")).build());
   }
 
   @Test

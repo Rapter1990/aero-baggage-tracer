@@ -92,6 +92,20 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <!-- The public key that verifies the tokens: a copy of the one identity-service ships
+                 next to its private key, so there is a single source for the pair. -->
+            <resource>
+                <directory>${project.basedir}/../identity-service/src/main/resources/keys</directory>
+                <includes>
+                    <include>public.pem</include>
+                </includes>
+                <targetPath>keys</targetPath>
+            </resource>
+        </resources>
         <plugins>
             <!-- Agent and report come from the parent; this adds a threshold that fails the build. -->
             <plugin>

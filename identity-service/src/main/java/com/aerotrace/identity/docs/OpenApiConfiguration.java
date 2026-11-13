@@ -53,11 +53,9 @@ class OpenApiConfiguration {
                 .version("v1")
                 .description(
                     "Registers users, signs them in with a password, issues signed JWT access tokens "
-                        + "(RS256) with refresh tokens, handles password reset and publishes the "
-                        + "public key to verify the tokens. Verify tokens with the JWKS at "
-                        + ApiPaths.JWKS
-                        + ". Successful responses are wrapped as {success, data, timestamp}, "
-                        + "except the JWKS, whose format is fixed by standard."))
+                        + "(RS256) with refresh tokens and handles password reset. Verify the tokens "
+                        + "with the public key (public.pem). Successful responses are wrapped as "
+                        + "{success, data, timestamp}."))
         .components(
             new Components()
                 .addSchemas(DocsConstants.API_ERROR_SCHEMA, apiError)
