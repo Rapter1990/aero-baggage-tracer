@@ -29,7 +29,8 @@
                       "pm.environment.set('password', pm.environment.get('initialPassword'));",
                       "const suffix = Date.now().toString(36);",
                       "pm.environment.set('username', 'pax-' + suffix);",
-                      "pm.environment.set('email', 'pax-' + suffix + '@example.com');"
+                      "pm.environment.set('email', 'pax-' + suffix + '@example.com');",
+                      "pm.environment.set('oldPassword', pm.environment.get('initialPassword'));"
                     ]
                   }
                 },
@@ -1552,10 +1553,15 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('every session was ended', () => pm.expect(pm.response.json().data.message).to.include('Active refresh tokens were revoked'));",
-                  "// From now on the new password is the password.",
-                  "pm.environment.set('oldPassword', pm.environment.get('password'));",
-                  "pm.environment.set('password', pm.environment.get('newPassword'));"
+                  "// Only a successful reset changes the password. A refused one (for example the same",
+                  "// request sent twice: the token is used up) must leave the variables alone.",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('every session was ended', () => pm.expect(pm.response.json().data.message).to.include('Active refresh tokens were revoked'));",
+                  "  if (pm.environment.get('password') !== pm.environment.get('newPassword')) {",
+                  "    pm.environment.set('oldPassword', pm.environment.get('password'));",
+                  "  }",
+                  "  pm.environment.set('password', pm.environment.get('newPassword'));",
+                  "}"
                 ]
               }
             }
@@ -1787,7 +1793,9 @@
                 "exec": [
                   "pm.test('200 OK', () => pm.response.to.have.status(200));",
                   "pm.test('confirmation', () => pm.expect(pm.response.json().data.message).to.eql('Logout completed successfully'));",
-                  "pm.environment.set('loggedOutRefreshToken', pm.environment.get('refreshToken'));"
+                  "if (pm.response.code === 200) {",
+                  "  pm.environment.set('loggedOutRefreshToken', pm.environment.get('refreshToken'));",
+                  "}"
                 ]
               }
             }
