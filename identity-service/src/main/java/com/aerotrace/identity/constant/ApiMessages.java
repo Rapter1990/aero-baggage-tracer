@@ -19,6 +19,8 @@ public final class ApiMessages {
   public static final String MUST_NOT_BE_BLANK = "must not be blank";
   public static final String TOO_LONG =
       "must be at most " + UserRules.MAX_CREDENTIAL_LENGTH + " characters";
+  public static final String TOKEN_TOO_LONG =
+      "must be at most " + UserRules.MAX_TOKEN_LENGTH + " characters";
   public static final String MUST_BE_EMAIL = "must be a valid email address";
   public static final String USERNAME_RULE =
       "must be 3-64 characters of letters, digits, '.', '_' or '-'";

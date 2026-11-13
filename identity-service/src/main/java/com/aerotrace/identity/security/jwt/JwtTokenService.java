@@ -128,6 +128,62 @@ public class JwtTokenService {
     return claims;
   }
 
+  /**
+   * Generates a signed JWT refresh token. It looks like an access token (RS256, issuer, subject,
+   * unique id, issue and expiry times) but has the refresh audience and the {@code token_use}
+   * claim, and no roles, so it cannot be used as an access token. Whether it is still good is
+   * decided by the database (a refresh token is revoked and used once), not by the JWT alone.
+   *
+   * @param subject the subject: the user's id
+   * @param ttl how long the token is valid
+   * @return signed JWT token
+   */
+  public String generateRefreshToken(String subject, Duration ttl) {
+    Instant now = clock.instant();
+    return Jwts.builder()
+        .header()
+        .type(JwtConstants.HEADER_TYPE)
+        .and()
+        .issuer(JwtClaims.ISSUER)
+        .subject(subject)
+        .audience()
+        .add(JwtConstants.REFRESH_AUDIENCE)
+        .and()
+        .id(UUID.randomUUID().toString())
+        .claim(JwtConstants.TOKEN_USE_CLAIM, JwtConstants.TOKEN_USE_REFRESH)
+        .issuedAt(Date.from(now))
+        .expiration(Date.from(now.plus(ttl)))
+        .signWith(privateKey, Jwts.SIG.RS256)
+        .compact();
+  }
+
+  /**
+   * Parses and validates a refresh token: signature, issuer, the refresh audience, the {@code
+   * token_use} claim and the expiry.
+   *
+   * @param token the refresh token
+   * @return its claims
+   * @throws io.jsonwebtoken.JwtException if it is malformed, expired, signed with another key, or
+   *     not a refresh token (an access token is refused here)
+   */
+  public Claims parseRefreshClaims(String token) {
+    Claims claims =
+        Jwts.parser()
+            .verifyWith(publicKey)
+            .requireIssuer(JwtClaims.ISSUER)
+            .requireAudience(JwtConstants.REFRESH_AUDIENCE)
+            .require(JwtConstants.TOKEN_USE_CLAIM, JwtConstants.TOKEN_USE_REFRESH)
+            .clockSkewSeconds(properties.clockSkew().toSeconds())
+            .clock(() -> Date.from(clock.instant()))
+            .build()
+            .parseSignedClaims(token)
+            .getPayload();
+    if (claims.getExpiration() == null) {
+      throw new MalformedJwtException("The token has no expiry");
+    }
+    return claims;
+  }
+
   /** How long a token is valid. */
   public Duration ttl() {
     return properties.ttl();

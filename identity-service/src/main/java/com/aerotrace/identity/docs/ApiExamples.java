@@ -83,7 +83,7 @@ public final class ApiExamples {
   public static final String TOKEN_ISSUED =
       """
       {"success":true,"data":{"accessToken":"<signed JWT: header.payload.signature>",\
-      "refreshToken":"<opaque random token>","tokenType":"Bearer",\
+      "refreshToken":"<signed JWT: header.payload.signature>","tokenType":"Bearer",\
       "issuedAt":"2026-11-12T10:15:30Z","accessTokenExpiresAt":"2026-11-12T10:30:30Z",\
       "refreshTokenExpiresAt":"2026-11-19T10:15:30Z","roles":["PASSENGER"]},\
       "timestamp":"2026-11-12T10:15:30.123Z"}\

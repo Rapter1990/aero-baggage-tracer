@@ -22,6 +22,18 @@ public final class JwtConstants {
   public static final String DEFAULT_TTL = "15m";
   public static final String DEFAULT_CLOCK_SKEW = "1m";
 
+  /**
+   * The audience of a refresh token. It differs from the access token audience, so a refresh token
+   * is refused wherever an access token is expected (the gateway, the identity-service's own
+   * security) and the other way round.
+   */
+  public static final String REFRESH_AUDIENCE = "aerotrace-identity-refresh";
+
+  /** Names the use of a token; a refresh token carries {@link #TOKEN_USE_REFRESH}. */
+  public static final String TOKEN_USE_CLAIM = "token_use";
+
+  public static final String TOKEN_USE_REFRESH = "refresh";
+
   /** RSA with SHA-256, the algorithm the gateway's decoder accepts. */
   public static final String SIGNATURE_ALGORITHM = "RS256";
 

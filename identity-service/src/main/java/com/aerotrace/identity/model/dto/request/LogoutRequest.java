@@ -12,7 +12,7 @@ import jakarta.validation.constraints.Size;
  */
 public record LogoutRequest(
     @NotBlank(message = ApiMessages.MUST_NOT_BE_BLANK)
-        @Size(max = UserRules.MAX_CREDENTIAL_LENGTH, message = ApiMessages.TOO_LONG)
+        @Size(max = UserRules.MAX_TOKEN_LENGTH, message = ApiMessages.TOKEN_TOO_LONG)
         String refreshToken) {
 
   @Override

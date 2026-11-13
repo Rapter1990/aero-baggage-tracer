@@ -170,7 +170,7 @@ class AuthFlowTest extends AbstractIntegrationTest {
     for (JsonNode data : List.of(byName, byEmail)) {
       assertThat(data.get("tokenType").asString()).isEqualTo("Bearer");
       assertThat(data.get("accessToken").asString()).isNotBlank();
-      assertThat(data.get("refreshToken").asString()).hasSize(64);
+      assertThat(data.get("refreshToken").asString().split("\\.")).hasSize(3);
       assertThat(data.get("accessTokenExpiresAt").asString()).isNotBlank();
       assertThat(data.get("refreshTokenExpiresAt").asString()).isNotBlank();
     }
@@ -260,6 +260,34 @@ class AuthFlowTest extends AbstractIntegrationTest {
                 + "where token_hash = :h")
         .param("h", TokenHashUtils.sha256(refreshToken))
         .update();
+  }
+
+  @Test
+  void aRefreshTokenIsAJwtLikeTheAccessTokenButCannotBeUsedAsOne() {
+    String name = registerPassenger();
+    JsonNode tokens = login(name, PASSWORD);
+    String access = tokens.get("accessToken").asString();
+    String refresh = tokens.get("refreshToken").asString();
+
+    // Same shape: header.payload.signature.
+    assertThat(refresh.split("\\.")).hasSameSizeAs(access.split("\\."));
+    // Not accepted where an access token is expected ...
+    String staff =
+        body(
+            "username",
+            "x-" + unique(),
+            "email",
+            "x-" + unique() + "@example.com",
+            "password",
+            PASSWORD,
+            "fullName",
+            "Nope",
+            "role",
+            "AGENT");
+    assertThat(postJson(REGISTER, staff, refresh).statusCode()).isEqualTo(401);
+    // ... and an access token is not accepted as a refresh token.
+    assertThat(refresh(access).statusCode()).isEqualTo(401);
+    assertThat(refresh(refresh).statusCode()).isEqualTo(200);
   }
 
   @Test

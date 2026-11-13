@@ -28,4 +28,7 @@ public final class UserRules {
 
   /** Upper bound on what a request may carry, so oversized input never reaches the hash. */
   public static final int MAX_CREDENTIAL_LENGTH = 256;
+
+  /** The longest refresh token a request may carry: a signed JWT is a few hundred characters. */
+  public static final int MAX_TOKEN_LENGTH = 2048;
 }

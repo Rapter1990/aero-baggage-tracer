@@ -38,6 +38,7 @@ import com.aerotrace.identity.security.jwt.JwtTokenService;
 import com.aerotrace.identity.support.MutableClock;
 import com.aerotrace.identity.user.UserService;
 import com.aerotrace.identity.util.TokenHashUtils;
+import io.jsonwebtoken.JwtException;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
@@ -96,6 +97,8 @@ class AuthServiceTest extends AbstractBaseServiceTest {
             Set.of(Role.PASSENGER));
     when(jwtTokens.generateToken(anyString(), any(), any())).thenReturn("signed.jwt.token");
     when(jwtTokens.ttl()).thenReturn(Duration.ofMinutes(15));
+    when(jwtTokens.generateRefreshToken(anyString(), any()))
+        .thenAnswer(invocation -> TokenHashUtils.randomToken());
     when(userRepository.getReferenceById(id)).thenReturn(janeEntity);
     when(refreshTokens.revoke(any(), any(), any())).thenReturn(1);
     when(resetTokens.markUsed(any(), any())).thenReturn(1);
@@ -254,6 +257,18 @@ class AuthServiceTest extends AbstractBaseServiceTest {
     verify(refreshTokens).revoke(any(), eq(NOW), eq("ROTATED"));
     verify(refreshTokens).save(any(RefreshTokenEntity.class));
     verify(audit).record(AuthEventType.TOKEN_REFRESHED, AuthOutcome.SUCCESS, "jane", jane.id());
+  }
+
+  @Test
+  void shouldRefuseAForgedOrExpiredRefreshTokenWithoutAskingTheDatabase() {
+    when(jwtTokens.parseRefreshClaims(any())).thenThrow(new JwtException("bad signature"));
+
+    assertFails(
+        () -> service.refreshToken(new RefreshTokenRequest("not.a.jwt")),
+        ErrorCode.UNAUTHENTICATED);
+
+    verify(refreshTokens, never()).findByTokenHash(any());
+    verify(refreshTokens, never()).save(any());
   }
 
   @Test

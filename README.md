@@ -85,7 +85,7 @@ The identity-service listens on port 1112 (published by Compose, so its own endp
 | `POST /reset-password` `{resetToken,newPassword}` | Sets a new password with a reset token (once, 15 minutes) and ends every session of the user |
 | `POST /logout` `{refreshToken}` | Revokes the refresh token; always succeeds |
 
-Passwords are 12 to 72 bytes. Refresh and reset tokens are stored only as SHA-256 hashes.
+Passwords are 12 to 72 bytes. A refresh token is a signed JWT like the access token (RS256, same issuer) but with its own audience, so it is refused as an access token and the other way round; refresh and reset tokens are stored only as SHA-256 hashes.
 
 Tokens are signed with the development key pair that ships inside identity-service unless you provide your own. Its private key is in this repository, so anyone can mint tokens that the platform accepts: fine for a throwaway local stack, never for anything else (identity-service logs a warning at every start while it is in use). To use your own pair:
 

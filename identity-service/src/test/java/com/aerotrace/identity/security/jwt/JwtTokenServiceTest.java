@@ -283,4 +283,63 @@ class JwtTokenServiceTest {
         .doesNotContain("PRIVATE KEY")
         .doesNotContain(pem.substring(40, 80));
   }
+
+  // --- refresh tokens ----------------------------------------------------------------------
+
+  @Test
+  void aRefreshTokenIsAJwtForItsOwnAudienceWithoutRoles() throws Exception {
+    JwtTokenService service = service();
+
+    String token = service.generateRefreshToken("user-1", Duration.ofDays(7));
+    Claims claims = service.parseRefreshClaims(token);
+
+    assertThat(token.split("\\.")).hasSize(3);
+    assertThat(SignedJWT.parse(token).getHeader().getAlgorithm().getName()).isEqualTo("RS256");
+    assertThat(claims.getIssuer()).isEqualTo(TestKeys.ISSUER);
+    assertThat(claims.getSubject()).isEqualTo("user-1");
+    assertThat(claims.getAudience()).containsExactly("aerotrace-identity-refresh");
+    assertThat(claims.get("token_use")).isEqualTo("refresh");
+    assertThat(claims.get("roles")).isNull();
+    assertThat(claims.getExpiration().toInstant()).isEqualTo(NOW.plus(Duration.ofDays(7)));
+  }
+
+  @Test
+  void everyRefreshTokenIsDifferent() {
+    JwtTokenService service = service();
+
+    assertThat(service.generateRefreshToken("u", Duration.ofDays(7)))
+        .isNotEqualTo(service.generateRefreshToken("u", Duration.ofDays(7)));
+  }
+
+  @Test
+  void aRefreshTokenIsRefusedAsAnAccessTokenAndTheOtherWayRound() {
+    JwtTokenService service = service();
+    String refresh = service.generateRefreshToken("u", Duration.ofDays(7));
+    String access = service.generateToken("u", List.of("ADMIN"), null);
+
+    assertThatThrownBy(() -> service.parseClaims(refresh)).isInstanceOf(JwtException.class);
+    assertThatThrownBy(() -> service.parseRefreshClaims(access)).isInstanceOf(JwtException.class);
+  }
+
+  @Test
+  void aRefreshTokenThatIsExpiredOrSignedByAnotherKeyIsRefused() {
+    JwtTokenService service = service();
+    String expired = service.generateRefreshToken("u", Duration.ofMinutes(5));
+    clock.advance(Duration.ofMinutes(10));
+
+    assertThatThrownBy(() -> service.parseRefreshClaims(expired)).isInstanceOf(JwtException.class);
+
+    String forged =
+        io.jsonwebtoken.Jwts.builder()
+            .issuer(TestKeys.ISSUER)
+            .subject("u")
+            .audience()
+            .add("aerotrace-identity-refresh")
+            .and()
+            .claim("token_use", "refresh")
+            .expiration(java.util.Date.from(clock.instant().plus(Duration.ofDays(1))))
+            .signWith(TestKeys.generate().getPrivate(), io.jsonwebtoken.Jwts.SIG.RS256)
+            .compact();
+    assertThatThrownBy(() -> service.parseRefreshClaims(forged)).isInstanceOf(JwtException.class);
+  }
 }

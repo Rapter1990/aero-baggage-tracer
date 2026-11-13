@@ -32,6 +32,7 @@ import com.aerotrace.identity.repository.RefreshTokenRepository;
 import com.aerotrace.identity.security.jwt.JwtTokenService;
 import com.aerotrace.identity.user.UserService;
 import com.aerotrace.identity.util.TokenHashUtils;
+import io.jsonwebtoken.JwtException;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
@@ -51,10 +52,10 @@ import org.springframework.transaction.support.TransactionOperations;
  * <ul>
  *   <li>A failed sign-in always looks the same (unknown user, wrong password, disabled account),
  *       takes the same work, and is audited.
- *   <li>Refresh and reset tokens are random, stored only as hashes, and used once. Presenting a
- *       refresh token that was rotated away a while ago is treated as theft and revokes every
- *       session of that user; a retry within seconds, or a token revoked by logout, is only
- *       refused.
+ *   <li>A refresh token is a signed JWT (for its own audience), a reset token is random; both are
+ *       stored only as hashes and used once. Presenting a refresh token that was rotated away a
+ *       while ago is treated as theft and revokes every session of that user; a retry within
+ *       seconds, or a token revoked by logout, is only refused.
  *   <li>Asking for a password reset returns the same message whether or not the account exists (but
  *       only an existing account gets a token).
  *   <li>Nothing secret is logged, counted or put in a span: only the outcome is a metric label.
@@ -141,6 +142,12 @@ public class AuthService {
   @Transactional(noRollbackFor = ApiException.class)
   public TokenResponse refreshToken(RefreshTokenRequest request) {
     Instant now = clock.instant();
+    // A forged, foreign or expired token is refused before the database is asked about it.
+    try {
+      jwtTokens.parseRefreshClaims(request.refreshToken());
+    } catch (JwtException | IllegalArgumentException e) {
+      throw invalidRefreshToken();
+    }
     RefreshTokenEntity stored =
         refreshTokens
             .findByTokenHash(TokenHashUtils.sha256(request.refreshToken()))
@@ -253,7 +260,8 @@ public class AuthService {
     Instant now = clock.instant();
     List<String> roles = user.roles().stream().map(Role::name).sorted().toList();
     String accessToken = jwtTokens.generateToken(user.id().toString(), roles, user.passengerRef());
-    String refreshToken = TokenHashUtils.randomToken();
+    String refreshToken =
+        jwtTokens.generateRefreshToken(user.id().toString(), properties.refreshTokenTtl());
     Instant refreshExpiresAt = now.plus(properties.refreshTokenTtl());
     refreshTokens.save(
         new RefreshTokenEntity(
