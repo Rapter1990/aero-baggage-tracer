@@ -128,7 +128,7 @@ docker compose -f docker-compose-local.yml up -d otel-collector tempo loki pushg
 | OpenTelemetry Collector | OTLP/HTTP on `localhost:4318`, OTLP/gRPC on `localhost:4317` (local compose; internal in `docker-compose.yml`) | Receives traces, metrics and logs from the services, forwards the traces to Tempo and the logs to Loki, derives request-rate, error and latency metrics from them, and exposes the metrics to Prometheus |
 | Tempo | internal (`tempo:3200`, no host port) | Stores the traces; Grafana queries it (TraceQL). Traces live in the `tempo-data` volume and are dropped after 24 hours |
 | Loki | internal (`loki:3100`, no host port) | Stores the service logs, each line tagged with the trace id it was written in; Grafana queries it (LogQL). Logs live in the `loki-data` volume and are dropped after 24 hours |
-| Pushgateway | http://localhost:9091 (loopback only) | Holds the test-coverage numbers that `observability/push-jacoco.ps1` pushes after a build; Prometheus scrapes it |
+| Pushgateway | http://localhost:9091 | Holds the test-coverage numbers that `observability/push-jacoco.ps1` pushes after a build; Prometheus scrapes it |
 | Prometheus | http://localhost:9090 | Scrapes the collector and the Pushgateway |
 | Grafana | http://localhost:3000 (`admin` / `grafana`, see `GRAFANA_ADMIN_*`) | Prometheus, Tempo and Loki data sources and four dashboards in the AeroTrace folder: "AeroTrace - Services" (request rate, errors, latency, JVM; pick the service in the dropdown), "AeroTrace - Traces", "AeroTrace - Logs" and "AeroTrace - Coverage" (see below), provisioned from `observability/grafana`; open a trace from the table or via *Explore* > *Tempo* |
 
@@ -141,13 +141,21 @@ The api-gateway, the identity-service, the config-server and the discovery-serve
 **"AeroTrace - Coverage"** charts the JaCoCo test coverage of every module: line, branch, instruction and method coverage (green at or above the api-gateway build gate of 90 % lines / 60 % branches), a table per module with the number of uncovered lines and the age of the report, trends over time, and the classes with the most uncovered lines. Grafana cannot read JaCoCo reports itself, so run the script, which builds and then pushes (Pushgateway and Prometheus must be running, and Docker, because the tests use Testcontainers):
 
 ```bash
-powershell -ExecutionPolicy Bypass -File ./observability/push-jacoco.ps1
+powershell -ExecutionPolicy Bypass -File .\observability\push-jacoco.ps1
 ```
 
-It runs `mvn verify` first and pushes nothing if the build fails. Add `-SkipBuild` to push the reports of an earlier build, or `-MavenArgs '-pl','identity-service','-am'` to build only some modules. The script reads `<module>/target/site/jacoco/jacoco.csv` and sends it to `http://localhost:9091` (override with `-PushgatewayUrl` or `PUSHGATEWAY_URL`). Pushing again replaces a module's numbers; the trend charts build up from Prometheus' history, which is lost when the Prometheus container is removed. Modules without branches show "n/a" for branch coverage.
+Run it from the project root, in PowerShell or the IntelliJ terminal (the Compose stack, or at least the Pushgateway and Prometheus, must be up). It runs `mvn verify` first and pushes nothing if the build fails. Add `-SkipBuild` to push the reports of an earlier build, or `-MavenArgs '-pl','identity-service','-am'` to build only some modules. The script reads `<module>/target/site/jacoco/jacoco.csv` and sends it to `http://localhost:9091` (override with `-PushgatewayUrl` or `PUSHGATEWAY_URL`). Pushing again replaces a module's numbers; the trend charts build up from Prometheus' history, which is lost when the Prometheus container is removed. Modules without branches show "n/a" for branch coverage.
 
 If you add a dashboard file while Grafana is already running, restart Grafana (`docker restart grafana`) to load it.
 
 ## Running the tests
+
+To run the tests and chart their coverage in Grafana in one step, run this from the project root (PowerShell or the IntelliJ terminal; see the coverage dashboard under Observability):
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\observability\push-jacoco.ps1
+```
+
+It runs `mvn verify` itself and pushes the JaCoCo numbers to the Pushgateway only when the build succeeds.
 
 `mvn verify` runs unit tests (`*Test`) and integration tests (`*IT`). The gateway's integration tests use Testcontainers: `AbstractTestContainerConfiguration` starts a password-protected Redis in Docker and points `spring.data.redis.*` at it, so they need Docker running. They are skipped, not failed, when Docker is not available, and the JaCoCo coverage check includes them.
