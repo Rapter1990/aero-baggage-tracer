@@ -66,7 +66,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "JaCoCo test coverage per module. The numbers are loaded by `observability/push-jacoco.ps1`, which runs `mvn verify` and then pushes the reports:\n\n```\n./observability/push-jacoco.ps1\n```\n\nPick one or more **modules** at the top. Green means at or above the build gate (**90 %** of lines, **60 %** of branches in the api-gateway). *Report age* shows when a module was last pushed; the trend charts grow with every push."
+        "content": "JaCoCo test coverage per module. The numbers are loaded by `observability/push-jacoco.ps1`, which runs `mvn verify` and then pushes the reports:\n\n```\npowershell -ExecutionPolicy Bypass -File .\\observability\\push-jacoco.ps1\n```\n\nPick one or more **modules** at the top. Green means at or above the build gate (**90 %** of lines, **60 %** of branches in the api-gateway). *Report age* shows when a module was last pushed; the trend charts grow with every push.\n\nThe last table ranks the classes by **uncovered lines** (biggest first); *Uncovered share* is the part of the class that no test runs, so low is good."
       }
     },
     {
@@ -633,7 +633,13 @@
           "refId": "B",
           "instant": true,
           "format": "table",
-          "expr": "(100 * sum by (module, package, class) (jacoco_covered{counter=\"line\",module=~\"$module\"}) / ((sum by (module, package, class) (jacoco_covered{counter=\"line\",module=~\"$module\"}) + sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"})) > 0)) and on (module, package, class) topk(20, sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"}) > 0)"
+          "expr": "(sum by (module, package, class) (jacoco_covered{counter=\"line\",module=~\"$module\"}) + sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"})) and on (module, package, class) topk(20, sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"}) > 0)"
+        },
+        {
+          "refId": "C",
+          "instant": true,
+          "format": "table",
+          "expr": "(100 * sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"}) / ((sum by (module, package, class) (jacoco_covered{counter=\"line\",module=~\"$module\"}) + sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"})) > 0)) and on (module, package, class) topk(20, sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"}) > 0)"
         }
       ],
       "transformations": [
@@ -652,14 +658,16 @@
               "package": 1,
               "class": 2,
               "Value #A": 3,
-              "Value #B": 4
+              "Value #B": 4,
+              "Value #C": 5
             },
             "renameByName": {
               "module": "Module",
               "package": "Package",
               "class": "Class",
               "Value #A": "Uncovered lines",
-              "Value #B": "Line coverage"
+              "Value #B": "Lines",
+              "Value #C": "Uncovered share"
             }
           }
         },
@@ -696,13 +704,47 @@
               {
                 "id": "decimals",
                 "value": 0
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "Line coverage"
+              "options": "Lines"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Uncovered share"
             },
             "properties": [
               {
@@ -724,8 +766,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "gauge",
-                  "mode": "basic"
+                  "type": "color-text"
                 }
               },
               {
@@ -734,16 +775,16 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "red",
+                      "color": "green",
                       "value": null
                     },
                     {
                       "color": "orange",
-                      "value": 70
+                      "value": 10
                     },
                     {
-                      "color": "green",
-                      "value": 90
+                      "color": "red",
+                      "value": 30
                     }
                   ]
                 }
@@ -754,7 +795,8 @@
       },
       "options": {
         "showHeader": true
-      }
+      },
+      "description": "The 20 classes with the most lines that no test executes, biggest first. \"Uncovered lines\" is the count, \"Lines\" is the size of the class and \"Uncovered share\" is the part of the class that is not covered (low is good: a large, well covered class can still rank high because of a few missed lines)."
     }
   ]
 }
