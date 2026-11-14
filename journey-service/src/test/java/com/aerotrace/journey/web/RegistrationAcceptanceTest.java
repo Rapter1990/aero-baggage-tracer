@@ -17,15 +17,14 @@ import java.util.concurrent.Future;
 import org.junit.jupiter.api.Test;
 
 /**
- * AT-01 (a bag is registered with its itinerary and its journey can be read), AT-02 (a bag tag is
- * unique: 409 BAG_TAG_DUPLICATE, also under concurrent registration) and AT-03 (IATA codes, leg
- * chronology and the minimum connection time are enforced). The acceptance tests are defined in the
- * case study; where this repository only names them, these are the readings of the backlog.
+ * Registration: a bag is registered with its itinerary and its journey can be read; a bag tag is
+ * unique (409 BAG_TAG_DUPLICATE, also under concurrent registration); IATA codes, leg chronology
+ * and the minimum connection time are enforced.
  */
 class RegistrationAcceptanceTest extends AbstractApiTest {
 
   @Test
-  void at01_aBagIsRegisteredWithItsItineraryAndHasAnEmptyJourney() throws Exception {
+  void aBagIsRegisteredWithItsItineraryAndHasAnEmptyJourney() throws Exception {
     String passenger = newPassengerRef();
     String bagTag = newBagTag();
 
@@ -48,7 +47,7 @@ class RegistrationAcceptanceTest extends AbstractApiTest {
   }
 
   @Test
-  void at02_aSecondRegistrationOfTheSameTagIsAConflict() throws Exception {
+  void aSecondRegistrationOfTheSameTagIsAConflict() throws Exception {
     String bagTag = newBagTag();
     registerBag(registration(bagTag, newPassengerRef()), as(Role.AGENT))
         .andExpect(status().isCreated());
@@ -63,7 +62,7 @@ class RegistrationAcceptanceTest extends AbstractApiTest {
   }
 
   @Test
-  void at02_parallelRegistrationsOfOneTagCreateExactlyOneBag() throws Exception {
+  void parallelRegistrationsOfOneTagCreateExactlyOneBag() throws Exception {
     String bagTag = newBagTag();
     int callers = 8;
     List<Callable<Integer>> calls = new ArrayList<>();
@@ -97,7 +96,7 @@ class RegistrationAcceptanceTest extends AbstractApiTest {
   }
 
   @Test
-  void at03_formatsOfTagPassengerAirportAndFlightAreChecked() throws Exception {
+  void formatsOfTagPassengerAirportAndFlightAreChecked() throws Exception {
     Map<String, Object> badTag = registration("12345", newPassengerRef());
     Map<String, Object> badPassenger = registration(newBagTag(), "someone@example.com");
     Map<String, Object> badAirport = registration(newBagTag(), newPassengerRef());
@@ -115,7 +114,7 @@ class RegistrationAcceptanceTest extends AbstractApiTest {
   }
 
   @Test
-  void at03_theErrorNamesTheFieldButNeverEchoesWhatWasSent() throws Exception {
+  void theErrorNamesTheFieldButNeverEchoesWhatWasSent() throws Exception {
     String sentTag = "tag-with-secret-value";
 
     String body =
@@ -131,7 +130,7 @@ class RegistrationAcceptanceTest extends AbstractApiTest {
   }
 
   @Test
-  void at03_legChronologyAndMinimumConnectionTimeAreEnforced() throws Exception {
+  void legChronologyAndMinimumConnectionTimeAreEnforced() throws Exception {
     Instant base = Instant.now().plusSeconds(86_400);
 
     // Not chained: second leg starts at another airport.

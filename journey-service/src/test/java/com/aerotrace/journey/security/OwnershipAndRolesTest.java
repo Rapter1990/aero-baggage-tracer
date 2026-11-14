@@ -14,13 +14,13 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
- * AT-15: a passenger reads only their own bag (anything else is a 404, exactly like an unknown
- * tag), staff read every bag. Plus the role by endpoint matrix, and the 401 / 403 split.
+ * Row-level ownership: a passenger reads only their own bag (anything else is a 404, exactly like
+ * an unknown tag), staff read every bag. Plus the role by endpoint matrix, and the 401 / 403 split.
  */
 class OwnershipAndRolesTest extends AbstractApiTest {
 
   @Test
-  void at15_aPassengerSeesTheirOwnBagAndNobodyElses() throws Exception {
+  void aPassengerSeesTheirOwnBagAndNobodyElses() throws Exception {
     String alice = newPassengerRef();
     String bob = newPassengerRef();
     String aliceBag = registeredBag(alice);
@@ -50,14 +50,14 @@ class OwnershipAndRolesTest extends AbstractApiTest {
   }
 
   @Test
-  void at15_aPassengerTokenWithoutAReferenceSeesNoBag() throws Exception {
+  void aPassengerTokenWithoutAReferenceSeesNoBag() throws Exception {
     String bag = registeredBag(newPassengerRef());
 
     journey(bag, as(Role.PASSENGER, null)).andExpect(status().isNotFound());
   }
 
   @Test
-  void at15_staffSeeEveryBag() throws Exception {
+  void staffSeeEveryBag() throws Exception {
     String bag = registeredBag(newPassengerRef());
 
     for (Role staff : new Role[] {Role.AGENT, Role.DISPATCHER, Role.ADMIN}) {

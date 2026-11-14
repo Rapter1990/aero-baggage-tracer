@@ -24,17 +24,17 @@ import java.util.concurrent.Future;
 import org.junit.jupiter.api.Test;
 
 /**
- * AT-04 (a scan is accepted with 202 QUEUED, publishes baggage.scan.received.v1 through the outbox
- * and is idempotent on the Idempotency-Key) and AT-05 (times are normalized to UTC with the source
- * timezone kept, scans arriving beyond the grace are flagged LATE_EVENT, and an older scan never
- * replaces a newer state while staying in the immutable history).
+ * Scans: accepted with 202 QUEUED, published through the outbox as baggage.scan.received.v1 and
+ * idempotent on the Idempotency-Key; times are normalized to UTC with the source timezone kept,
+ * scans arriving beyond the grace are flagged LATE_EVENT, and an older scan never replaces a newer
+ * state while staying in the immutable history.
  */
 class ScanAcceptanceTest extends AbstractApiTest {
 
   private static final Role SCANNER = Role.AGENT;
 
   @Test
-  void at04_aScanIsQueuedAuditedAndStoredAsAnEventForPublishing() throws Exception {
+  void aScanIsQueuedAuditedAndStoredAsAnEventForPublishing() throws Exception {
     String bagTag = registeredBag(newPassengerRef());
     OffsetDateTime at = minutesAgo(1);
 
@@ -71,7 +71,7 @@ class ScanAcceptanceTest extends AbstractApiTest {
   }
 
   @Test
-  void at04_repeatingTheIdempotencyKeyReturnsTheOriginalAndCreatesNothingNew() throws Exception {
+  void repeatingTheIdempotencyKeyReturnsTheOriginalAndCreatesNothingNew() throws Exception {
     String bagTag = registeredBag(newPassengerRef());
     String key = newKey();
     Map<String, Object> body = barcodeScan(bagTag, "IST", "CHECK_IN", 1, minutesAgo(1));
@@ -91,7 +91,7 @@ class ScanAcceptanceTest extends AbstractApiTest {
   }
 
   @Test
-  void at04_parallelRetriesOfOneKeyProduceOneScanAndOneEvent() throws Exception {
+  void parallelRetriesOfOneKeyProduceOneScanAndOneEvent() throws Exception {
     String bagTag = registeredBag(newPassengerRef());
     String key = newKey();
     Map<String, Object> body = barcodeScan(bagTag, "IST", "CHECK_IN", 1, minutesAgo(1));
@@ -116,7 +116,7 @@ class ScanAcceptanceTest extends AbstractApiTest {
   }
 
   @Test
-  void at04_theIdempotencyKeyIsRequiredAndMustBeShortVisibleText() throws Exception {
+  void theIdempotencyKeyIsRequiredAndMustBeShortVisibleText() throws Exception {
     String bagTag = registeredBag(newPassengerRef());
     Map<String, Object> body = barcodeScan(bagTag, "IST", "CHECK_IN", 1, minutesAgo(1));
 
@@ -129,7 +129,7 @@ class ScanAcceptanceTest extends AbstractApiTest {
   }
 
   @Test
-  void at04_aScanOfAnUnknownBagOrAnUnsupportedVersionIsRefused() throws Exception {
+  void aScanOfAnUnknownBagOrAnUnsupportedVersionIsRefused() throws Exception {
     scan(barcodeScan(newBagTag(), "IST", "CHECK_IN", 1, minutesAgo(1)), newKey(), as(SCANNER))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("NOT_FOUND"));
@@ -143,7 +143,7 @@ class ScanAcceptanceTest extends AbstractApiTest {
   }
 
   @Test
-  void at04_rfidAndConveyorScansAreAcceptedThroughTheirOwnAdapters() throws Exception {
+  void rfidAndConveyorScansAreAcceptedThroughTheirOwnAdapters() throws Exception {
     String bagTag = registeredBag(newPassengerRef());
     Instant at = Instant.now().minusSeconds(60);
 
@@ -197,7 +197,7 @@ class ScanAcceptanceTest extends AbstractApiTest {
   }
 
   @Test
-  void at05_theTimeIsStoredInUtcAndTheSourceZoneAndDeviceTimeAreKept() throws Exception {
+  void theTimeIsStoredInUtcAndTheSourceZoneAndDeviceTimeAreKept() throws Exception {
     String bagTag = registeredBag(newPassengerRef());
     OffsetDateTime local = OffsetDateTime.now(ZoneOffset.ofHours(3)).minusMinutes(2);
 
@@ -216,7 +216,7 @@ class ScanAcceptanceTest extends AbstractApiTest {
   }
 
   @Test
-  void at05_aScanOlderThanTheGraceOnArrivalIsFlaggedLateButStillAccepted() throws Exception {
+  void aScanOlderThanTheGraceOnArrivalIsFlaggedLateButStillAccepted() throws Exception {
     String bagTag = registeredBag(newPassengerRef());
 
     scan(barcodeScan(bagTag, "IST", "CHECK_IN", 1, minutesAgo(11)), newKey(), as(SCANNER))
@@ -241,7 +241,7 @@ class ScanAcceptanceTest extends AbstractApiTest {
   }
 
   @Test
-  void at05_anOlderScanNeverReplacesANewerStateButStaysInTheHistory() throws Exception {
+  void anOlderScanNeverReplacesANewerStateButStaysInTheHistory() throws Exception {
     String bagTag = registeredBag(newPassengerRef());
 
     scan(barcodeScan(bagTag, "IST", "LOADED", 2, minutesAgo(1)), newKey(), as(SCANNER))
@@ -261,7 +261,7 @@ class ScanAcceptanceTest extends AbstractApiTest {
   }
 
   @Test
-  void at05_aScanStampedFarInTheFutureIsRefused() throws Exception {
+  void aScanStampedFarInTheFutureIsRefused() throws Exception {
     String bagTag = registeredBag(newPassengerRef());
 
     scan(
