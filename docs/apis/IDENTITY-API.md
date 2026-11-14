@@ -1,6 +1,6 @@
 # Identity Service API
 
-[← API overview](API.md) · [Journey Service API](JOURNEY-API.md) · [README](../README.md)
+[← API overview](API.md) · [Journey Service API](JOURNEY-API.md) · [README](../../README.md)
 
 Registers users, signs them in, issues tokens.
 
@@ -22,8 +22,8 @@ Registers users, signs them in, issues tokens.
 | Directly | `http://localhost:1112/api/v1/auth` |
 | Database | PostgreSQL, schema `identity` |
 | Success answer | `{"success":true,"data":...,"timestamp":...}` |
-| Errors | Shared shape, see [response format](../README.md#api-response-format) |
-| Limits and lockout | See [README rate limits](../README.md#rate-limits-and-lockout-of-the-authentication-endpoints) |
+| Errors | Shared shape, see [response format](../../README.md#api-response-format) |
+| Limits and lockout | See [README rate limits](../../README.md#rate-limits-and-lockout-of-the-authentication-endpoints) |
 
 ## Calls
 

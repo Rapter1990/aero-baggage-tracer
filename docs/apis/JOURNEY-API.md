@@ -1,6 +1,6 @@
 # Journey Service API
 
-[← API overview](API.md) · [Identity Service API](IDENTITY-API.md) · [README](../README.md)
+[← API overview](API.md) · [Identity Service API](IDENTITY-API.md) · [README](../../README.md)
 
 Registers bags, takes in device scans, shows each bag's journey.
 
@@ -28,7 +28,7 @@ Registers bags, takes in device scans, shows each bag's journey.
 | Messages | Topic `baggage.scan.received.v1`, key = bag tag |
 | Token | Bearer token from [Identity Service](IDENTITY-API.md) |
 | Success answer | `{"success":true,"data":...,"timestamp":...}` |
-| Errors | Shared shape, see [response format](../README.md#api-response-format) |
+| Errors | Shared shape, see [response format](../../README.md#api-response-format) |
 
 ## Calls
 

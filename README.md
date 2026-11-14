@@ -164,9 +164,9 @@ SELECT id, 'ADMIN' FROM identity.app_user WHERE username = 'your-username';
 
 | Document | What it has |
 |---|---|
-| [docs/API.md](docs/API.md) | Overview and the Postman collection |
-| [docs/IDENTITY-API.md](docs/IDENTITY-API.md) | Identity calls, tokens, flows, requests |
-| [docs/JOURNEY-API.md](docs/JOURNEY-API.md) | Journey calls, scans, events, flows, requests |
+| [docs/apis/API.md](docs/apis/API.md) | Overview and the Postman collection |
+| [docs/apis/IDENTITY-API.md](docs/apis/IDENTITY-API.md) | Identity calls, tokens, flows, requests |
+| [docs/apis/JOURNEY-API.md](docs/apis/JOURNEY-API.md) | Journey calls, scans, events, flows, requests |
 
 | Service | Address |
 |---|---|
@@ -174,7 +174,7 @@ SELECT id, 'ADMIN' FROM identity.app_user WHERE username = 'your-username';
 | identity-service (direct) | `http://localhost:1112` |
 | journey-service (direct) | `http://localhost:1113` |
 
-Compose publishes the direct ports. Each service has `/actuator/health` and `/v3/api-docs`. The Postman collection `AeroTrace` is in `postman/`, see [Postman collection](docs/API.md#postman-collection).
+Compose publishes the direct ports. Each service has `/actuator/health` and `/v3/api-docs`. The Postman collection `AeroTrace` is in `postman/`, see [Postman collection](docs/apis/API.md#postman-collection).
 
 ## API response format
 

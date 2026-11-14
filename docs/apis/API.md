@@ -8,7 +8,7 @@ What the platform offers, how requests flow, how to try them in Postman.
 |---|---|
 | [Identity Service API](IDENTITY-API.md) | Calls, tokens, flows, requests |
 | [Journey Service API](JOURNEY-API.md) | Calls, rules, scans, events, requests |
-| [README](../README.md) | Setup, variables, limits, observability |
+| [README](../../README.md) | Setup, variables, limits, observability |
 
 ## At a glance
 
@@ -18,7 +18,7 @@ What the platform offers, how requests flow, how to try them in Postman.
 | identity-service | `http://localhost:1112` | `/api/v1/auth/**` |
 | journey-service | `http://localhost:1113` | `/api/v1/bags/**`, `/api/v1/scans/**` |
 
-Success answers look like `{"success":true,"data":...,"timestamp":...}`. Errors use the shared shape, see [response format](../README.md#api-response-format).
+Success answers look like `{"success":true,"data":...,"timestamp":...}`. Errors use the shared shape, see [response format](../../README.md#api-response-format).
 
 ```mermaid
 flowchart LR
@@ -80,7 +80,7 @@ Two files in `postman/`:
 | Tokens | Test scripts store them in the environment |
 | Identity 1.2 | Needs `adminUsername` and `adminPassword` |
 | Default admin | The dev dummy admin |
-| First admin | By hand, see [README](../README.md#first-administrator-without-the-dev-context) |
+| First admin | By hand, see [README](../../README.md#first-administrator-without-the-dev-context) |
 | Journey scans | `Idempotency-Key` generated per scan |
 | Journey | Needs Compose with the `dev` context |
 | Journey variables | `journeyAgentUsername`, `journeyPassengerUsername`, `journeyOtherPassengerUsername` |
