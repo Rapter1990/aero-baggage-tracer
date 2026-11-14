@@ -127,14 +127,32 @@ Guessing passwords, flooding registrations and burning CPU on password hashes ar
 
 ### How many requests are allowed?
 
-Think of a **bucket of tokens**. Every request takes one token. The bucket holds a fixed number of tokens, and new tokens drip in at a steady speed. When the bucket is empty, the request is refused with a `429` and a `Retry-After` header (the seconds to wait).
+Each limit works like a bucket of tokens. **Every request uses one token.** The bucket starts full and gets tokens back at a steady speed. If it is empty, the request is refused with a `429` and a `Retry-After` header (the seconds to wait).
 
-| Limit | What is counted | Allowed right away (full bucket) | Then (refill) | Per minute once steady | Most in the first minute |
-|---|---|---|---|---|---|
-| General API limit (gateway) | each signed-in caller (by token), or each address when there is no token | **20** requests | 10 more every second | 600 | 620 |
-| Authentication endpoints (gateway) | each endpoint separately (`login`, `register`, `refresh-token`, `forgot-password`, `reset-password`, `logout`), per client address | **10** requests | 1 more every 5 seconds | 12 | 22 |
+So every limit is described by two numbers:
 
-The most requests that fit into a time span is: **bucket size + refill per second × seconds**. For `login` that is 10 + 0.2 × 60 = 22 in the first minute and 12 in every minute after.
+- **Bucket size:** how many requests you may send **at once**, with no pause (a burst).
+- **Refill speed:** how many requests you may send **per second** after that, on average.
+
+| Limit | What is counted | Bucket size (a burst) | Refill speed |
+|---|---|---|---|
+| General API limit (gateway) | each signed-in caller (by token), or each address when there is no token | 20 requests at once | 10 requests per second (600 per minute) |
+| Authentication endpoints (gateway) | each endpoint separately (`login`, `register`, `refresh-token`, `forgot-password`, `reset-password`, `logout`), per client address | 10 requests at once | 1 request every 5 seconds (12 per minute) |
+
+**The most requests you can have sent after a given time** (sending as fast as allowed) is the bucket size plus the refill speed times the seconds: 20 + 10 × seconds for the general limit, and 10 + 0.2 × seconds for one authentication endpoint.
+
+| After | General API limit | One authentication endpoint (for example `login`) |
+|---|---|---|
+| 0 seconds (right away) | 20 | 10 |
+| 1 second | 30 | 10 |
+| 5 seconds | 70 | 11 |
+| 10 seconds | 120 | 12 |
+| 30 seconds | 320 | 16 |
+| 1 minute | 620 | 22 |
+| 10 minutes | 6,020 | 130 |
+| 1 hour | 36,020 | 730 |
+
+In the long run that is 600 requests a minute for the general limit and 12 a minute for each authentication endpoint; the first minute allows a little more because the bucket starts full.
 
 Example, `login` from one address with the defaults:
 
