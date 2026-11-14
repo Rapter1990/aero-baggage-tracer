@@ -22,7 +22,7 @@
               "name": "1.1 Passenger (public, no token)",
               "item": [
                 {
-                  "name": "Register passenger",
+                  "name": "1.1.1 Register passenger",
                   "event": [
                     {
                       "listen": "prerequest",
@@ -86,7 +86,7 @@
                   }
                 },
                 {
-                  "name": "Register passenger with the PASSENGER role spelled out",
+                  "name": "1.1.2 Register passenger with the PASSENGER role spelled out",
                   "event": [
                     {
                       "listen": "test",
@@ -131,7 +131,7 @@
               "name": "1.2 Staff (needs an ADMIN token)",
               "item": [
                 {
-                  "name": "Register agent",
+                  "name": "1.2.1 Register agent",
                   "event": [
                     {
                       "listen": "prerequest",
@@ -195,7 +195,7 @@
                   }
                 },
                 {
-                  "name": "Register dispatcher",
+                  "name": "1.2.2 Register dispatcher",
                   "event": [
                     {
                       "listen": "prerequest",
@@ -259,7 +259,7 @@
                   }
                 },
                 {
-                  "name": "Register administrator",
+                  "name": "1.2.3 Register administrator",
                   "event": [
                     {
                       "listen": "prerequest",
@@ -349,7 +349,7 @@
               "name": "1.3 Refusals",
               "item": [
                 {
-                  "name": "Register with a weak password",
+                  "name": "1.3.1 Register with a weak password",
                   "event": [
                     {
                       "listen": "test",
@@ -392,7 +392,7 @@
                   }
                 },
                 {
-                  "name": "Register with empty fields",
+                  "name": "1.3.2 Register with empty fields",
                   "event": [
                     {
                       "listen": "test",
@@ -432,7 +432,7 @@
                   }
                 },
                 {
-                  "name": "Register with an invalid email",
+                  "name": "1.3.3 Register with an invalid email",
                   "event": [
                     {
                       "listen": "test",
@@ -472,7 +472,7 @@
                   }
                 },
                 {
-                  "name": "Register with an unknown role",
+                  "name": "1.3.4 Register with an unknown role",
                   "event": [
                     {
                       "listen": "test",
@@ -511,7 +511,7 @@
                   }
                 },
                 {
-                  "name": "Register a duplicate username",
+                  "name": "1.3.5 Register a duplicate username",
                   "event": [
                     {
                       "listen": "test",
@@ -550,7 +550,7 @@
                   }
                 },
                 {
-                  "name": "Register a duplicate email",
+                  "name": "1.3.6 Register a duplicate email",
                   "event": [
                     {
                       "listen": "test",
@@ -589,7 +589,7 @@
                   }
                 },
                 {
-                  "name": "Register a staff role without a token",
+                  "name": "1.3.7 Register a staff role without a token",
                   "event": [
                     {
                       "listen": "test",
@@ -628,7 +628,7 @@
                   }
                 },
                 {
-                  "name": "Register a staff role with a passenger token",
+                  "name": "1.3.8 Register a staff role with a passenger token",
                   "event": [
                     {
                       "listen": "prerequest",
@@ -707,7 +707,7 @@
               "name": "2.1 Passenger",
               "item": [
                 {
-                  "name": "Login",
+                  "name": "2.1.1 Login",
                   "event": [
                     {
                       "listen": "test",
@@ -757,7 +757,7 @@
                   }
                 },
                 {
-                  "name": "Login with the email address",
+                  "name": "2.1.2 Login with the email address",
                   "event": [
                     {
                       "listen": "test",
@@ -804,7 +804,7 @@
               "name": "2.2 Staff",
               "item": [
                 {
-                  "name": "Login as the agent",
+                  "name": "2.2.1 Login as the agent",
                   "event": [
                     {
                       "listen": "test",
@@ -849,7 +849,7 @@
                   }
                 },
                 {
-                  "name": "Login as the dispatcher",
+                  "name": "2.2.2 Login as the dispatcher",
                   "event": [
                     {
                       "listen": "test",
@@ -894,7 +894,7 @@
                   }
                 },
                 {
-                  "name": "Login as the new administrator",
+                  "name": "2.2.3 Login as the new administrator",
                   "event": [
                     {
                       "listen": "test",
@@ -939,7 +939,7 @@
                   }
                 },
                 {
-                  "name": "Login as the configured administrator",
+                  "name": "2.2.4 Login as the configured administrator",
                   "event": [
                     {
                       "listen": "test",
@@ -986,7 +986,7 @@
               "name": "2.3 Refusals",
               "item": [
                 {
-                  "name": "Login with a wrong password",
+                  "name": "2.3.1 Login with a wrong password",
                   "event": [
                     {
                       "listen": "test",
@@ -1028,7 +1028,7 @@
                   }
                 },
                 {
-                  "name": "Login as an unknown user",
+                  "name": "2.3.2 Login as an unknown user",
                   "event": [
                     {
                       "listen": "test",
@@ -1067,7 +1067,7 @@
                   }
                 },
                 {
-                  "name": "Login with empty fields",
+                  "name": "2.3.3 Login with empty fields",
                   "event": [
                     {
                       "listen": "test",
@@ -1117,7 +1117,7 @@
           "name": "3. Refresh token",
           "item": [
             {
-              "name": "Refresh token (rotation)",
+              "name": "3.1 Refresh token (rotation)",
               "event": [
                 {
                   "listen": "prerequest",
@@ -1172,7 +1172,7 @@
               }
             },
             {
-              "name": "Refresh token again with the used-up token (refused)",
+              "name": "3.2 Refresh token again with the used-up token (refused)",
               "event": [
                 {
                   "listen": "test",
@@ -1214,7 +1214,7 @@
               }
             },
             {
-              "name": "Refresh with an unknown token",
+              "name": "3.3 Refresh with an unknown token",
               "event": [
                 {
                   "listen": "test",
@@ -1253,7 +1253,7 @@
               }
             },
             {
-              "name": "Refresh with an empty body",
+              "name": "3.4 Refresh with an empty body",
               "event": [
                 {
                   "listen": "test",
@@ -1292,7 +1292,7 @@
               }
             },
             {
-              "name": "Refresh with an access token (refused)",
+              "name": "3.5 Refresh with an access token (refused)",
               "event": [
                 {
                   "listen": "test",
@@ -1331,7 +1331,7 @@
               }
             },
             {
-              "name": "Use the refresh token as an access token (refused)",
+              "name": "3.6 Use the refresh token as an access token (refused)",
               "event": [
                 {
                   "listen": "test",
@@ -1383,7 +1383,7 @@
           "name": "4. Forgot password",
           "item": [
             {
-              "name": "Forgot password (existing account)",
+              "name": "4.1 Forgot password (existing account)",
               "event": [
                 {
                   "listen": "test",
@@ -1427,7 +1427,7 @@
               }
             },
             {
-              "name": "Forgot password for an unknown account",
+              "name": "4.2 Forgot password for an unknown account",
               "event": [
                 {
                   "listen": "test",
@@ -1468,7 +1468,7 @@
               }
             },
             {
-              "name": "Forgot password with an empty body",
+              "name": "4.3 Forgot password with an empty body",
               "event": [
                 {
                   "listen": "test",
@@ -1510,7 +1510,7 @@
           "name": "5. Reset password",
           "item": [
             {
-              "name": "Reset password with a weak new password",
+              "name": "5.1 Reset password with a weak new password",
               "event": [
                 {
                   "listen": "test",
@@ -1549,7 +1549,7 @@
               }
             },
             {
-              "name": "Reset password",
+              "name": "5.2 Reset password",
               "event": [
                 {
                   "listen": "test",
@@ -1594,7 +1594,7 @@
               }
             },
             {
-              "name": "Reset password again with the used token",
+              "name": "5.3 Reset password again with the used token",
               "event": [
                 {
                   "listen": "test",
@@ -1630,7 +1630,7 @@
               }
             },
             {
-              "name": "Reset password with an unknown token",
+              "name": "5.4 Reset password with an unknown token",
               "event": [
                 {
                   "listen": "test",
@@ -1669,7 +1669,7 @@
               }
             },
             {
-              "name": "Refresh after the reset (refused)",
+              "name": "5.5 Refresh after the reset (refused)",
               "event": [
                 {
                   "listen": "test",
@@ -1705,7 +1705,7 @@
               }
             },
             {
-              "name": "Login with the old password (refused)",
+              "name": "5.6 Login with the old password (refused)",
               "event": [
                 {
                   "listen": "test",
@@ -1741,7 +1741,7 @@
               }
             },
             {
-              "name": "Login with the new password",
+              "name": "5.7 Login with the new password",
               "event": [
                 {
                   "listen": "test",
@@ -1788,7 +1788,7 @@
           "name": "6. Logout",
           "item": [
             {
-              "name": "Logout",
+              "name": "6.1 Logout",
               "event": [
                 {
                   "listen": "test",
@@ -1828,7 +1828,7 @@
               }
             },
             {
-              "name": "Logout again (still 200)",
+              "name": "6.2 Logout again (still 200)",
               "event": [
                 {
                   "listen": "test",
@@ -1864,7 +1864,7 @@
               }
             },
             {
-              "name": "Refresh after logout (refused)",
+              "name": "6.3 Refresh after logout (refused)",
               "event": [
                 {
                   "listen": "test",
@@ -1900,7 +1900,7 @@
               }
             },
             {
-              "name": "Logout with an unknown token (still 200)",
+              "name": "6.4 Logout with an unknown token (still 200)",
               "event": [
                 {
                   "listen": "test",
@@ -1942,7 +1942,7 @@
           "name": "7. Gateway rules",
           "item": [
             {
-              "name": "A path that is not exposed (GET /me)",
+              "name": "7.1 A path that is not exposed (GET /me)",
               "event": [
                 {
                   "listen": "test",
@@ -1975,7 +1975,7 @@
           "name": "8. Identity service direct (port 1112)",
           "item": [
             {
-              "name": "Health",
+              "name": "8.1 Health",
               "event": [
                 {
                   "listen": "test",
@@ -2006,7 +2006,7 @@
               }
             },
             {
-              "name": "Login directly",
+              "name": "8.2 Login directly",
               "event": [
                 {
                   "listen": "test",
@@ -2058,7 +2058,7 @@
           "description": "Signs in the dev dummy accounts the compose stack creates (LIQUIBASE_CONTEXTS=dev): an agent, and two passengers to show that a passenger sees only their own bag. The tokens are stored in the environment (journeyAgentToken, journeyPassengerToken, journeyOtherPassengerToken, and journeyPassengerRef read from the passenger token).",
           "item": [
             {
-              "name": "Agent",
+              "name": "1.1 Agent",
               "event": [
                 {
                   "listen": "test",
@@ -2106,7 +2106,7 @@
               }
             },
             {
-              "name": "Passenger (owner of the bag)",
+              "name": "1.2 Passenger (owner of the bag)",
               "event": [
                 {
                   "listen": "test",
@@ -2157,7 +2157,7 @@
               }
             },
             {
-              "name": "Other passenger",
+              "name": "1.3 Other passenger",
               "event": [
                 {
                   "listen": "test",
@@ -2211,7 +2211,7 @@
           "description": "POST /api/v1/bags needs an AGENT or ADMIN token. The tag is 10 digits and unique; airports are IATA codes; legs must be chained, in order and at least the minimum connection time (45 minutes) apart.",
           "item": [
             {
-              "name": "Register a bag",
+              "name": "2.1 Register a bag",
               "event": [
                 {
                   "listen": "prerequest",
@@ -2282,7 +2282,7 @@
               }
             },
             {
-              "name": "Register the same tag again (refused)",
+              "name": "2.2 Register the same tag again (refused)",
               "event": [
                 {
                   "listen": "test",
@@ -2331,7 +2331,7 @@
               }
             },
             {
-              "name": "Invalid tag (refused)",
+              "name": "2.3 Invalid tag (refused)",
               "event": [
                 {
                   "listen": "test",
@@ -2381,7 +2381,7 @@
               }
             },
             {
-              "name": "Connection shorter than the minimum (refused)",
+              "name": "2.4 Connection shorter than the minimum (refused)",
               "event": [
                 {
                   "listen": "test",
@@ -2430,7 +2430,7 @@
               }
             },
             {
-              "name": "As a passenger (refused)",
+              "name": "2.5 As a passenger (refused)",
               "event": [
                 {
                   "listen": "test",
@@ -2479,7 +2479,7 @@
               }
             },
             {
-              "name": "Without a token (refused)",
+              "name": "2.6 Without a token (refused)",
               "event": [
                 {
                   "listen": "test",
@@ -2527,7 +2527,7 @@
           "description": "POST /api/v1/scans needs an AGENT, DISPATCHER or ADMIN token and an Idempotency-Key. The payload has the format of the protocol (BARCODE, RFID, CONVEYOR). Run these in order: they use the bag registered in folder 2.",
           "item": [
             {
-              "name": "Barcode scan (CHECK_IN)",
+              "name": "3.1 Barcode scan (CHECK_IN)",
               "event": [
                 {
                   "listen": "prerequest",
@@ -2596,7 +2596,7 @@
               }
             },
             {
-              "name": "Same Idempotency-Key again (original answer)",
+              "name": "3.2 Same Idempotency-Key again (original answer)",
               "event": [
                 {
                   "listen": "test",
@@ -2651,7 +2651,7 @@
               }
             },
             {
-              "name": "Same Idempotency-Key for another scan (refused)",
+              "name": "3.3 Same Idempotency-Key for another scan (refused)",
               "event": [
                 {
                   "listen": "test",
@@ -2704,7 +2704,7 @@
               }
             },
             {
-              "name": "RFID scan (SORTING)",
+              "name": "3.4 RFID scan (SORTING)",
               "event": [
                 {
                   "listen": "prerequest",
@@ -2771,7 +2771,7 @@
               }
             },
             {
-              "name": "Conveyor scan (LOADED)",
+              "name": "3.5 Conveyor scan (LOADED)",
               "event": [
                 {
                   "listen": "prerequest",
@@ -2838,7 +2838,7 @@
               }
             },
             {
-              "name": "A late scan (flagged LATE_EVENT, state unchanged)",
+              "name": "3.6 A late scan (flagged LATE_EVENT, state unchanged)",
               "event": [
                 {
                   "listen": "prerequest",
@@ -2906,7 +2906,7 @@
               }
             },
             {
-              "name": "Without an Idempotency-Key (refused)",
+              "name": "3.7 Without an Idempotency-Key (refused)",
               "event": [
                 {
                   "listen": "prerequest",
@@ -2968,7 +2968,7 @@
               }
             },
             {
-              "name": "A bag that is not registered (refused)",
+              "name": "3.8 A bag that is not registered (refused)",
               "event": [
                 {
                   "listen": "prerequest",
@@ -3034,7 +3034,7 @@
               }
             },
             {
-              "name": "As a passenger (refused)",
+              "name": "3.9 As a passenger (refused)",
               "event": [
                 {
                   "listen": "prerequest",
@@ -3100,7 +3100,7 @@
               }
             },
             {
-              "name": "Without a token (refused)",
+              "name": "3.10 Without a token (refused)",
               "event": [
                 {
                   "listen": "prerequest",
@@ -3165,7 +3165,7 @@
           "description": "GET /api/v1/bags/{bagTag}/journey: the latest accepted state and the scan history in event order. Staff see every bag; a passenger sees only their own, and any other bag answers 404 like an unknown one.",
           "item": [
             {
-              "name": "As the agent",
+              "name": "4.1 As the agent",
               "event": [
                 {
                   "listen": "test",
@@ -3214,7 +3214,7 @@
               }
             },
             {
-              "name": "As the passenger who owns the bag",
+              "name": "4.2 As the passenger who owns the bag",
               "event": [
                 {
                   "listen": "test",
@@ -3256,7 +3256,7 @@
               }
             },
             {
-              "name": "As another passenger (404, like an unknown bag)",
+              "name": "4.3 As another passenger (404, like an unknown bag)",
               "event": [
                 {
                   "listen": "test",
@@ -3298,7 +3298,7 @@
               }
             },
             {
-              "name": "Without a token (refused)",
+              "name": "4.4 Without a token (refused)",
               "event": [
                 {
                   "listen": "test",
@@ -3333,7 +3333,7 @@
               }
             },
             {
-              "name": "A malformed bag tag (refused)",
+              "name": "4.5 A malformed bag tag (refused)",
               "event": [
                 {
                   "listen": "test",
@@ -3381,7 +3381,7 @@
           "description": "The journey-service on its own port (journeyUrl), without the gateway.",
           "item": [
             {
-              "name": "Health",
+              "name": "5.1 Health",
               "event": [
                 {
                   "listen": "test",
@@ -3413,7 +3413,7 @@
               }
             },
             {
-              "name": "OpenAPI definition",
+              "name": "5.2 OpenAPI definition",
               "event": [
                 {
                   "listen": "test",
