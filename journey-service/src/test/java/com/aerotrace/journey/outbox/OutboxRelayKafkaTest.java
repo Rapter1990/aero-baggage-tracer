@@ -206,7 +206,7 @@ class OutboxRelayKafkaTest extends AbstractApiTest {
     assertThat(relay.publishPending()).isGreaterThanOrEqualTo(1);
   }
 
-  @Autowired private com.aerotrace.journey.repository.OutboxRepository outbox;
+  @Autowired private com.aerotrace.journey.repository.OutboxEventRepository outbox;
   @Autowired private com.aerotrace.journey.config.JourneyProperties properties;
   @Autowired private java.time.Clock clock;
   @Autowired private io.micrometer.core.instrument.MeterRegistry meters;

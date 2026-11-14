@@ -12,7 +12,7 @@ import com.aerotrace.common.security.Role;
 import com.aerotrace.journey.base.AbstractApiTest;
 import com.aerotrace.journey.config.JourneyProperties;
 import com.aerotrace.journey.outbox.OutboxRelay;
-import com.aerotrace.journey.repository.OutboxRepository;
+import com.aerotrace.journey.repository.OutboxEventRepository;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Connection;
 import java.sql.Statement;
@@ -37,7 +37,7 @@ import org.springframework.transaction.PlatformTransactionManager;
  */
 class ReviewHardeningTest extends AbstractApiTest {
 
-  @Autowired private OutboxRepository outbox;
+  @Autowired private OutboxEventRepository outbox;
   @Autowired private JourneyProperties properties;
   @Autowired private Clock clock;
   @Autowired private MeterRegistry meters;
@@ -109,14 +109,13 @@ class ReviewHardeningTest extends AbstractApiTest {
   @Test
   void aJourneyListsAtMostTheNewestScansAndSaysWhenOlderOnesAreLeftOut() throws Exception {
     String bag = registeredBag(newPassengerRef());
-    jdbc.sql(
-            "INSERT INTO journey.scan_audit (id, event_id, bag_tag, protocol, airport, checkpoint,"
-                + " device_sequence, occurred_at, device_timestamp, source_timezone, ingested_at)"
-                + " SELECT gen_random_uuid(), :bag || '-' || g, :bag, 'BARCODE', 'IST', 'SORTING',"
-                + " g, now() - make_interval(mins => 1000 - g), now(), '+00:00', now()"
-                + " FROM generate_series(1, 501) g")
-        .param("bag", bag)
-        .update();
+    execute(
+        "INSERT INTO journey.scan_audit (id, event_id, bag_tag, protocol, airport, checkpoint,"
+            + " device_sequence, occurred_at, device_timestamp, source_timezone, ingested_at)"
+            + " SELECT gen_random_uuid(), :bag || '-' || g, :bag, 'BARCODE', 'IST', 'SORTING',"
+            + " g, now() - make_interval(mins => 1000 - g), now(), '+00:00', now()"
+            + " FROM generate_series(1, 501) g",
+        Map.of("bag", bag));
 
     var data = body(journey(bag, as(Role.AGENT))).path("data");
 

@@ -2,7 +2,8 @@ package com.aerotrace.journey.outbox;
 
 import com.aerotrace.journey.config.JourneyProperties;
 import com.aerotrace.journey.constant.MetricNames;
-import com.aerotrace.journey.repository.OutboxRepository;
+import com.aerotrace.journey.model.entity.OutboxEventEntity;
+import com.aerotrace.journey.repository.OutboxEventRepository;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
@@ -29,7 +30,7 @@ public class OutboxRelay {
   private static final Logger LOG = LoggerFactory.getLogger(OutboxRelay.class);
   private static final long SEND_TIMEOUT_SECONDS = 5;
 
-  private final OutboxRepository outbox;
+  private final OutboxEventRepository outbox;
   private final KafkaTemplate<String, String> kafka;
   private final JourneyProperties properties;
   private final Clock clock;
@@ -37,7 +38,7 @@ public class OutboxRelay {
   private final TransactionTemplate transaction;
 
   public OutboxRelay(
-      OutboxRepository outbox,
+      OutboxEventRepository outbox,
       KafkaTemplate<String, String> kafka,
       JourneyProperties properties,
       Clock clock,
@@ -68,36 +69,36 @@ public class OutboxRelay {
   }
 
   private int sendBatch() {
-    if (!outbox.tryLockRelay()) {
+    if (!outbox.tryLockRelay(OutboxEventRepository.RELAY_LOCK)) {
       // Another replica is relaying; it keeps the order, this run has nothing to do.
       return 0;
     }
-    List<OutboxRepository.Row> batch = outbox.claimPending(properties.outbox().batchSize());
+    List<OutboxEventEntity> batch = outbox.claimPending(properties.outbox().batchSize());
     int sent = 0;
-    for (OutboxRepository.Row row : batch) {
+    for (OutboxEventEntity row : batch) {
       try {
         kafka
-            .send(row.topic(), row.key(), row.payload())
+            .send(row.getTopic(), row.getMessageKey(), row.getPayload())
             .get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
-        outbox.recordFailure(row.id());
+        row.recordFailure();
         break;
       } catch (Exception e) {
         if (refusedForGood(e)) {
           // Set aside, so one bad event cannot block every event behind it.
-          outbox.park(row.id(), Instant.now(clock));
+          row.park(Instant.now(clock));
           meters.counter(MetricNames.OUTBOX_PARKED).increment();
           LOG.error("An outbox event was refused by the broker and set aside: {}", rootName(e));
           continue;
         }
         // Stop at the first failure: later events of the same bag must not overtake this one.
-        outbox.recordFailure(row.id());
+        row.recordFailure();
         meters.counter(MetricNames.OUTBOX_FAILED).increment();
         LOG.warn("Could not publish an outbox event: {}", rootName(e));
         break;
       }
-      outbox.markPublished(row.id(), Instant.now(clock));
+      row.markPublished(Instant.now(clock));
       meters.counter(MetricNames.OUTBOX_PUBLISHED).increment();
       sent++;
     }

@@ -14,9 +14,10 @@ import com.aerotrace.journey.constant.MetricNames;
 import com.aerotrace.journey.model.dto.request.ScanRequest;
 import com.aerotrace.journey.model.dto.response.ScanAcceptedResponse;
 import com.aerotrace.journey.model.entity.BaggageEntity;
+import com.aerotrace.journey.model.entity.OutboxEventEntity;
 import com.aerotrace.journey.model.entity.ScanAuditEntity;
 import com.aerotrace.journey.repository.BaggageRepository;
-import com.aerotrace.journey.repository.OutboxRepository;
+import com.aerotrace.journey.repository.OutboxEventRepository;
 import com.aerotrace.journey.repository.ProcessedEventRepository;
 import com.aerotrace.journey.repository.ScanAuditRepository;
 import com.aerotrace.journey.scan.NormalizedScan;
@@ -25,7 +26,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.UUID;
 import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,7 +43,7 @@ public class ScanIngestionService {
   private final BaggageRepository baggage;
   private final ScanAuditRepository audit;
   private final ProcessedEventRepository processed;
-  private final OutboxRepository outbox;
+  private final OutboxEventRepository outbox;
   private final JourneyProperties properties;
   private final Clock clock;
   private final MeterRegistry meters;
@@ -53,7 +53,7 @@ public class ScanIngestionService {
       BaggageRepository baggage,
       ScanAuditRepository audit,
       ProcessedEventRepository processed,
-      OutboxRepository outbox,
+      OutboxEventRepository outbox,
       JourneyProperties properties,
       Clock clock,
       MeterRegistry meters) {
@@ -143,12 +143,9 @@ public class ScanIngestionService {
             scan.getOccurredAt(),
             payload,
             clock);
-    outbox.add(
-        UUID.fromString(envelope.eventId()),
-        Topics.SCAN_RECEIVED,
-        scan.getBagTag(),
-        EventJson.write(envelope),
-        now);
+    outbox.save(
+        new OutboxEventEntity(
+            Topics.SCAN_RECEIVED, scan.getBagTag(), EventJson.write(envelope), now));
   }
 
   /**

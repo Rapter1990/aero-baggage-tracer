@@ -10,6 +10,7 @@ import com.aerotrace.common.event.ScanReceivedPayload;
 import com.aerotrace.common.event.Topics;
 import com.aerotrace.common.security.Role;
 import com.aerotrace.journey.base.AbstractApiTest;
+import com.aerotrace.journey.repository.OutboxEventRepository;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -22,6 +23,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Scans: accepted with 202 QUEUED, published through the outbox as baggage.scan.received.v1 and
@@ -30,6 +32,8 @@ import org.junit.jupiter.api.Test;
  * state while staying in the immutable history.
  */
 class ScanAcceptanceTest extends AbstractApiTest {
+
+  @Autowired private OutboxEventRepository outbox;
 
   private static final Role SCANNER = Role.AGENT;
 
@@ -47,11 +51,7 @@ class ScanAcceptanceTest extends AbstractApiTest {
 
     assertThat(count("SELECT count(*) FROM journey.scan_audit WHERE bag_tag = ?", bagTag))
         .isEqualTo(1);
-    String payload =
-        jdbc.sql("SELECT payload FROM journey.outbox_event WHERE message_key = ?")
-            .param(bagTag)
-            .query(String.class)
-            .single();
+    String payload = outbox.findByMessageKeyOrderByCreatedAt(bagTag).getFirst().getPayload();
     EventEnvelope<ScanReceivedPayload> event = EventJson.read(payload, ScanReceivedPayload.class);
     assertThat(event.eventType()).isEqualTo("baggage.scan.received");
     assertThat(event.schemaVersion()).isEqualTo(1);
@@ -230,13 +230,7 @@ class ScanAcceptanceTest extends AbstractApiTest {
             count(
                 "SELECT count(*) FROM journey.scan_audit WHERE bag_tag = ? AND late_event", bagTag))
         .isEqualTo(1);
-    String payload =
-        jdbc.sql(
-                "SELECT payload FROM journey.outbox_event WHERE message_key = ?"
-                    + " ORDER BY created_at LIMIT 1")
-            .param(bagTag)
-            .query(String.class)
-            .single();
+    String payload = outbox.findByMessageKeyOrderByCreatedAt(bagTag).getFirst().getPayload();
     assertThat(EventJson.read(payload, ScanReceivedPayload.class).payload().lateEvent()).isTrue();
   }
 
@@ -283,17 +277,15 @@ class ScanAcceptanceTest extends AbstractApiTest {
     org.junit.jupiter.api.Assertions.assertThrows(
         RuntimeException.class,
         () ->
-            jdbc.sql("UPDATE journey.scan_audit SET checkpoint = 'CLAIM' WHERE bag_tag = :tag")
-                .param("tag", bagTag)
-                .update());
+            execute(
+                "UPDATE journey.scan_audit SET checkpoint = 'CLAIM' WHERE bag_tag = :tag",
+                Map.of("tag", bagTag)));
     org.junit.jupiter.api.Assertions.assertThrows(
         RuntimeException.class,
         () ->
-            jdbc.sql("DELETE FROM journey.scan_audit WHERE bag_tag = :tag")
-                .param("tag", bagTag)
-                .update());
+            execute("DELETE FROM journey.scan_audit WHERE bag_tag = :tag", Map.of("tag", bagTag)));
     org.junit.jupiter.api.Assertions.assertThrows(
-        RuntimeException.class, () -> jdbc.sql("TRUNCATE journey.scan_audit").update());
+        RuntimeException.class, () -> execute("TRUNCATE journey.scan_audit", Map.of()));
     assertThat(count("SELECT count(*) FROM journey.scan_audit WHERE bag_tag = ?", bagTag))
         .isEqualTo(1);
   }

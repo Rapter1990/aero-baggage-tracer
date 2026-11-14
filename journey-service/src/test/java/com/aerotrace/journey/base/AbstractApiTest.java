@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 import com.aerotrace.common.security.JwtClaims;
 import com.aerotrace.common.security.Role;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -16,12 +17,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -40,7 +42,8 @@ public abstract class AbstractApiTest extends AbstractTestContainerConfiguration
 
   @Autowired protected MockMvc mockMvc;
   @Autowired protected ObjectMapper json;
-  @Autowired protected JdbcClient jdbc;
+  @Autowired protected EntityManager entityManager;
+  @Autowired protected PlatformTransactionManager transactionManager;
 
   /** A caller with this role (and, for a passenger, this reference). */
   protected static RequestPostProcessor as(Role role, String passengerRef) {
@@ -159,7 +162,39 @@ public abstract class AbstractApiTest extends AbstractTestContainerConfiguration
     return json.readTree(result.andReturn().getResponse().getContentAsString());
   }
 
+  /** Counts rows with a native query; use ? for parameters. JPA (the entity manager) runs it. */
   protected int count(String sql, Object... params) {
-    return jdbc.sql(sql).params(params).query(Integer.class).single();
+    TransactionTemplate tx = new TransactionTemplate(transactionManager);
+    return tx.execute(
+        status -> {
+          var query = entityManager.createNativeQuery(positional(sql));
+          for (int i = 0; i < params.length; i++) {
+            query.setParameter(i + 1, params[i]);
+          }
+          return ((Number) query.getSingleResult()).intValue();
+        });
+  }
+
+  /** Runs a native INSERT, UPDATE, DELETE or DDL statement with named parameters. */
+  protected int execute(String sql, Map<String, Object> named) {
+    TransactionTemplate tx = new TransactionTemplate(transactionManager);
+    return tx.execute(
+        status -> {
+          var query = entityManager.createNativeQuery(sql);
+          named.forEach(query::setParameter);
+          return query.executeUpdate();
+        });
+  }
+
+  private static String positional(String sql) {
+    StringBuilder out = new StringBuilder();
+    int n = 0;
+    for (char c : sql.toCharArray()) {
+      out.append(c);
+      if (c == '?') {
+        out.append(++n);
+      }
+    }
+    return out.toString();
   }
 }
