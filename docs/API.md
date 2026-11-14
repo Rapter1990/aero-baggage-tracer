@@ -1,55 +1,98 @@
 # API requests and flows
 
-Every call the platform answers so far, how they fit together and how to try them. All calls go through the api-gateway (`http://localhost:8080`), which routes `/api/v1/auth/**` to the identity-service and `/api/v1/bags/**` and `/api/v1/scans/**` to the journey-service. Success answers are wrapped as `{"success":true,"data":...,"timestamp":...}`; failures use the shared error shape (see [API response format](../README.md#api-response-format)). Limits and lockout of the authentication endpoints are in [the README](../README.md#rate-limits-and-lockout-of-the-authentication-endpoints).
+What the platform offers today, how a request flows through it, and how to try it in Postman.
 
-Contents: [Identity Service API](#identity-service-api) · [Journey Service API](#journey-service-api) · [Flows](#flows) · [Postman collection](#postman-collection) · [Every request in the collection](#every-request-in-the-collection)
+**At a glance**
+
+- Clients call the **api-gateway** at `http://localhost:8080`.
+- `/api/v1/auth/**` goes to the **identity-service** (port 1112).
+- `/api/v1/bags/**` and `/api/v1/scans/**` go to the **journey-service** (port 1113).
+- Success answers look like `{"success":true,"data":...,"timestamp":...}`. Errors use the shared shape. See [API response format](../README.md#api-response-format).
+- Limits and lockout of the login endpoints are in the [README](../README.md#rate-limits-and-lockout-of-the-authentication-endpoints).
+
+**Contents:** [Identity Service API](#identity-service-api) · [Journey Service API](#journey-service-api) · [Flows](#flows) · [Postman collection](#postman-collection) · [Every request in the collection](#every-request-in-the-collection)
 
 ## Identity Service API
 
-### Calls
+Base path: `/api/v1/auth`.
 
-The identity-service listens on port 1112 (published by Compose, so its own endpoints, such as `/actuator/health` and `/v3/api-docs`, can be called directly). The authentication API (all under `http://localhost:8080/api/v1/auth` through the gateway, or `http://localhost:1112/api/v1/auth` directly, answers wrapped as `{"success":true,"data":...,"timestamp":...}`):
+- Through the gateway: `http://localhost:8080/api/v1/auth`
+- Directly: `http://localhost:1112/api/v1/auth`
 
-| Call | What it does |
-|---|---|
-| `POST /register` `{username,email,password,fullName[,role]}` | Creates an account (201). Only `PASSENGER` without a token; `AGENT`, `DISPATCHER` or `ADMIN` need an ADMIN access token |
-| `POST /login` `{usernameOrEmail,password}` | Returns `accessToken`, `refreshToken`, `tokenType`, the expiry times and the roles |
-| `POST /refresh-token` `{refreshToken}` | Exchanges a refresh token for a new pair. A refresh token works once; presenting a used one ends every session of that user |
-| `POST /forgot-password` `{usernameOrEmail}` | Starts a password reset. The answer is the same whether or not the account exists |
-| `POST /reset-password` `{resetToken,newPassword}` | Sets a new password with a reset token (once, 15 minutes) and ends every session of the user |
-| `POST /logout` `{refreshToken}` | Revokes the refresh token; always succeeds |
+| Call | Body | What it does |
+|---|---|---|
+| `POST /register` | `username`, `email`, `password`, `fullName`, `role` (optional) | Creates an account (201). Without a token, only `PASSENGER`. `AGENT`, `DISPATCHER` and `ADMIN` need an ADMIN access token |
+| `POST /login` | `usernameOrEmail`, `password` | Returns `accessToken`, `refreshToken`, `tokenType`, the expiry times and the roles |
+| `POST /refresh-token` | `refreshToken` | Returns a new token pair. A refresh token works once. Using a used one ends every session of that user |
+| `POST /forgot-password` | `usernameOrEmail` | Starts a password reset. The answer is the same for unknown accounts |
+| `POST /reset-password` | `resetToken`, `newPassword` | Sets a new password. The reset token works once, for 15 minutes. Every session of the user ends |
+| `POST /logout` | `refreshToken` | Revokes the refresh token. Always answers 200 |
 
 ### Tokens and keys
 
-Passwords are 12 to 72 bytes. A refresh token is a signed JWT like the access token (RS256, same issuer) but with its own audience, so it is refused as an access token and the other way round; refresh and reset tokens are stored only as SHA-256 hashes.
+- Passwords are 12 to 72 bytes.
+- An access token is valid for 15 minutes, a refresh token for 7 days.
+- A refresh token is a signed JWT (RS256, same issuer) with its own audience. It is refused as an access token, and the other way round.
+- Refresh and reset tokens are stored only as SHA-256 hashes.
+- Tokens are signed with a **development key pair** that ships with identity-service. Its private key is in this repository, so anyone can create valid tokens. Use it only for a local stack. identity-service logs a warning at every start while it is in use.
 
-Tokens are signed with the development key pair that ships inside identity-service unless you provide your own. Its private key is in this repository, so anyone can mint tokens that the platform accepts: fine for a throwaway local stack, never for anything else (identity-service logs a warning at every start while it is in use). To use your own pair:
+To use your own key pair:
 
-```bash
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out private.pem
-openssl rsa -in private.pem -pubout -out public.pem
-```
+1. Create it:
 
-then mount the files into the containers and set `IDENTITY_JWT_PRIVATE_KEY_LOCATION` and `IDENTITY_JWT_PUBLIC_KEY_LOCATION` (identity-service) and `JWT_PUBLIC_KEY_LOCATION` (api-gateway, public key only) to their paths (for example `file:/run/secrets/private.pem`). The gateway verifies the tokens with that public key; there is no key-set (JWKS) endpoint and no issuer setting.
+   ```bash
+   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out private.pem
+   openssl rsa -in private.pem -pubout -out public.pem
+   ```
+
+2. Mount the files into the containers.
+3. Set the paths, for example `file:/run/secrets/private.pem`:
+   - identity-service: `IDENTITY_JWT_PRIVATE_KEY_LOCATION` and `IDENTITY_JWT_PUBLIC_KEY_LOCATION`
+   - api-gateway: `JWT_PUBLIC_KEY_LOCATION` (public key only)
+   - journey-service: `IDENTITY_JWT_PUBLIC_KEY_LOCATION` (public key only)
+
+There is no key-set (JWKS) endpoint and no issuer setting.
 
 ## Journey Service API
 
+Port 1113, schema `journey` in PostgreSQL. It registers bags with an itinerary, takes in scans and shows the journey of a bag.
 
-The journey-service (port 1113, schema `journey` in PostgreSQL) registers bags with an itinerary snapshot, ingests scans and answers the journey of a bag. Through the gateway the calls are under `/api/v1/bags` and `/api/v1/scans`; all need a bearer token and answer `{"success":true,"data":...,"timestamp":...}`.
+- Through the gateway the calls are under `/api/v1/bags` and `/api/v1/scans`.
+- All calls need a bearer token.
+- Answers are wrapped as `{"success":true,"data":...,"timestamp":...}`.
 
 | Call | Roles | What it does |
 |---|---|---|
-| `POST /api/v1/bags` `{bagTag,passengerRef,legs[]}` | AGENT, ADMIN | Registers a bag (201). `bagTag` is 10 digits and unique (`409 BAG_TAG_DUPLICATE`); airports are 3-letter IATA codes; legs must be chained, in order and respect the minimum connection time (`JOURNEY_MIN_CONNECTION_TIME`, default `45m`) |
-| `GET /api/v1/bags/{bagTag}/journey` | all roles | The latest accepted state and the immutable scan history. A passenger sees only a bag registered to their own `passengerRef`; any other bag answers `404`, like an unknown one |
-| `POST /api/v1/scans` `{protocol,version?,payload}` with an `Idempotency-Key` header | AGENT, DISPATCHER, ADMIN | Accepts a scan (202 `QUEUED`) and queues `baggage.scan.received.v1`. `protocol` is `BARCODE`, `RFID` or `CONVEYOR`, each with its own payload format (see the handlers in `journey-service/.../scan`). The same key again returns the original scan and creates nothing new |
+| `POST /api/v1/bags` with `bagTag`, `passengerRef`, `legs[]` | AGENT, ADMIN | Registers a bag (201). `bagTag` is 10 digits and unique (`409 BAG_TAG_DUPLICATE`). Airports are 3-letter IATA codes. Legs must be chained, in order, and respect the minimum connection time (`JOURNEY_MIN_CONNECTION_TIME`, default `45m`) |
+| `GET /api/v1/bags/{bagTag}/journey` | all roles | Returns the latest accepted state and the immutable scan history. A passenger sees only a bag registered to their own `passengerRef`. Any other bag answers `404`, like an unknown one |
+| `POST /api/v1/scans` with `protocol`, `version` (optional), `payload`, and an `Idempotency-Key` header | AGENT, DISPATCHER, ADMIN | Accepts a scan (202 `QUEUED`) and queues the event `baggage.scan.received.v1` |
 
-Times are stored in UTC with the zone the device reported. A scan older than `JOURNEY_LATE_EVENT_GRACE` (default `10m`) on arrival is flagged `lateEvent` (BR-06); it is kept and published, but never replaces a newer state. Events leave through a transactional outbox: a relay (every `JOURNEY_OUTBOX_RELAY_DELAY`, default `200ms`) publishes them to Kafka at least once, keyed by bag tag. One relay runs at a time across all replicas (a PostgreSQL advisory lock), so the events of a bag leave in order; an event the broker refuses for good (for example too large) is parked and counted in `journey.outbox.parked`, a temporary broker problem stops the run and is retried.
+### Scans
 
-Known limitations: scans must come from a staff account (no separate device identity yet); the relay is a single stream (throughput is one relay, sending in order); the journey lists at most the newest 500 scans (`historyTruncated` says so); a reused idempotency key for a different scan is a `409`; tokens are checked against one static identity public key (no key set or rotation yet), and the bundled development key is used when none is configured.
+- `protocol` is `BARCODE`, `RFID` or `CONVEYOR`. Each has its own payload format. See the handlers in `journey-service/.../scan`.
+- Send the same `Idempotency-Key` again and you get the original answer. Nothing new is created.
+- The same key for a different scan is a `409`.
+- Times are stored in UTC, with the zone the device reported.
+- A scan older than `JOURNEY_LATE_EVENT_GRACE` (default `10m`) on arrival is flagged `lateEvent`. It is kept and published, but it never replaces a newer state.
+
+### How events are published
+
+- Each scan stores an event in an outbox, in the same transaction as the scan.
+- A relay sends the events to Kafka at least once. The key is the bag tag. It runs every `JOURNEY_OUTBOX_RELAY_DELAY` (default `200ms`).
+- One relay runs at a time across all replicas (a PostgreSQL advisory lock). The events of one bag stay in order.
+- A temporary Kafka problem stops the run. The relay tries again.
+- An event the broker refuses for good (for example too large) is parked and counted in `journey.outbox.parked`.
+
+### Known limitations
+
+- Scans must come from a staff account. There is no device identity yet.
+- One relay sends at a time. Throughput is one stream.
+- A journey lists at most the newest 500 scans. `historyTruncated` says so.
+- Tokens are checked with one static identity public key. There is no key set and no rotation. If no key is configured, the bundled development key is used.
 
 ## Flows
 
-The diagrams are Mermaid; GitHub and IntelliJ render them.
+The diagrams are Mermaid. GitHub and IntelliJ render them.
 
 ### 1. Passenger: register, sign in, call the API, refresh, sign out
 
@@ -83,7 +126,7 @@ sequenceDiagram
     ID-->>C: 200 (always)
 ```
 
-Presenting a refresh token that was already used (more than 10 seconds ago) is treated as theft: every session of that user ends.
+A refresh token that was already used (more than 10 seconds ago) and is presented again counts as theft. Every session of that user ends.
 
 ### 2. Staff accounts and password reset
 
@@ -215,14 +258,48 @@ flowchart TD
 
 ## Postman collection
 
+Two files in `postman/`:
 
-`postman/AeroTrace.postman_collection.json` and `postman/AeroTrace-local.postman_environment.json` call the platform through the gateway (`baseUrl` defaults to `http://localhost:8080`). The collection `AeroTrace` has one folder per service: **Identity Service** (1 Register, 2 Login, 3 Refresh token, 4 Forgot password, 5 Reset password, 6 Logout, 7 Gateway rules, 8 the identity-service directly at `identityUrl`, default `http://localhost:1112`) and **Journey Service** (1 Sign in, 2 Register a bag, 3 Scans, 4 Journey, 5 the journey-service directly at `journeyUrl`, default `http://localhost:1113`). Import both files into Postman, select the "AeroTrace - local" environment and run a service folder top to bottom with a delay of 150 ms or more between requests (the gateway allows about 10 requests per second per address).
+- `AeroTrace.postman_collection.json`
+- `AeroTrace-local.postman_environment.json`
 
-In the Identity Service folder, 1 Register walks a passenger through registration and the later folders log in, refresh, reset the password and log out; the test scripts store the tokens in the environment. The refusals (wrong password, validation, duplicate, unknown tokens) are in the same folders. Registering staff (1.2) needs `adminUsername` and `adminPassword` in the environment (the dev dummy admin by default, or the first admin made by hand, see [the README](../README.md#running-the-stack-with-docker-compose)).
+**Set up**
 
-The Journey Service folder (see [Journey Service API](#journey-service-api)) signs in the dev dummy agent and two dummy passengers (`journeyAgentUsername`, `journeyPassengerUsername`, `journeyOtherPassengerUsername`, passwords in `journeyAgentPassword` and `journeyPassengerPassword`), registers a bag, sends barcode, RFID and conveyor scans (an `Idempotency-Key` is generated per scan), reads the journey as staff, as the owner and as another passenger, and checks the refusals. It needs the compose stack with the `dev` Liquibase context, like Identity Service 1.2.
+1. Start the stack with Docker Compose. The `dev` Liquibase context creates the dummy accounts.
+2. Import both files into Postman.
+3. Select the environment "AeroTrace - local". `baseUrl` is `http://localhost:8080`.
+4. Run a service folder from top to bottom. Use a delay of 150 ms or more between requests. The gateway allows about 10 requests per second per address.
 
-With newman: `newman run postman/AeroTrace.postman_collection.json -e postman/AeroTrace-local.postman_environment.json --delay-request 150 --folder "Identity Service"` (or `--folder "Journey Service"`).
+**Folders**
+
+| Folder | Steps |
+|---|---|
+| Identity Service | 1 Register, 2 Login, 3 Refresh token, 4 Forgot password, 5 Reset password, 6 Logout, 7 Gateway rules, 8 Direct calls to port 1112 (`identityUrl`) |
+| Journey Service | 1 Sign in, 2 Register a bag, 3 Scans, 4 Journey, 5 Direct calls to port 1113 (`journeyUrl`) |
+
+**Identity Service**
+
+- 1 Register creates a passenger. The later folders log in, refresh, reset the password and log out.
+- The test scripts store the tokens in the environment.
+- The refusals (wrong password, validation, duplicate, unknown tokens) are in the same folders.
+- 1.2 (register staff) needs `adminUsername` and `adminPassword` in the environment. By default this is the dev dummy admin. You can also make the first admin by hand, see the [README](../README.md#first-administrator-without-the-dev-context).
+
+**Journey Service** (see [Journey Service API](#journey-service-api))
+
+- Signs in the dev dummy agent and two dummy passengers. Variables: `journeyAgentUsername`, `journeyPassengerUsername`, `journeyOtherPassengerUsername`, `journeyAgentPassword`, `journeyPassengerPassword`.
+- Registers a bag.
+- Sends barcode, RFID and conveyor scans. An `Idempotency-Key` is generated for each scan.
+- Reads the journey as staff, as the owner and as another passenger.
+- Checks the refusals.
+- Needs the Compose stack with the `dev` Liquibase context, like Identity Service 1.2.
+
+**With newman**
+
+```bash
+newman run postman/AeroTrace.postman_collection.json -e postman/AeroTrace-local.postman_environment.json --delay-request 150 --folder "Identity Service"
+```
+
+Use `--folder "Journey Service"` for the journey folder.
 
 Run order of the collection:
 
@@ -238,7 +315,11 @@ flowchart LR
 
 ## Every request in the collection
 
-Generated from `postman/AeroTrace.postman_collection.json`; the step number is the name of the request in Postman. Paths are through the gateway unless marked direct. "Expect" is the status the request's test script asserts.
+Generated from `postman/AeroTrace.postman_collection.json`.
+
+- **Step** is the number in front of the request name in Postman.
+- Paths go through the gateway, unless marked direct.
+- **Expect** is the status the test script checks.
 
 ### Identity Service
 
