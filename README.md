@@ -79,37 +79,11 @@ INSERT INTO identity.user_role (user_id, role)
 SELECT id, 'ADMIN' FROM identity.app_user WHERE username = 'your-username';
 ```
 
-The identity-service listens on port 1112 (published by Compose, so its own endpoints, such as `/actuator/health` and `/v3/api-docs`, can be called directly). The authentication API (all under `http://localhost:8080/api/v1/auth` through the gateway, or `http://localhost:1112/api/v1/auth` directly, answers wrapped as `{"success":true,"data":...,"timestamp":...}`):
+## API requests and flows
 
-| Call | What it does |
-|---|---|
-| `POST /register` `{username,email,password,fullName[,role]}` | Creates an account (201). Only `PASSENGER` without a token; `AGENT`, `DISPATCHER` or `ADMIN` need an ADMIN access token |
-| `POST /login` `{usernameOrEmail,password}` | Returns `accessToken`, `refreshToken`, `tokenType`, the expiry times and the roles |
-| `POST /refresh-token` `{refreshToken}` | Exchanges a refresh token for a new pair. A refresh token works once; presenting a used one ends every session of that user |
-| `POST /forgot-password` `{usernameOrEmail}` | Starts a password reset. The answer is the same whether or not the account exists |
-| `POST /reset-password` `{resetToken,newPassword}` | Sets a new password with a reset token (once, 15 minutes) and ends every session of the user |
-| `POST /logout` `{refreshToken}` | Revokes the refresh token; always succeeds |
+All requests (the identity and journey APIs), the token and key notes, the flow diagrams and a table of every request in the Postman collection are in [docs/API.md](docs/API.md). In short: clients call the api-gateway on `http://localhost:8080`; the identity-service listens on port 1112 and the journey-service on port 1113 (both published by Compose, so their own `/actuator/health` and `/v3/api-docs` can be called directly).
 
-Passwords are 12 to 72 bytes. A refresh token is a signed JWT like the access token (RS256, same issuer) but with its own audience, so it is refused as an access token and the other way round; refresh and reset tokens are stored only as SHA-256 hashes.
-
-Tokens are signed with the development key pair that ships inside identity-service unless you provide your own. Its private key is in this repository, so anyone can mint tokens that the platform accepts: fine for a throwaway local stack, never for anything else (identity-service logs a warning at every start while it is in use). To use your own pair:
-
-```bash
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out private.pem
-openssl rsa -in private.pem -pubout -out public.pem
-```
-
-then mount the files into the containers and set `IDENTITY_JWT_PRIVATE_KEY_LOCATION` and `IDENTITY_JWT_PUBLIC_KEY_LOCATION` (identity-service) and `JWT_PUBLIC_KEY_LOCATION` (api-gateway, public key only) to their paths (for example `file:/run/secrets/private.pem`). The gateway verifies the tokens with that public key; there is no key-set (JWKS) endpoint and no issuer setting.
-
-## Postman collection
-
-`postman/AeroTrace.postman_collection.json` and `postman/AeroTrace-local.postman_environment.json` call the platform through the gateway (`baseUrl` defaults to `http://localhost:8080`). The collection `AeroTrace` has one folder per service: **Identity Service** (1 Register, 2 Login, 3 Refresh token, 4 Forgot password, 5 Reset password, 6 Logout, 7 Gateway rules, 8 the identity-service directly at `identityUrl`, default `http://localhost:1112`) and **Journey Service** (1 Sign in, 2 Register a bag, 3 Scans, 4 Journey, 5 the journey-service directly at `journeyUrl`, default `http://localhost:1113`). Import both files into Postman, select the "AeroTrace - local" environment and run a service folder top to bottom with a delay of 150 ms or more between requests (the gateway allows about 10 requests per second per address).
-
-In the Identity Service folder, 1 Register walks a passenger through registration and the later folders log in, refresh, reset the password and log out; the test scripts store the tokens in the environment. The refusals (wrong password, validation, duplicate, unknown tokens) are in the same folders. Registering staff (1.2) needs `adminUsername` and `adminPassword` in the environment (the dev dummy admin by default, or the first admin made by hand, see above).
-
-The Journey Service folder (see "Journey service") signs in the dev dummy agent and two dummy passengers (`journeyAgentUsername`, `journeyPassengerUsername`, `journeyOtherPassengerUsername`, passwords in `journeyAgentPassword` and `journeyPassengerPassword`), registers a bag, sends barcode, RFID and conveyor scans (an `Idempotency-Key` is generated per scan), reads the journey as staff, as the owner and as another passenger, and checks the refusals. It needs the compose stack with the `dev` Liquibase context, like Identity Service 1.2.
-
-With newman: `newman run postman/AeroTrace.postman_collection.json -e postman/AeroTrace-local.postman_environment.json --delay-request 150 --folder "Identity Service"` (or `--folder "Journey Service"`).
+The Postman collection `AeroTrace` (`postman/`) has a folder per service; see [Postman collection](docs/API.md#postman-collection).
 
 ## API response format
 
@@ -157,20 +131,6 @@ Change the limits with the `IDENTITY_*` and `AUTH_RATE_LIMIT_*` variables in the
 - The audit trail's immutability is enforced by database triggers, but the service connects as the schema owner and could drop them; use a restricted runtime role where that matters.
 - The signing key pair is one static pair read at start-up, and the gateway holds a copy of the public key (packaged at build time, or from `JWT_PUBLIC_KEY_LOCATION`). There is no key-set endpoint, no `kid`, and no rotation: replacing the pair means restarting identity-service and the gateway, and tokens signed with the old pair stop verifying.
 - The development key pair that ships with the service has its private key in the repository (see above).
-
-## Journey service
-
-The journey-service (port 1113, schema `journey` in PostgreSQL) registers bags with an itinerary snapshot, ingests scans and answers the journey of a bag. Through the gateway the calls are under `/api/v1/bags` and `/api/v1/scans`; all need a bearer token and answer `{"success":true,"data":...,"timestamp":...}`.
-
-| Call | Roles | What it does |
-|---|---|---|
-| `POST /api/v1/bags` `{bagTag,passengerRef,legs[]}` | AGENT, ADMIN | Registers a bag (201). `bagTag` is 10 digits and unique (`409 BAG_TAG_DUPLICATE`); airports are 3-letter IATA codes; legs must be chained, in order and respect the minimum connection time (`JOURNEY_MIN_CONNECTION_TIME`, default `45m`) |
-| `GET /api/v1/bags/{bagTag}/journey` | all roles | The latest accepted state and the immutable scan history. A passenger sees only a bag registered to their own `passengerRef`; any other bag answers `404`, like an unknown one |
-| `POST /api/v1/scans` `{protocol,version?,payload}` with an `Idempotency-Key` header | AGENT, DISPATCHER, ADMIN | Accepts a scan (202 `QUEUED`) and queues `baggage.scan.received.v1`. `protocol` is `BARCODE`, `RFID` or `CONVEYOR`, each with its own payload format (see the handlers in `journey-service/.../scan`). The same key again returns the original scan and creates nothing new |
-
-Times are stored in UTC with the zone the device reported. A scan older than `JOURNEY_LATE_EVENT_GRACE` (default `10m`) on arrival is flagged `lateEvent` (BR-06); it is kept and published, but never replaces a newer state. Events leave through a transactional outbox: a relay (every `JOURNEY_OUTBOX_RELAY_DELAY`, default `200ms`) publishes them to Kafka at least once, keyed by bag tag. One relay runs at a time across all replicas (a PostgreSQL advisory lock), so the events of a bag leave in order; an event the broker refuses for good (for example too large) is parked and counted in `journey.outbox.parked`, a temporary broker problem stops the run and is retried.
-
-Known limitations: scans must come from a staff account (no separate device identity yet); the relay is a single stream (throughput is one relay, sending in order); the journey lists at most the newest 500 scans (`historyTruncated` says so); a reused idempotency key for a different scan is a `409`; tokens are checked against one static identity public key (no key set or rotation yet), and the bundled development key is used when none is configured.
 
 ## Observability (OpenTelemetry Collector, Tempo, Loki, Prometheus, Grafana)
 
