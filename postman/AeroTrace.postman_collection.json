@@ -2232,9 +2232,9 @@
                     "exec": [
                       "pm.test('201', () => pm.response.to.have.status(201));",
                       "pm.test('the bag and its two legs', () => {",
-                      "  const data = pm.response.json().data;",
-                      "  pm.expect(data.bagTag).to.eql(pm.environment.get('journeyBagTag'));",
-                      "  pm.expect(data.legs).to.have.lengthOf(2);",
+                      "  const result = pm.response.json().data;",
+                      "  pm.expect(result.bagTag).to.eql(pm.environment.get('journeyBagTag'));",
+                      "  pm.expect(result.legs).to.have.lengthOf(2);",
                       "});"
                     ]
                   }
@@ -2542,10 +2542,10 @@
                     "type": "text/javascript",
                     "exec": [
                       "pm.test('202', () => pm.response.to.have.status(202));",
-                      "const data = pm.response.json().data;",
-                      "pm.test('queued', () => pm.expect(data.status).to.eql('QUEUED'));",
-                      "pm.test('not a duplicate, not late', () => { pm.expect(data.duplicate).to.eql(false); pm.expect(data.lateEvent).to.eql(false); });",
-                      "pm.environment.set('journeyScanId', data.scanId);"
+                      "const result = pm.response.json().data;",
+                      "pm.test('queued', () => pm.expect(result.status).to.eql('QUEUED'));",
+                      "pm.test('not a duplicate, not late', () => { pm.expect(result.duplicate).to.eql(false); pm.expect(result.lateEvent).to.eql(false); });",
+                      "pm.environment.set('journeyScanId', result.scanId);"
                     ]
                   }
                 }
@@ -2598,9 +2598,9 @@
                     "type": "text/javascript",
                     "exec": [
                       "pm.test('202', () => pm.response.to.have.status(202));",
-                      "const data = pm.response.json().data;",
-                      "pm.test('queued', () => pm.expect(data.status).to.eql('QUEUED'));",
-                      "pm.test('the same scan, marked duplicate', () => { pm.expect(data.scanId).to.eql(pm.environment.get('journeyScanId')); pm.expect(data.duplicate).to.eql(true); });"
+                      "const result = pm.response.json().data;",
+                      "pm.test('queued', () => pm.expect(result.status).to.eql('QUEUED'));",
+                      "pm.test('the same scan, marked duplicate', () => { pm.expect(result.scanId).to.eql(pm.environment.get('journeyScanId')); pm.expect(result.duplicate).to.eql(true); });"
                     ]
                   }
                 }
@@ -2719,8 +2719,8 @@
                     "type": "text/javascript",
                     "exec": [
                       "pm.test('202', () => pm.response.to.have.status(202));",
-                      "const data = pm.response.json().data;",
-                      "pm.test('queued', () => pm.expect(data.status).to.eql('QUEUED'));"
+                      "const result = pm.response.json().data;",
+                      "pm.test('queued', () => pm.expect(result.status).to.eql('QUEUED'));"
                     ]
                   }
                 }
@@ -2786,8 +2786,8 @@
                     "type": "text/javascript",
                     "exec": [
                       "pm.test('202', () => pm.response.to.have.status(202));",
-                      "const data = pm.response.json().data;",
-                      "pm.test('queued', () => pm.expect(data.status).to.eql('QUEUED'));"
+                      "const result = pm.response.json().data;",
+                      "pm.test('queued', () => pm.expect(result.status).to.eql('QUEUED'));"
                     ]
                   }
                 }
@@ -2853,9 +2853,9 @@
                     "type": "text/javascript",
                     "exec": [
                       "pm.test('202', () => pm.response.to.have.status(202));",
-                      "const data = pm.response.json().data;",
-                      "pm.test('queued', () => pm.expect(data.status).to.eql('QUEUED'));",
-                      "pm.test('flagged late', () => pm.expect(data.lateEvent).to.eql(true));"
+                      "const result = pm.response.json().data;",
+                      "pm.test('queued', () => pm.expect(result.status).to.eql('QUEUED'));",
+                      "pm.test('flagged late', () => pm.expect(result.lateEvent).to.eql(true));"
                     ]
                   }
                 }
@@ -3167,14 +3167,14 @@
                     "type": "text/javascript",
                     "exec": [
                       "pm.test('200', () => pm.response.to.have.status(200));",
-                      "const data = pm.response.json().data;",
-                      "pm.test('the latest state is the newest scan by event time', () => pm.expect(data.latestState.checkpoint).to.eql('LOADED'));",
+                      "const result = pm.response.json().data;",
+                      "pm.test('the latest state is the newest scan by event time', () => pm.expect(result.latestState.checkpoint).to.eql('LOADED'));",
                       "pm.test('the history has all four scans, the late one first', () => {",
-                      "  pm.expect(data.history).to.have.lengthOf(4);",
-                      "  pm.expect(data.history[0].lateEvent).to.eql(true);",
-                      "  pm.expect(data.history[0].applied).to.eql(false);",
+                      "  pm.expect(result.history).to.have.lengthOf(4);",
+                      "  pm.expect(result.history[0].lateEvent).to.eql(true);",
+                      "  pm.expect(result.history[0].applied).to.eql(false);",
                       "});",
-                      "pm.test('the itinerary has two legs', () => pm.expect(data.itinerary).to.have.lengthOf(2));"
+                      "pm.test('the itinerary has two legs', () => pm.expect(result.itinerary).to.have.lengthOf(2));"
                     ]
                   }
                 }

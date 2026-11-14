@@ -27,7 +27,17 @@ public record JourneyProperties(
 
   /** Token verification: the identity-service public key (inline or location) and audience. */
   public record Jwt(
-      @DefaultValue("aerotrace-api") String audience,
-      String publicKey,
-      @DefaultValue("classpath:keys/public.pem") String publicKeyLocation) {}
+      @DefaultValue("aerotrace-api") String audience, String publicKey, String publicKeyLocation) {
+
+    /** The development public key that ships with the service, used when nothing is configured. */
+    public static final String DEFAULT_PUBLIC_KEY_LOCATION = "classpath:keys/public.pem";
+
+    public Jwt {
+      // An empty setting (an unset environment variable in a compose file) counts as not set.
+      if ((publicKey == null || publicKey.isBlank())
+          && (publicKeyLocation == null || publicKeyLocation.isBlank())) {
+        publicKeyLocation = DEFAULT_PUBLIC_KEY_LOCATION;
+      }
+    }
+  }
 }
