@@ -33,6 +33,23 @@ public final class AuthConstants {
 
   public static final String DEFAULT_PURGE_INTERVAL = "1h";
 
+  /** Failed sign-ins for one typed name within the window that lock it. */
+  public static final String DEFAULT_MAX_FAILED_LOGINS = "5";
+
+  public static final String DEFAULT_LOCKOUT_DURATION = "15m";
+  public static final String DEFAULT_FAILURE_WINDOW = "15m";
+
+  /** Password reset requests for one typed name within the window that are answered; more lock. */
+  public static final String DEFAULT_MAX_RESET_REQUESTS = "3";
+
+  public static final String DEFAULT_RESET_REQUEST_WINDOW = "15m";
+
+  /** Counter rows that stopped changing this long ago (and are not locked) are deleted. */
+  public static final java.time.Duration THROTTLE_RETENTION = java.time.Duration.ofDays(1);
+
+  /** How long a caller refused because every hashing slot was busy is told to wait. */
+  public static final java.time.Duration BUSY_RETRY_AFTER = java.time.Duration.ofSeconds(1);
+
   public static final String TOKEN_HASH_ALGORITHM = "SHA-256";
 
   public static final String STATUS_ACTIVE = "ACTIVE";

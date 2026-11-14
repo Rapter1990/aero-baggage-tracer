@@ -109,9 +109,19 @@ aerotrace:
       # Swagger UI and the definitions are served without a token. Set DOCS_ENABLED=false to turn
       # them off where the API map should stay private.
       enabled: ${DOCS_ENABLED:true}
+    # Reverse proxies (addresses or CIDR networks, comma separated) whose X-Forwarded-For is believed
+    # when working out the client address for rate limiting, for example 10.0.0.0/8. Empty: the header
+    # is ignored, so it cannot be forged to get a fresh rate-limit bucket. Behind a proxy, set it,
+    # or every client shares the proxy's bucket.
+    trusted-proxies: ${TRUSTED_PROXIES:}
     rate-limit:
       replenish-rate: ${RATE_LIMIT_REPLENISH_RATE:10}
       burst-capacity: ${RATE_LIMIT_BURST_CAPACITY:20}
+      # A stricter bucket for each authentication endpoint (login, register, ...) per client
+      # address: 0.2 tokens a second is 12 a minute, with a burst of 10.
+      auth:
+        replenish-rate: ${AUTH_RATE_LIMIT_REPLENISH_RATE:0.2}
+        burst-capacity: ${AUTH_RATE_LIMIT_BURST_CAPACITY:10}
 
 eureka:
   instance:

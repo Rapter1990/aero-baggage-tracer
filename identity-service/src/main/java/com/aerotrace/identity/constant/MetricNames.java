@@ -11,4 +11,12 @@ public final class MetricNames {
   public static final String TAG_OUTCOME = "outcome";
   public static final String OUTCOME_SUCCESS = "success";
   public static final String OUTCOME_FAILURE = "failure";
+
+  /** Calls refused before any password was checked: locked, throttled or busy. */
+  public static final String AUTH_REFUSED = "identity.auth.refused";
+
+  public static final String TAG_REASON = "reason";
+  public static final String REASON_LOCKED = "locked";
+  public static final String REASON_THROTTLED = "throttled";
+  public static final String REASON_BUSY = "busy";
 }

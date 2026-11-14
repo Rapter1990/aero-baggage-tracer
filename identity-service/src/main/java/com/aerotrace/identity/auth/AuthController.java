@@ -132,6 +132,14 @@ class AuthController {
                         name = "invalid-credentials",
                         value = ApiExamples.INVALID_CREDENTIALS)))
   })
+  @io.swagger.v3.oas.annotations.responses.ApiResponse(
+      responseCode = "429",
+      description =
+          "Too many wrong passwords for that name: it is locked for a limited time, even for the "
+              + "right password, and the answer is the same whether or not the account exists. "
+              + "`Retry-After` says how many seconds to wait. Also sent when the service is busy "
+              + "hashing passwords.",
+      content = @Content(mediaType = JSON, schema = @Schema(ref = DocsConstants.API_ERROR_REF)))
   @PostMapping(value = ApiPaths.LOGIN, consumes = JSON, produces = JSON)
   ResponseEntity<ApiResponse<TokenResponse>> login(@Valid @RequestBody LoginRequest request) {
     return noStore(HttpStatus.OK).body(ApiResponse.success(auth.login(request)));
@@ -181,6 +189,12 @@ class AuthController {
                 examples =
                     @ExampleObject(name = "started", value = ApiExamples.PASSWORD_RESET_STARTED)))
   })
+  @io.swagger.v3.oas.annotations.responses.ApiResponse(
+      responseCode = "429",
+      description =
+          "Too many reset requests for that name (more than three in 15 minutes). The answer is "
+              + "the same whether or not the account exists; `Retry-After` says how long to wait.",
+      content = @Content(mediaType = JSON, schema = @Schema(ref = DocsConstants.API_ERROR_REF)))
   @PostMapping(value = ApiPaths.FORGOT_PASSWORD, consumes = JSON, produces = JSON)
   ResponseEntity<ApiResponse<ForgotPasswordResponse>> forgotPassword(
       @Valid @RequestBody ForgotPasswordRequest request) {

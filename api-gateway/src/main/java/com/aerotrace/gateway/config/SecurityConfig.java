@@ -6,6 +6,8 @@ import com.aerotrace.common.security.AeroTraceJwtValidators;
 import com.aerotrace.common.security.JwtClaims;
 import com.aerotrace.common.security.PemKeyUtils;
 import com.aerotrace.common.security.Role;
+import com.aerotrace.gateway.ratelimit.AuthRateLimiter;
+import com.aerotrace.gateway.ratelimit.ClientAddressResolver;
 import com.aerotrace.gateway.ratelimit.RateLimitFilter;
 import com.aerotrace.gateway.ratelimit.RateLimiter;
 import java.security.interfaces.RSAPublicKey;
@@ -69,7 +71,9 @@ class SecurityConfig {
       JwtDecoder jwtDecoder,
       GatewayProperties properties,
       ApiErrorWriter errors,
-      RateLimiter rateLimiter)
+      RateLimiter rateLimiter,
+      AuthRateLimiter authRateLimiter,
+      ClientAddressResolver clientAddresses)
       throws Exception {
     AuthenticationEntryPoint unauthorized =
         (request, response, ex) -> {
@@ -119,7 +123,8 @@ class SecurityConfig {
                         jwt ->
                             jwt.decoder(jwtDecoder).jwtAuthenticationConverter(rolesConverter())))
         .addFilterAfter(
-            new RateLimitFilter(rateLimiter, errors), BearerTokenAuthenticationFilter.class);
+            new RateLimitFilter(rateLimiter, authRateLimiter, clientAddresses, errors),
+            BearerTokenAuthenticationFilter.class);
     return http.build();
   }
 

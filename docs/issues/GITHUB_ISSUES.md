@@ -466,14 +466,15 @@ The work is split by who knows what: the gateway sees only addresses and paths, 
 
 *Identity-service* (`identity-service`)
 - A per-target-account bucket for `login` and `forgot-password` (the gateway cannot see the username without reading the request body).
-- Failed-login counter with backoff or temporary lockout per account and per address, without letting an attacker lock out a victim indefinitely.
+- Failed-login counter per typed name (known or not, stored only as a hash) with a temporary lockout of a fixed length, without letting an attacker extend it by trying again; the per-address limit is the gateway's bucket above. Password reset requests are limited per typed name the same way.
 - Bounded concurrency for password hashing; metrics (outcome only) for refused attempts.
 
 **Acceptance criteria**
-- [ ] 429 with the shared `ApiError` after the per-endpoint and per-account limits (tested against a real Redis).
-- [ ] A forged `X-Forwarded-For` does not change the bucket unless the proxy is trusted.
-- [ ] Repeated wrong passwords slow down or lock the account for a limited time and are audited.
-- [ ] README documents the limits and how to change them.
+- [x] 429 with the shared `ApiError` and `Retry-After` after the per-endpoint limit (gateway, tested against a real Redis) and the per-account limits (identity-service, tested over HTTP against a real PostgreSQL); the answer is the same for names that do not exist.
+- [x] A forged `X-Forwarded-For` does not change the bucket unless the proxy is trusted (unit tests and tests against a real Redis, with and without a trusted proxy).
+- [x] Repeated wrong passwords lock the name for a limited time (15 minutes by default, not extendable by trying again); the lock is audited once and refused calls are counted by reason.
+- [x] Password hashing runs at most N at a time; a call that cannot get a slot in time gets a 429.
+- [x] README documents the limits and how to change them ("Rate limits and lockout of the authentication endpoints").
 
 ---
 

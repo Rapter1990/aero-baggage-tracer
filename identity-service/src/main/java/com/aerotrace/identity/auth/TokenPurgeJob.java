@@ -21,6 +21,7 @@ class TokenPurgeJob {
 
   private final RefreshTokenRepository refreshTokens;
   private final PasswordResetTokenRepository resetTokens;
+  private final LoginThrottle throttle;
   private final Clock clock;
 
   @Scheduled(
@@ -29,11 +30,17 @@ class TokenPurgeJob {
       initialDelayString =
           "${aerotrace.identity.auth.purge-interval:" + AuthConstants.DEFAULT_PURGE_INTERVAL + "}")
   void purge() {
-    Instant cutoff = clock.instant().minus(AuthConstants.TOKEN_RETENTION);
+    Instant now = clock.instant();
+    Instant cutoff = now.minus(AuthConstants.TOKEN_RETENTION);
     int refresh = refreshTokens.deleteExpiredBefore(cutoff);
     int reset = resetTokens.deleteExpiredBefore(cutoff);
-    if (refresh + reset > 0) {
-      log.info("Purged {} refresh tokens and {} password reset tokens", refresh, reset);
+    int counters = throttle.purge(now.minus(AuthConstants.THROTTLE_RETENTION), now);
+    if (refresh + reset + counters > 0) {
+      log.info(
+          "Purged {} refresh tokens, {} password reset tokens and {} attempt counters",
+          refresh,
+          reset,
+          counters);
     }
   }
 }

@@ -39,17 +39,20 @@ public class RedisRateLimiter implements RateLimiter {
 
       redis.call('setex', tokens_key, ttl, new_tokens)
       redis.call('setex', timestamp_key, ttl, now)
-      return { allowed and 1 or 0, math.floor(new_tokens) }
+      local retry_after = 0
+      if not allowed then retry_after = math.ceil((requested - filled) / rate) end
+      return { allowed and 1 or 0, math.floor(new_tokens), retry_after }
       """;
 
   @SuppressWarnings("rawtypes")
   private static final DefaultRedisScript<List> SCRIPT = new DefaultRedisScript<>(LUA, List.class);
 
   private final StringRedisTemplate redis;
-  private final int replenishRate;
+  private final double replenishRate;
   private final int burstCapacity;
 
-  public RedisRateLimiter(StringRedisTemplate redis, int replenishRate, int burstCapacity) {
+  /** The refill rate is in tokens per second and may be a fraction (0.2 is one token every 5 s). */
+  public RedisRateLimiter(StringRedisTemplate redis, double replenishRate, int burstCapacity) {
     this.redis = redis;
     this.replenishRate = replenishRate;
     this.burstCapacity = burstCapacity;
@@ -71,8 +74,10 @@ public class RedisRateLimiter implements RateLimiter {
       if (result == null || result.size() < 2) {
         return new Decision(true, -1);
       }
-      return new Decision(
-          ((Number) result.get(0)).longValue() == 1L, ((Number) result.get(1)).longValue());
+      boolean allowed = ((Number) result.get(0)).longValue() == 1L;
+      long retryAfter =
+          result.size() > 2 ? ((Number) result.get(2)).longValue() : (allowed ? 0 : 1);
+      return new Decision(allowed, ((Number) result.get(1)).longValue(), retryAfter);
     } catch (RuntimeException redisUnavailable) {
       LOG.warn("Rate limiter unavailable, allowing request: {}", redisUnavailable.getMessage());
       return new Decision(true, -1);

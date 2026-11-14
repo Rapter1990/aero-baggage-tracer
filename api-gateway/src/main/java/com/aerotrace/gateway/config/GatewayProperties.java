@@ -16,6 +16,9 @@ import org.springframework.util.Assert;
  *     gateway is used. The issuer is fixed ({@code JwtClaims.ISSUER}), so it is not a setting.
  * @param roleRules coarse role-to-path rules enforced at the edge; services still authorize
  * @param rateLimit token-bucket settings per caller
+ * @param trustedProxies reverse proxies (addresses or CIDR networks) whose {@code X-Forwarded-For}
+ *     is believed when working out the client address for rate limiting. Empty (the default) means
+ *     the header is never read, so it cannot be forged to dodge a limit.
  */
 @ConfigurationProperties("aerotrace.gateway")
 public record GatewayProperties(
@@ -24,7 +27,8 @@ public record GatewayProperties(
     String publicKeyLocation,
     List<RoleRule> roleRules,
     RateLimit rateLimit,
-    Docs docs) {
+    Docs docs,
+    List<String> trustedProxies) {
 
   public GatewayProperties {
     Assert.hasText(audience, "aerotrace.gateway.audience must be set");
@@ -33,8 +37,9 @@ public record GatewayProperties(
       publicKeyLocation = DEFAULT_PUBLIC_KEY_LOCATION;
     }
     roleRules = roleRules == null ? List.of() : List.copyOf(roleRules);
-    rateLimit = rateLimit == null ? new RateLimit(10, 20) : rateLimit;
+    rateLimit = rateLimit == null ? new RateLimit(10, 20, null) : rateLimit;
     docs = docs == null ? new Docs(false) : docs;
+    trustedProxies = trustedProxies == null ? List.of() : List.copyOf(trustedProxies);
   }
 
   /** The development public key packaged from identity-service at build time. */
@@ -46,6 +51,17 @@ public record GatewayProperties(
   /** Requests matching {@code pattern} need at least one of {@code roles}. */
   public record RoleRule(String pattern, Set<Role> roles) {}
 
-  /** Tokens added per second and the bucket size. */
-  public record RateLimit(int replenishRate, int burstCapacity) {}
+  /**
+   * Tokens added per second and the bucket size, for every API call; {@code auth} is the stricter
+   * bucket of each authentication endpoint (login, register, ...), per client address.
+   */
+  public record RateLimit(int replenishRate, int burstCapacity, Auth auth) {
+
+    public RateLimit {
+      auth = auth == null ? new Auth(0.2, 10) : auth;
+    }
+  }
+
+  /** A bucket for the authentication endpoints: 0.2 tokens a second is 12 a minute. */
+  public record Auth(double replenishRate, int burstCapacity) {}
 }

@@ -35,10 +35,13 @@ import com.aerotrace.identity.util.TokenHashUtils;
 import io.jsonwebtoken.JwtException;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -72,6 +75,7 @@ public class AuthService {
   private final JwtTokenService jwtTokens;
   private final AuthorizationPolicy policy;
   private final AuthAuditLog audit;
+  private final LoginThrottle throttle;
   private final AuthProperties properties;
   private final IdentityMapper mapper;
   private final MeterRegistry meters;
@@ -112,21 +116,43 @@ public class AuthService {
     return mapper.toRegisteredUserResponse(created);
   }
 
-  /** Checks the credentials and issues an access token and a refresh token. */
+  /**
+   * Checks the credentials and issues an access token and a refresh token.
+   *
+   * <p>A typed name with too many recent failures is locked for a limited time: it is refused with
+   * a 429 before anything is looked up or hashed, even with the right password, and whether or not
+   * the account exists. The wrong attempt that causes the lock still gets the usual 401.
+   */
   public TokenResponse login(LoginRequest request) {
+    String key = throttleKey(request.usernameOrEmail());
+    Instant now = clock.instant();
+    Optional<Instant> lockedUntil = throttle.lockedUntil(LoginThrottle.Scope.LOGIN, key, now);
+    if (lockedUntil.isPresent()) {
+      throw refused(MetricNames.REASON_LOCKED, lockedUntil.get(), now);
+    }
     Optional<AppUser> found = users.findByUsernameOrEmail(request.usernameOrEmail());
     if (!users.authenticates(found, request.password())) {
       // The typed text is only kept when it names a real account: people paste passwords and
       // email addresses into that box, and the audit trail can never be cleaned up.
-      audit.record(
-          AuthEventType.LOGIN_FAILED,
-          AuthOutcome.FAILURE,
-          found.map(AppUser::username).orElse(null),
-          found.map(AppUser::id).orElse(null));
+      String username = found.map(AppUser::username).orElse(null);
+      UUID userId = found.map(AppUser::id).orElse(null);
+      audit.record(AuthEventType.LOGIN_FAILED, AuthOutcome.FAILURE, username, userId);
       count(MetricNames.OUTCOME_FAILURE);
+      LoginThrottle.Hit hit =
+          throttle.recordHit(
+              LoginThrottle.Scope.LOGIN,
+              key,
+              now,
+              properties.maxFailedLogins(),
+              properties.failureWindow(),
+              properties.lockoutDuration());
+      if (hit.lockedNow()) {
+        audit.record(AuthEventType.LOGIN_LOCKED, AuthOutcome.FAILURE, username, userId);
+      }
       throw new ApiException(ErrorCode.UNAUTHENTICATED, ApiMessages.INVALID_CREDENTIALS);
     }
     AppUser user = found.get();
+    throttle.clear(LoginThrottle.Scope.LOGIN, key);
     TokenResponse tokens = issueTokens(user);
     audit.record(AuthEventType.TOKEN_ISSUED, AuthOutcome.SUCCESS, user.username(), user.id());
     count(MetricNames.OUTCOME_SUCCESS);
@@ -182,9 +208,41 @@ public class AuthService {
   /**
    * Starts a password reset. The reset token is returned in the answer. The message is the same
    * whether or not the account exists, but only an existing account gets a token.
+   *
+   * <p>Requests are counted per typed name, known or not. After {@code maxPasswordResetRequests}
+   * the next one (and everything for a while after it) is refused with a 429. The counting is done
+   * outside the transaction that creates the token, so a refusal does not roll the count back.
    */
-  @Transactional
   public ForgotPasswordResponse forgotPassword(ForgotPasswordRequest request) {
+    String key = throttleKey(request.usernameOrEmail());
+    Instant now = clock.instant();
+    Optional<Instant> lockedUntil =
+        throttle.lockedUntil(LoginThrottle.Scope.PASSWORD_RESET, key, now);
+    if (lockedUntil.isPresent()) {
+      throw refused(MetricNames.REASON_THROTTLED, lockedUntil.get(), now);
+    }
+    // The limit-th request is answered; the one after it starts the lock.
+    LoginThrottle.Hit hit =
+        throttle.recordHit(
+            LoginThrottle.Scope.PASSWORD_RESET,
+            key,
+            now,
+            properties.maxPasswordResetRequests() + 1,
+            properties.passwordResetRequestWindow(),
+            properties.passwordResetRequestWindow());
+    if (hit.lockedNow()) {
+      Optional<AppUser> account = users.findByUsernameOrEmail(request.usernameOrEmail());
+      audit.record(
+          AuthEventType.PASSWORD_RESET_LOCKED,
+          AuthOutcome.FAILURE,
+          account.map(AppUser::username).orElse(null),
+          account.map(AppUser::id).orElse(null));
+      throw refused(MetricNames.REASON_THROTTLED, hit.lockedUntil(), now);
+    }
+    return transactions.execute(status -> startPasswordReset(request));
+  }
+
+  private ForgotPasswordResponse startPasswordReset(ForgotPasswordRequest request) {
     Optional<AppUser> found =
         users.findByUsernameOrEmail(request.usernameOrEmail()).filter(AppUser::enabled);
     if (found.isEmpty()) {
@@ -277,6 +335,18 @@ public class AuthService {
         now.plus(jwtTokens.ttl()),
         refreshExpiresAt,
         roles);
+  }
+
+  /** The typed name as the counters know it: trimmed and lower case, like the account lookup. */
+  private static String throttleKey(String usernameOrEmail) {
+    return usernameOrEmail.trim().toLowerCase(Locale.ROOT);
+  }
+
+  /** A 429 that says when to come back, counted by reason (never by name). */
+  private ApiException refused(String reason, Instant lockedUntil, Instant now) {
+    meters.counter(MetricNames.AUTH_REFUSED, MetricNames.TAG_REASON, reason).increment();
+    return ApiException.rateLimited(
+        ApiMessages.TOO_MANY_ATTEMPTS, Duration.between(now, lockedUntil));
   }
 
   private static ApiException invalidRefreshToken() {

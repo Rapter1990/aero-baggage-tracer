@@ -53,6 +53,11 @@ public class BaseExceptionHandler extends ResponseEntityExceptionHandler {
       // A 401 names the scheme that would be accepted, as the security filters' 401 does.
       response.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
     }
+    if (ex.retryAfter() != null) {
+      // Whole seconds, rounded up, and never 0: "retry now" would invite an immediate second try.
+      long seconds = Math.max(1, (ex.retryAfter().toMillis() + 999) / 1000);
+      response.header(HttpHeaders.RETRY_AFTER, String.valueOf(seconds));
+    }
     return response.body(error);
   }
 

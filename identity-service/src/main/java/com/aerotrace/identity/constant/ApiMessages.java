@@ -11,6 +11,8 @@ import lombok.NoArgsConstructor;
 public final class ApiMessages {
 
   public static final String INVALID_CREDENTIALS = "Invalid credentials.";
+  public static final String TOO_MANY_ATTEMPTS = "Too many attempts. Try again later.";
+  public static final String SERVICE_BUSY = "The service is busy. Try again shortly.";
   public static final String AUTHENTICATION_REQUIRED = "Authentication required";
   public static final String INSUFFICIENT_PERMISSIONS = "Insufficient permissions";
   public static final String INVALID_REFRESH_TOKEN = "Invalid or expired refresh token.";

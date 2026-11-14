@@ -5,3 +5,5 @@ databaseChangeLog:
       file: db/changelog/changes/002-auth-flows.sql
   - include:
       file: db/changelog/changes/003-sample-data.sql
+  - include:
+      file: db/changelog/changes/004-login-throttle.sql

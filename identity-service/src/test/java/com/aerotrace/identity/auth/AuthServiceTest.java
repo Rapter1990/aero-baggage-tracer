@@ -3,6 +3,7 @@ package com.aerotrace.identity.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -62,6 +63,7 @@ class AuthServiceTest extends AbstractBaseServiceTest {
   @Mock private PasswordResetTokenRepository resetTokens;
   @Mock private JwtTokenService jwtTokens;
   @Mock private AuthAuditLog audit;
+  @Mock private LoginThrottle throttle;
 
   private final MutableClock clock = new MutableClock(NOW);
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
@@ -72,7 +74,17 @@ class AuthServiceTest extends AbstractBaseServiceTest {
 
   @BeforeEach
   void setUp() {
-    properties = new AuthProperties(Duration.ofDays(7), Duration.ofMinutes(15));
+    properties =
+        new AuthProperties(
+            Duration.ofDays(7),
+            Duration.ofMinutes(15),
+            5,
+            Duration.ofMinutes(15),
+            Duration.ofMinutes(15),
+            3,
+            Duration.ofMinutes(15));
+    when(throttle.recordHit(any(), any(), any(), anyInt(), any(), any()))
+        .thenReturn(new LoginThrottle.Hit(false, null));
     service = newService(properties);
     UUID id = UUID.randomUUID();
     jane =
@@ -114,6 +126,7 @@ class AuthServiceTest extends AbstractBaseServiceTest {
         jwtTokens,
         new AuthorizationPolicy(),
         audit,
+        throttle,
         props,
         new IdentityMapperImpl(),
         meters,
@@ -227,6 +240,146 @@ class AuthServiceTest extends AbstractBaseServiceTest {
     verify(refreshTokens, never()).save(any());
     assertThat(meters.counter("identity.auth.token.requests", "outcome", "failure").count())
         .isEqualTo(2);
+  }
+
+  // ---- lockout ----
+
+  private static final Duration FIFTEEN_MINUTES = Duration.ofMinutes(15);
+
+  @Test
+  void shouldRefuseALockedNameWithoutLookingItUpOrCheckingThePassword() {
+    Instant until = NOW.plus(Duration.ofMinutes(10));
+    when(throttle.lockedUntil(LoginThrottle.Scope.LOGIN, "jane", NOW))
+        .thenReturn(Optional.of(until));
+
+    assertThatThrownBy(() -> service.login(new LoginRequest("  Jane ", PASSWORD)))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> {
+              assertThat(e.errorCode()).isEqualTo(ErrorCode.RATE_LIMITED);
+              assertThat(e.retryAfter()).isEqualTo(Duration.ofMinutes(10));
+              assertThat(e.getMessage()).isEqualTo("Too many attempts. Try again later.");
+            });
+
+    verify(users, never()).findByUsernameOrEmail(any());
+    verify(users, never()).authenticates(any(), any());
+    verify(throttle, never()).recordHit(any(), any(), any(), anyInt(), any(), any());
+    assertThat(meters.counter("identity.auth.refused", "reason", "locked").count()).isEqualTo(1);
+  }
+
+  @Test
+  void shouldCountEveryFailedSignInForTheTypedNameWhetherOrNotItExists() {
+    when(users.findByUsernameOrEmail(any())).thenReturn(Optional.empty());
+    when(users.authenticates(any(), any())).thenReturn(false);
+
+    assertFails(
+        () -> service.login(new LoginRequest(" Ghost@Example.com ", "wrong-password-1")),
+        ErrorCode.UNAUTHENTICATED);
+
+    verify(throttle)
+        .recordHit(
+            LoginThrottle.Scope.LOGIN,
+            "ghost@example.com",
+            NOW,
+            5,
+            FIFTEEN_MINUTES,
+            FIFTEEN_MINUTES);
+  }
+
+  @Test
+  void shouldAuditTheLockOnceAndStillAnswerWithTheUsualFailure() {
+    when(users.findByUsernameOrEmail("jane")).thenReturn(Optional.of(jane));
+    when(users.authenticates(any(), any())).thenReturn(false);
+    when(throttle.recordHit(any(), any(), any(), anyInt(), any(), any()))
+        .thenReturn(new LoginThrottle.Hit(true, NOW.plus(FIFTEEN_MINUTES)));
+
+    assertThatThrownBy(() -> service.login(new LoginRequest("jane", "wrong-password-1")))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> {
+              assertThat(e.errorCode()).isEqualTo(ErrorCode.UNAUTHENTICATED);
+              assertThat(e.getMessage()).isEqualTo("Invalid credentials.");
+            });
+
+    verify(audit).record(AuthEventType.LOGIN_FAILED, AuthOutcome.FAILURE, "jane", jane.id());
+    verify(audit).record(AuthEventType.LOGIN_LOCKED, AuthOutcome.FAILURE, "jane", jane.id());
+  }
+
+  @Test
+  void shouldNotAuditALockForAnUnknownNameWithTheTypedText() {
+    when(users.findByUsernameOrEmail(any())).thenReturn(Optional.empty());
+    when(users.authenticates(any(), any())).thenReturn(false);
+    when(throttle.recordHit(any(), any(), any(), anyInt(), any(), any()))
+        .thenReturn(new LoginThrottle.Hit(true, NOW.plus(FIFTEEN_MINUTES)));
+
+    assertFails(
+        () -> service.login(new LoginRequest("pasted-a-password", "wrong-password-1")),
+        ErrorCode.UNAUTHENTICATED);
+
+    verify(audit).record(AuthEventType.LOGIN_LOCKED, AuthOutcome.FAILURE, null, null);
+  }
+
+  @Test
+  void shouldForgetEarlierFailuresAfterASuccessfulSignIn() {
+    when(users.findByUsernameOrEmail("jane")).thenReturn(Optional.of(jane));
+    when(users.authenticates(any(), eq(PASSWORD))).thenReturn(true);
+
+    service.login(new LoginRequest("jane", PASSWORD));
+
+    verify(throttle).clear(LoginThrottle.Scope.LOGIN, "jane");
+    verify(throttle, never()).recordHit(any(), any(), any(), anyInt(), any(), any());
+  }
+
+  @Test
+  void shouldRefuseAPasswordResetRequestWhileTheNameIsLocked() {
+    when(throttle.lockedUntil(LoginThrottle.Scope.PASSWORD_RESET, "jane", NOW))
+        .thenReturn(Optional.of(NOW.plus(Duration.ofMinutes(3))));
+
+    assertThatThrownBy(() -> service.forgotPassword(new ForgotPasswordRequest("Jane")))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> {
+              assertThat(e.errorCode()).isEqualTo(ErrorCode.RATE_LIMITED);
+              assertThat(e.retryAfter()).isEqualTo(Duration.ofMinutes(3));
+            });
+
+    verify(users, never()).findByUsernameOrEmail(any());
+    verify(resetTokens, never()).save(any());
+    assertThat(meters.counter("identity.auth.refused", "reason", "throttled").count()).isEqualTo(1);
+  }
+
+  @Test
+  void shouldCountPasswordResetRequestsForTheTypedNameAndRefuseTheOneThatTriggersTheLock() {
+    when(users.findByUsernameOrEmail("jane")).thenReturn(Optional.of(jane));
+    when(throttle.recordHit(any(), any(), any(), anyInt(), any(), any()))
+        .thenReturn(new LoginThrottle.Hit(true, NOW.plus(FIFTEEN_MINUTES)));
+
+    assertThatThrownBy(() -> service.forgotPassword(new ForgotPasswordRequest("jane")))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> {
+              assertThat(e.errorCode()).isEqualTo(ErrorCode.RATE_LIMITED);
+              assertThat(e.retryAfter()).isEqualTo(FIFTEEN_MINUTES);
+            });
+
+    // Three requests are allowed, so the fourth is the one that locks.
+    verify(throttle)
+        .recordHit(
+            LoginThrottle.Scope.PASSWORD_RESET, "jane", NOW, 4, FIFTEEN_MINUTES, FIFTEEN_MINUTES);
+    verify(resetTokens, never()).save(any());
+    verify(audit)
+        .record(AuthEventType.PASSWORD_RESET_LOCKED, AuthOutcome.FAILURE, "jane", jane.id());
+  }
+
+  @Test
+  void shouldCountPasswordResetRequestsForAnUnknownNameToo() {
+    when(users.findByUsernameOrEmail(any())).thenReturn(Optional.empty());
+
+    service.forgotPassword(new ForgotPasswordRequest("Ghost"));
+
+    verify(throttle)
+        .recordHit(
+            LoginThrottle.Scope.PASSWORD_RESET, "ghost", NOW, 4, FIFTEEN_MINUTES, FIFTEEN_MINUTES);
   }
 
   // ---- refresh ----

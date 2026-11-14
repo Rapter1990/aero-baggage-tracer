@@ -71,6 +71,19 @@ aerotrace:
       # How long a refresh token can be exchanged, and how long a password reset token can be used.
       refresh-token-ttl: ${IDENTITY_REFRESH_TOKEN_TTL:7d}
       password-reset-ttl: ${IDENTITY_PASSWORD_RESET_TTL:15m}
+      # Slowing down guessing. A typed name (known or not) with this many wrong passwords within
+      # the window is refused with a 429 for the lockout time, even with the right password. The
+      # lock is a fixed time: trying again during it does not extend it.
+      max-failed-logins: ${IDENTITY_MAX_FAILED_LOGINS:5}
+      failure-window: ${IDENTITY_FAILURE_WINDOW:15m}
+      lockout-duration: ${IDENTITY_LOCKOUT_DURATION:15m}
+      # Password reset requests answered per typed name within the window; the next one is refused.
+      max-password-reset-requests: ${IDENTITY_MAX_RESET_REQUESTS:3}
+      password-reset-request-window: ${IDENTITY_RESET_REQUEST_WINDOW:15m}
+    # Password hashes (BCrypt) that may run at once; 0 means one per CPU core (at least 2). A call
+    # that waits longer than hash-wait for a slot is refused with a 429.
+    max-concurrent-hashes: ${IDENTITY_MAX_CONCURRENT_HASHES:0}
+    hash-wait: ${IDENTITY_HASH_WAIT:2s}
 
 
 eureka:

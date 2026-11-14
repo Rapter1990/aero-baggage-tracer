@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 class PublicKeyConfigurationTest {
 
   private static GatewayProperties properties(String key, String location) {
-    return new GatewayProperties("aerotrace-api", key, location, List.of(), null, null);
+    return new GatewayProperties("aerotrace-api", key, location, List.of(), null, null, null);
   }
 
   @Test

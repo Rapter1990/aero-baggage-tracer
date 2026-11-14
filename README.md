@@ -57,6 +57,11 @@ In `docker-compose.yml` and `docker-compose-local.yml`, the services that need t
 | `DB_PASSWORD` (also `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`; defaults `localhost`, `5433`, `aerotrace`, `aerotrace`) | identity-service started outside Docker (inside Compose it takes the `POSTGRES_*` values) |
 | `IDENTITY_JWT_PRIVATE_KEY_LOCATION`, `IDENTITY_JWT_PUBLIC_KEY_LOCATION` (or the PEM text itself in `IDENTITY_JWT_PRIVATE_KEY`, `IDENTITY_JWT_PUBLIC_KEY`) | identity-service: the RSA key pair (PEM; the private key in PKCS#8, `BEGIN PRIVATE KEY`) that signs and verifies the access tokens. A location is a Spring resource (`file:/run/secrets/private.pem`, `classpath:...`) or a file path; inline text wins over a location. Unset, the development pair in `identity-service/src/main/resources/keys` is used, **whose private key is in this repository** |
 | `IDENTITY_REFRESH_TOKEN_TTL`, `IDENTITY_PASSWORD_RESET_TTL` | identity-service: lifetime of a refresh token (default `7d`) and of a password reset token (default `15m`) |
+| `IDENTITY_MAX_FAILED_LOGINS`, `IDENTITY_FAILURE_WINDOW`, `IDENTITY_LOCKOUT_DURATION` | identity-service: a typed name with this many wrong passwords (default `5`) within the window (default `15m`) is locked for the lockout time (default `15m`); see "Rate limits and lockout" |
+| `IDENTITY_MAX_RESET_REQUESTS`, `IDENTITY_RESET_REQUEST_WINDOW` | identity-service: password reset requests answered per typed name (default `3`) within the window (default `15m`) |
+| `IDENTITY_MAX_CONCURRENT_HASHES`, `IDENTITY_HASH_WAIT` | identity-service: password hashes that may run at once (default `0` = one per CPU core, at least 2) and how long a call waits for a slot before a 429 (default `2s`) |
+| `TRUSTED_PROXIES` | api-gateway: reverse proxies (comma separated addresses or CIDR networks, for example `10.0.0.0/8`) whose `X-Forwarded-For` is believed when finding the client address for rate limiting. Empty (default): the header is ignored. Behind a proxy, set it, or all clients share the proxy's bucket |
+| `AUTH_RATE_LIMIT_REPLENISH_RATE`, `AUTH_RATE_LIMIT_BURST_CAPACITY` | api-gateway: the stricter bucket of each `/api/v1/auth/*` endpoint per client address (defaults `0.2` tokens a second, i.e. 12 a minute, and a burst of `10`) |
 | `DOCS_ENABLED` | api-gateway and identity-service: serve the OpenAPI definitions and Swagger UI (default `true`; they are served without a token and map every endpoint, so set `false` where that should stay private) |
 
 ## Running the stack with Docker Compose
@@ -104,11 +109,29 @@ then mount the files into the containers and set `IDENTITY_JWT_PRIVATE_KEY_LOCAT
 
 Every service answers with the same two envelopes from `common-module`: `ApiResponse` for success (`success`, `data`, `timestamp`) and `ApiError` for failures (`code`, `message`, `status`, `path`, `validationErrors`, `timestamp`, `correlationId`). `code` is a stable value such as `VALIDATION_ERROR`, `UNAUTHENTICATED` or `BAG_TAG_DUPLICATE`; `validationErrors` names the invalid fields and the rule they broke, never the value that was sent. Responses whose format a standard fixes, such as the JWK Set at `/.well-known/jwks.json`, are not wrapped.
 
+## Rate limits and lockout of the authentication endpoints
+
+Guessing passwords, flooding registrations and burning CPU on password hashes are slowed down in two places, each doing what it can see:
+
+**api-gateway** (needs Redis; every gateway instance shares the buckets)
+
+- Each `/api/v1/auth/*` endpoint has its own bucket per client address, stricter than the general limit: 12 calls a minute with a burst of 10 by default (`AUTH_RATE_LIMIT_*`). A refused call is a `429` with the shared `ApiError` and a `Retry-After`.
+- The client address is the connecting peer. Behind a TLS reverse proxy set `TRUSTED_PROXIES`: then the gateway reads `X-Forwarded-For` from the right, skipping trusted proxies, and uses the first address that is not trusted. Anything a client puts in front of that is ignored, and with no trusted proxy the header is never read, so it cannot be forged to get a fresh bucket.
+
+**identity-service** (PostgreSQL; shared by every instance, survives restarts)
+
+- **Lockout:** a typed name (username or email, lower case, known or not) with 5 wrong passwords within 15 minutes is locked for 15 minutes. While locked, `login` answers `429` with `Retry-After`, even for the right password, without looking the account up or hashing anything, and identically for names that do not exist. The failure that triggers the lock still gets the usual `401`. A successful sign-in clears the count. The lock has a fixed end: further attempts do not extend it.
+- **Password reset requests:** 3 per typed name per 15 minutes are answered; the next one and everything after it for 15 minutes is a `429`, again the same for unknown names.
+- **Bounded hashing:** at most one BCrypt hash per CPU core (at least 2) runs at once; a call that cannot get a slot within 2 seconds gets a `429` with `Retry-After: 1` instead of queueing.
+- The counters store only a SHA-256 hash of the typed name, never the text. The lock itself is written to the audit trail once (`LOGIN_LOCKED`, `PASSWORD_RESET_LOCKED`), not for every refused attempt, and refused calls are counted by reason (`identity.auth.refused{reason=locked|throttled|busy}`), never by name. Counters that stopped changing a day ago are deleted hourly.
+
+Change the limits with the `IDENTITY_*` and `AUTH_RATE_LIMIT_*` variables in the table above.
+
 ## Known limitations of the identity-service
 
-- No per-account lockout or backoff and no cap on concurrent password hashing; the gateway's per-address rate limit is the only brake today.
+- Lockout is per typed name and fixed in length: someone who keeps guessing a victim's name locks it for 15 minutes again and again (they cannot extend a running lock, and the gateway's per-address bucket limits how often they can try). Resetting the password through a reset token still works while a name is locked. The counters are per typed name, so an attacker can also lock a name that does not exist.
 - `forgot-password` returns the reset token in its response, because there is no mail service yet. Anyone who knows a username or email can therefore reset that account's password and take it over, and the answer reveals which accounts exist. Do not expose this service to untrusted callers until the token is delivered out of band.
-- Registration answers 409 for a username or email that exists, so it reveals which accounts exist. Sessions slide: every refresh issues a new 7-day token with no absolute session limit. Creating staff accounts trusts the roles in the caller's access token (up to 15 minutes old) without a database check. The gateway rate limit is per address only, with no per-endpoint or per-account limit on `login` and `forgot-password`.
+- Registration answers 409 for a username or email that exists, so it reveals which accounts exist. Sessions slide: every refresh issues a new 7-day token with no absolute session limit. Creating staff accounts trusts the roles in the caller's access token (up to 15 minutes old) without a database check.
 - Refresh tokens are revoked with a reason. Only a token that was rotated away more than 10 seconds ago and is presented again counts as theft and ends all sessions of that user. Expired token rows are deleted hourly once they are a day past expiry.
 - Access tokens cannot be revoked (logout and password reset revoke refresh tokens only); a token stays valid until it expires (15 minutes plus a minute of clock skew).
 - The audit trail's immutability is enforced by database triggers, but the service connects as the schema owner and could drop them; use a restricted runtime role where that matters.
