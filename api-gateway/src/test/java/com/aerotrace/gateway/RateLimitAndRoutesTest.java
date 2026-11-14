@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.aerotrace.gateway.support.GatewayTestBase;
 import com.aerotrace.gateway.support.GatewayTestConfig;
-import com.aerotrace.gateway.support.TestJwks;
+import com.aerotrace.gateway.support.TestTokens;
 import com.nimbusds.jose.jwk.RSAKey;
 import java.net.http.HttpResponse;
 import java.util.List;
@@ -26,15 +26,15 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
 
   @BeforeAll
   static void publishKey() {
-    key = TestJwks.publish("kid-rl");
+    key = TestTokens.trusted();
   }
 
   private static String tokenFor(String subject) {
-    return TestJwks.sign(key, TestJwks.claims(subject, List.of("AGENT")).build());
+    return TestTokens.sign(key, TestTokens.claims(subject, List.of("AGENT")).build());
   }
 
   @Test
-  void exhaustedLimitReturns429ProblemDetail() {
+  void exhaustedLimitReturns429ApiError() {
     String token = tokenFor("limited-" + UUID.randomUUID());
 
     for (int i = 0; i < GatewayTestConfig.ALLOWED_PER_KEY; i++) {
@@ -44,10 +44,10 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
 
     assertThat(limited.statusCode()).isEqualTo(429);
     assertThat(limited.headers().firstValue("Content-Type").orElse(""))
-        .startsWith("application/problem+json");
+        .startsWith("application/json");
     JsonNode body = json(limited);
     assertThat(body.get("status").asInt()).isEqualTo(429);
-    assertThat(body.get("errorCode").asString()).isEqualTo("RATE_LIMITED");
+    assertThat(body.get("code").asString()).isEqualTo("RATE_LIMITED");
     assertThat(body.get("correlationId").asString())
         .isEqualTo(limited.headers().firstValue("X-Correlation-Id").orElseThrow());
     assertThat(limited.headers().firstValue("X-RateLimit-Remaining")).contains("0");
@@ -69,9 +69,24 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
     assertThat(get("/api/v1/bags/AB123456/journey", null).statusCode()).isEqualTo(401);
     assertThat(get("/api/v1/recovery-cases/1", null).statusCode()).isEqualTo(401);
 
-    // No identity-service instance exists in this test, so the call fails after security passed.
-    int status = send("POST", "/api/v1/auth/token", null).statusCode();
-    assertThat(status).isNotIn(401, 403);
+    // No identity-service instance exists in this test, so these calls fail after security passed.
+    for (String path :
+        List.of(
+            "/api/v1/auth/register",
+            "/api/v1/auth/login",
+            "/api/v1/auth/refresh-token",
+            "/api/v1/auth/forgot-password",
+            "/api/v1/auth/reset-password",
+            "/api/v1/auth/logout")) {
+      assertThat(send("POST", path, null).statusCode()).as(path).isNotIn(401, 403);
+    }
+  }
+
+  @Test
+  void theRestOfTheAuthPathsStillNeedAToken() {
+    assertThat(get("/api/v1/auth/me", null).statusCode()).isEqualTo(401);
+    assertThat(get("/api/v1/auth/login", null).statusCode()).isEqualTo(401);
+    assertThat(send("POST", "/api/v1/auth/keys/rotate", null).statusCode()).isEqualTo(401);
   }
 
   /** Routes are resolved through Eureka (lb://) rather than hard-coded hosts. */

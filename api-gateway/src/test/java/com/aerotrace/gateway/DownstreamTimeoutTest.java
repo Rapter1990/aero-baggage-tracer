@@ -3,7 +3,7 @@ package com.aerotrace.gateway;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.aerotrace.gateway.support.GatewayTestBase;
-import com.aerotrace.gateway.support.TestJwks;
+import com.aerotrace.gateway.support.TestTokens;
 import com.nimbusds.jose.jwk.RSAKey;
 import java.net.http.HttpResponse;
 import java.time.Duration;
@@ -21,13 +21,14 @@ class DownstreamTimeoutTest extends GatewayTestBase {
 
   @BeforeAll
   static void publishKey() {
-    key = TestJwks.publish("kid-timeout");
+    key = TestTokens.trusted();
   }
 
   @Test
   void aSlowDownstreamIsCutOffAtTheReadTimeout() {
     String token =
-        TestJwks.sign(key, TestJwks.claims(UUID.randomUUID().toString(), List.of("AGENT")).build());
+        TestTokens.sign(
+            key, TestTokens.claims(UUID.randomUUID().toString(), List.of("AGENT")).build());
     long start = System.nanoTime();
 
     HttpResponse<String> response = get("/api/v1/slow/report", token);

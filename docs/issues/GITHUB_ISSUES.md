@@ -34,7 +34,7 @@ Define a roster of role-based Claude Code subagents and reusable skills so work 
 **Scope**
 - `.claude/agents/`: `product-owner`, `architect`, `principal-engineer` (delegation map), `api-contract-engineer`, `kafka-streams-engineer`, `database-reviewer`, `security-reviewer`, `code-reviewer`, `test-engineer`, `devops-engineer`, `manual-qa-tester`.
 - `.claude/skills/`: `analyze-case`, `architecture-review`, `implement-feature`, `run`, `verify-project`, `create-issues`, `create-pr`.
-- Each agent: single responsibility, minimal tool list, explicit model, project-specific rules (service-owned schemas, `ProblemDetail`, `*.v1` events, no JPA in `common-module`, no secrets).
+- Each agent: single responsibility, minimal tool list, explicit model, project-specific rules (service-owned schemas, `ApiError`/`ApiResponse`, `*.v1` events, no JPA in `common-module`, no secrets).
 - Reviewer agents are read-only; only implementers may edit files.
 - Short "Agents" section in the README with the roster and delegation map.
 
@@ -72,7 +72,7 @@ Turn the two PowerShell scripts under `docs/issues/` into project skills so issu
 Shared library with versioned contracts and security primitives. **Must not contain JPA entities.**
 
 **Scope**
-- RFC 7807 `ProblemDetail` error contract + shared `@RestControllerAdvice` base, stable error codes (e.g. `BAG_TAG_DUPLICATE`, `ILLEGAL_TRANSITION`, `CAPACITY_EXCEEDED`).
+- `ApiError` (error) and `ApiResponse` (success) envelopes + shared `@RestControllerAdvice` base, stable error codes (e.g. `BAG_TAG_DUPLICATE`, `ILLEGAL_TRANSITION`, `CAPACITY_EXCEEDED`).
 - Event envelope record: `eventId, eventType, schemaVersion, aggregateId, occurredAt, publishedAt, correlationId, payload` + JSON (de)serialization config.
 - Event payload DTOs / topic-name constants for all topics in §8 (`baggage.scan.received.v1`, …).
 - Shared security primitives: roles enum (`PASSENGER, AGENT, DISPATCHER, ADMIN`), JWT claim names, issuer/audience validator, `SecurityContext` helper.
@@ -138,8 +138,8 @@ Single external entry point under `/api/v1`, built on the **servlet stack** (Spr
 - Registers itself with the Eureka server (discovery-server, #5) as `API-GATEWAY` (instance id `api-gateway:<host>:<port>`, 10 s lease renewal) and fetches the registry to resolve `lb://` routes. `EUREKA_URL` / `EUREKA_INSTANCE_HOSTNAME` select the server and the advertised host per environment.
 - JWT verification with Spring Security's servlet resource server: the signature is verified with the identity-service **public key** (`java.security.PublicKey`, obtained from its JWKS so several active `kid`s work), plus `exp`, `iss`, `aud`; 401 for missing/invalid, 403 for forbidden.
 - Token forwarding to downstream services; Redis-backed rate limiting as a servlet filter (blocking Spring Data Redis, token bucket). Redis runs with a password (`REDIS_PASSWORD`, no default in the gateway) in both Compose files.
-- Generate/propagate `X-Correlation-Id`; pass `Idempotency-Key`. Reuse the servlet `CorrelationIdFilter` and `ProblemDetails` from `common-module`.
-- ProblemDetail-formatted gateway errors; OpenTelemetry tracing (W3C `traceparent` continued and propagated to downstream services) and Micrometer metrics, both exported over OTLP to an OpenTelemetry Collector: metrics are scraped by Prometheus (no admin token needed) and traces are stored in Tempo; Logs go to the same collector and on to Loki, each line tagged with its trace id; Grafana shows three provisioned dashboards: service metrics, traces (tables of requests, failures and calls with a service dropdown and links that open the full trace) and logs per service, with trace↔log links in both directions; a fourth dashboard shows JaCoCo test coverage per module (a script pushes the reports to a Pushgateway that Prometheus scrapes) (`observability/`, started by both Compose files). Downstream calls time out (2 s connect, 30 s read) instead of holding gateway threads.
+- Generate/propagate `X-Correlation-Id`; pass `Idempotency-Key`. Reuse the servlet `CorrelationIdFilter` and `ApiErrorWriter` from `common-module`.
+- ApiError-formatted gateway errors; OpenTelemetry tracing (W3C `traceparent` continued and propagated to downstream services) and Micrometer metrics, both exported over OTLP to an OpenTelemetry Collector: metrics are scraped by Prometheus (no admin token needed) and traces are stored in Tempo; Logs go to the same collector and on to Loki, each line tagged with its trace id; Grafana shows three provisioned dashboards: service metrics, traces (tables of requests, failures and calls with a service dropdown and links that open the full trace) and logs per service, with trace↔log links in both directions; a fourth dashboard shows JaCoCo test coverage per module (a script pushes the reports to a Pushgateway that Prometheus scrapes) (`observability/`, started by both Compose files). Downstream calls time out (2 s connect, 30 s read) instead of holding gateway threads.
 - Swagger UI (springdoc) at `/swagger-ui.html` with a "Select a definition" dropdown listing every service; each service's OpenAPI document is fetched through the gateway (`/service-docs/<service>` → the service's `/v3/api-docs`). Can be switched off with `DOCS_ENABLED=false`.
 
 **Acceptance criteria**
@@ -150,7 +150,7 @@ Single external entry point under `/api/v1`, built on the **servlet stack** (Spr
 - [x] A trace context is started or continued at the gateway and sent downstream; a slow downstream is cut off at the read timeout (both tested).
 - [x] Gateway metrics and span-derived request metrics reach Prometheus through the collector, and the Grafana dashboard queries them (verified with real containers).
 - [x] Gateway traces are stored in Tempo and can be found by TraceQL in Grafana, including a trace the caller started (verified with real containers).
-- [x] Rate-limit returns 429 with ProblemDetail (verified against a real Redis).
+- [x] Rate-limit returns 429 with an ApiError (verified against a real Redis).
 - [x] Redis requires a password: the rate limiter authenticates with it, and clients without or with a wrong password are refused (verified against a real Redis).
 - [x] Gateway token-forwarding integration test (real HTTP hop to a downstream stub).
 - [x] Servlet stack only: no WebFlux or Reactor Netty dependency in `api-gateway`; no `Mono`/`Flux` in its code.
@@ -448,3 +448,71 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 - Multi-tenant airline isolation (gateway, service, index).
 - Blue/green event schema v1 → v2 migration.
 - Chaos experiment (Kafka outage / DB restart) with recovery timeline and integrity checks.
+
+---
+
+## #25 Rate limiting and lockout for the authentication endpoints
+`[module:gateway] [module:identity] [security] [priority:p1]` · Follow-up of #8 (PR#8) · Depends on #7
+
+**Description**
+Each wrong password costs a BCrypt-12 hash and the only brake is the gateway's per-address rate limit (about 10 requests per second, shared by every client behind a reverse proxy). `login`, `register`, `forgot-password` and `reset-password` can be used for credential stuffing, account flooding and CPU exhaustion.
+
+**Scope**
+The work is split by who knows what: the gateway sees only addresses and paths, the identity-service owns accounts and password checks.
+
+*Gateway* (`api-gateway`)
+- Stricter, per-endpoint buckets for `/api/v1/auth/*`.
+- Trusted-proxy configuration, so the client address is the real one behind a TLS reverse proxy and `X-Forwarded-For` cannot be forged.
+
+*Identity-service* (`identity-service`)
+- A per-target-account bucket for `login` and `forgot-password` (the gateway cannot see the username without reading the request body).
+- Failed-login counter per typed name (known or not, stored only as a hash) with a temporary lockout of a fixed length, without letting an attacker extend it by trying again; the per-address limit is the gateway's bucket above. Password reset requests are limited per typed name the same way.
+- Bounded concurrency for password hashing; metrics (outcome only) for refused attempts.
+
+**Acceptance criteria**
+- [x] 429 with the shared `ApiError` and `Retry-After` after the per-endpoint limit (gateway, tested against a real Redis) and the per-account limits (identity-service, tested over HTTP against a real PostgreSQL); the answer is the same for names that do not exist.
+- [x] A forged `X-Forwarded-For` does not change the bucket unless the proxy is trusted (unit tests and tests against a real Redis, with and without a trusted proxy).
+- [x] Repeated wrong passwords lock the name for a limited time (15 minutes by default, not extendable by trying again); the lock is audited once and refused calls are counted by reason.
+- [x] Password hashing runs at most N at a time; a call that cannot get a slot in time gets a 429.
+- [x] README documents the limits and how to change them ("Rate limits and lockout of the authentication endpoints").
+
+---
+
+## #26 Identity: session and account hardening
+`[module:identity] [security] [priority:p2]` · Follow-up of #8 (PR#8)
+
+**Description**
+Gaps left in PR#8: refresh sessions slide forever, access tokens cannot be revoked before they expire, creating staff trusts the roles in a token that may be 15 minutes old, and registration answers 409 for existing usernames and emails.
+
+**Scope**
+- Absolute session lifetime: carry a session id or start time through refresh-token rotation and refuse after N days.
+- Re-check the caller's current roles and enabled flag in the database for `USER_MANAGE` (staff creation); optionally a per-user `tokens_valid_after` so password reset or disabling a user invalidates access tokens immediately.
+- Registration that does not reveal whether a username or email exists (generic answer plus email verification), once the notification-service (#14) can send mail.
+- Restrict email addresses to a form that lower-cases identically in Java and PostgreSQL, and map CHECK violations to 400.
+- Cap the number of active refresh tokens per user.
+
+**Acceptance criteria**
+- [ ] A session ends after the absolute limit even if it is refreshed continuously.
+- [ ] A demoted or disabled ADMIN cannot create staff accounts.
+- [ ] Registration answers identically for new and existing usernames and emails.
+- [ ] Tests cover each of the above.
+
+---
+
+## #27 Hardened Docker Compose defaults
+`[devops] [security] [priority:p2]` · Follow-up of #8 (PR#8) · Depends on #17
+
+**Description**
+`docker-compose.yml` publishes Eureka (8761), config-server (1111), Prometheus (9090), Grafana (3000) and the gateway (8080) on all interfaces with default credentials (`eureka`, `admin/grafana`). Anyone who can reach the host can register a fake `identity-service` in Eureka and receive login traffic. Images use floating tags, the identity-service runs `curl` only for its health check, and its database user needs `CREATE` on the database for the schema init SQL.
+
+**Scope**
+- Required secrets without defaults (`EUREKA_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`) or a documented, clearly marked development override; ports for internal tools published only when asked for.
+- Pin base and infrastructure images by digest; non-root users, `read_only`, `cap_drop: [ALL]`, `no-new-privileges` for service containers; a JRE-native health check instead of `curl`.
+- Create the `identity` schema with a one-time migration or admin user and run the service with a least-privilege database role.
+- Run the Postman collection (`postman/`) with newman against the composed stack as a smoke test, including the gateway-to-identity path.
+
+**Acceptance criteria**
+- [ ] `docker compose up` fails fast without the required secrets, or starts with loopback-only ports when the development override is used.
+- [ ] Images are pinned and containers run as non-root with a read-only filesystem where possible.
+- [ ] The identity-service starts with a database role that cannot create objects outside its schema.
+- [ ] The newman smoke test passes against the composed stack.

@@ -94,20 +94,34 @@ spring:
 
 aerotrace:
   gateway:
-    # No defaults for the trust anchors: the gateway must fail at startup rather than guess.
-    issuer: ${JWT_ISSUER}
     audience: ${JWT_AUDIENCE:aerotrace-api}
-    jwk-set-uri: ${JWK_SET_URI}
+    # The RSA public key (PEM) that verifies the tokens identity-service signs, inline or from a
+    # location (a Spring resource or a file path). With both empty the gateway uses the copy of
+    # identity-service's keys/public.pem that is packaged at build time (a development key pair
+    # whose private key is in the repository: use your own pair wherever the tokens matter).
+    public-key: ${JWT_PUBLIC_KEY:}
+    public-key-location: ${JWT_PUBLIC_KEY_LOCATION:}
     # Coarse edge authorization; resource services still enforce their own rules.
     role-rules:
       - pattern: /api/v1/admin/**
         roles: ADMIN
     docs:
-      # Turn off outside development: Swagger UI and the definitions are served without a token.
+      # Swagger UI and the definitions are served without a token. Set DOCS_ENABLED=false to turn
+      # them off where the API map should stay private.
       enabled: ${DOCS_ENABLED:true}
+    # Reverse proxies (addresses or CIDR networks, comma separated) whose X-Forwarded-For is believed
+    # when working out the client address for rate limiting, for example 10.0.0.0/8. Empty: the header
+    # is ignored, so it cannot be forged to get a fresh rate-limit bucket. Behind a proxy, set it,
+    # or every client shares the proxy's bucket.
+    trusted-proxies: ${TRUSTED_PROXIES:}
     rate-limit:
       replenish-rate: ${RATE_LIMIT_REPLENISH_RATE:10}
       burst-capacity: ${RATE_LIMIT_BURST_CAPACITY:20}
+      # A stricter bucket for each authentication endpoint (login, register, ...) per client
+      # address: 0.2 tokens a second is 12 a minute, with a burst of 10.
+      auth:
+        replenish-rate: ${AUTH_RATE_LIMIT_REPLENISH_RATE:0.2}
+        burst-capacity: ${AUTH_RATE_LIMIT_BURST_CAPACITY:10}
 
 eureka:
   instance:

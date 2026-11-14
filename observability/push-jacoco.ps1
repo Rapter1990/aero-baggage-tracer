@@ -1,8 +1,13 @@
 # Pushes the JaCoCo coverage of every module to the Prometheus Pushgateway, so the Grafana
 # dashboard "AeroTrace - Coverage" can chart it.
 #
-#   mvn verify                                  # writes <module>/target/site/jacoco/jacoco.csv
-#   ./observability/push-jacoco.ps1             # pushes them (Pushgateway on localhost:9091)
+#   ./observability/push-jacoco.ps1             # runs `mvn verify`, then pushes the reports
+#                                               # (Pushgateway on localhost:9091)
+#   ./observability/push-jacoco.ps1 -SkipBuild  # pushes the reports of an earlier build
+#   ./observability/push-jacoco.ps1 -MavenArgs '-pl','identity-service','-am'   # build only these
+#
+# `mvn verify` writes <module>/target/site/jacoco/jacoco.csv. The tests use Testcontainers, so
+# Docker must be running. If the build fails nothing is pushed.
 #
 # Each module is pushed as its own group (job=jacoco, module=<name>), so running the script again
 # replaces that module's numbers. Per class and counter it pushes two gauges:
@@ -10,7 +15,9 @@
 # where counter is one of instruction, branch, line, complexity, method.
 param(
   [string] $PushgatewayUrl = $(if ($env:PUSHGATEWAY_URL) { $env:PUSHGATEWAY_URL } else { 'http://localhost:9091' }),
-  [string] $Root = (Join-Path $PSScriptRoot '..')
+  [string] $Root = (Join-Path $PSScriptRoot '..'),
+  [switch] $SkipBuild,
+  [string[]] $MavenArgs = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -20,12 +27,36 @@ function Format-Label([string] $value) {
   $value.Replace('\', '\\').Replace('"', '\"').Replace("`n", '\n')
 }
 
+if (-not $SkipBuild) {
+  if (-not (Get-Command mvn -ErrorAction SilentlyContinue)) {
+    Write-Error "mvn was not found on the PATH. Install Maven, or build in your IDE and run this script with -SkipBuild."
+    exit 1
+  }
+  Write-Host "Running 'mvn verify $($MavenArgs -join ' ')' in $Root ..."
+  Push-Location $Root
+  # Maven (or the JVM) writes warnings to stderr; Windows PowerShell 5.1 would turn each one into
+  # a terminating error under 'Stop'. The exit code decides whether the build worked.
+  $previousPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & mvn verify @MavenArgs
+    $mavenExit = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousPreference
+    Pop-Location
+  }
+  if ($mavenExit -ne 0) {
+    Write-Error "mvn verify failed (exit code $mavenExit); nothing was pushed."
+    exit $mavenExit
+  }
+}
+
 $reports = Get-ChildItem -Path $Root -Directory |
   ForEach-Object { Join-Path $_.FullName 'target/site/jacoco/jacoco.csv' } |
   Where-Object { Test-Path $_ }
 
 if (-not $reports) {
-  Write-Error "No jacoco.csv found under $Root. Run 'mvn verify' first."
+  Write-Error "No jacoco.csv found under $Root. Run 'mvn verify' first, or run this script without -SkipBuild."
   exit 1
 }
 

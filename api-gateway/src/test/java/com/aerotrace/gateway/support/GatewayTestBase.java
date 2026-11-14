@@ -9,14 +9,16 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import tools.jackson.databind.JsonNode;
 
-/** Boots the real gateway on a random port against the stub JWKS and downstream. */
+/**
+ * Boots the real gateway on a random port against a trusted test key pair and a stub downstream.
+ */
 @SpringBootTest(
     webEnvironment = WebEnvironment.RANDOM_PORT,
     properties = {
       "eureka.client.enabled=false",
+      "aerotrace.gateway.docs.enabled=true",
       "spring.cloud.discovery.enabled=false",
-      "aerotrace.gateway.issuer=" + TestJwks.ISSUER,
-      "aerotrace.gateway.audience=" + TestJwks.AUDIENCE,
+      "aerotrace.gateway.audience=" + TestTokens.AUDIENCE,
       "spring.data.redis.password=unused-in-tests",
       "management.health.redis.enabled=false",
       "management.otlp.metrics.export.enabled=false",
@@ -30,8 +32,8 @@ public abstract class GatewayTestBase {
   private int port;
 
   @DynamicPropertySource
-  static void jwks(DynamicPropertyRegistry registry) {
-    registry.add("aerotrace.gateway.jwk-set-uri", TestJwks::uri);
+  static void publicKey(DynamicPropertyRegistry registry) {
+    registry.add("aerotrace.gateway.public-key", TestTokens::publicKeyPem);
   }
 
   protected HttpResponse<String> get(String path, String bearer, String... headers) {

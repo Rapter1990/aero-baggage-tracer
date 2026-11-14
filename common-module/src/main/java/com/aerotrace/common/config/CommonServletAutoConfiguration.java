@@ -2,8 +2,10 @@ package com.aerotrace.common.config;
 
 import com.aerotrace.common.correlation.CorrelationIdFilter;
 import com.aerotrace.common.correlation.CorrelationIdInterceptor;
+import com.aerotrace.common.error.ApiErrorWriter;
 import com.aerotrace.common.error.BaseExceptionHandler;
 import jakarta.servlet.Filter;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -11,11 +13,12 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplicat
 import org.springframework.context.annotation.Bean;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.DispatcherServlet;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Servlet-only wiring. Active only in a servlet web application with Spring MVC on the classpath,
- * so the reactive api-gateway, which only uses the contract types, is unaffected. Everything backs
- * off when the service defines its own bean.
+ * Servlet-only wiring. Active only in a servlet web application with Spring MVC on the classpath; a
+ * reactive application only gets the contract types. Everything backs off when the service defines
+ * its own bean.
  */
 @AutoConfiguration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
@@ -36,6 +39,16 @@ public class CommonServletAutoConfiguration {
   @ConditionalOnMissingBean
   public CorrelationIdInterceptor correlationIdInterceptor() {
     return new CorrelationIdInterceptor();
+  }
+
+  /**
+   * Writes errors from servlet filters and security entry points in the shared {@code ApiError}
+   * shape. Uses the application's JSON mapper when there is one.
+   */
+  @Bean
+  @ConditionalOnMissingBean
+  public ApiErrorWriter apiErrorWriter(ObjectProvider<JsonMapper> mapper) {
+    return new ApiErrorWriter(mapper.getIfAvailable(() -> JsonMapper.builder().build()));
   }
 
   /**

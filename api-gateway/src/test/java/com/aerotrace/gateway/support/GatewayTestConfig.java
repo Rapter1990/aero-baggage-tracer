@@ -1,5 +1,6 @@
 package com.aerotrace.gateway.support;
 
+import com.aerotrace.gateway.ratelimit.AuthRateLimiter;
 import com.aerotrace.gateway.ratelimit.RateLimiter;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,5 +35,12 @@ public class GatewayTestConfig {
       int n = calls.computeIfAbsent(key, k -> new AtomicInteger()).incrementAndGet();
       return new RateLimiter.Decision(n <= limit, Math.max(0, limit - n));
     };
+  }
+
+  /** The authentication buckets never cut in here (they have their own Redis tests). */
+  @Bean
+  @Primary
+  AuthRateLimiter unlimitedAuthRateLimiter() {
+    return new AuthRateLimiter(key -> new RateLimiter.Decision(true, 100));
   }
 }

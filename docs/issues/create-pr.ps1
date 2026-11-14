@@ -4,6 +4,7 @@ param(
     [string]$Base = "main",
     [string]$Branch,
     [string]$Label = "enhancement",
+    [string]$NotesFile,
     [switch]$Draft,
     [switch]$DryRun
 )
@@ -12,7 +13,8 @@ param(
 #   Body  : summary, "Closes #<GitHub issue number>", commit list, acceptance criteria.
 # <N> is the backlog number in GITHUB_ISSUES.md. The GitHub issue number can differ (pull requests share
 # the numbering), so the script finds the issue titled "Issue #<N> : ..." and closes that one.
-# Usage: .\docs\issues\create-pr.ps1 [-DryRun] [-Draft]
+# -NotesFile <path> inserts that Markdown (a hand-written summary, known gaps) after the generated summary.
+# Usage: .\docs\issues\create-pr.ps1 [-DryRun] [-Draft] [-NotesFile <path>]
 
 $ErrorActionPreference = "Stop"
 $ghDir = "$env:USERPROFILE\tools\gh\bin"
@@ -45,6 +47,8 @@ if (-not $closes) { Write-Warning "No GitHub issue titled 'Issue #$n : ...' foun
 $commits = (git log "origin/$Base..HEAD" --no-merges --pretty="- %s") -join "`n"
 if (-not $commits) { $commits = "- (no commits ahead of $Base)" }
 
+$notes = if ($NotesFile) { "`n" + (Get-Content $NotesFile -Raw -Encoding UTF8).Trim() + "`n" } else { "" }
+
 $title = "PR#$n : $issueTitle"
 $closeLine = if ($closes) { "Closes #$closes" } else { "Related to backlog issue #$n" }
 $body = @"
@@ -52,7 +56,7 @@ $body = @"
 $summary
 
 $closeLine
-
+$notes
 ## Changes
 $commits
 

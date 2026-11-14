@@ -2,9 +2,13 @@
 #   docker compose up -d
 # Inside the network services use the `compose` profile endpoints (kafka:9092, redis:6379,
 # postgres:5432). Redis and Postgres are internal only; Kafka is reachable from the host on
-# 127.0.0.1:29092.
+# localhost:29092.
 # Use docker-compose-local.yml for dev-only infrastructure (Kafka, Redis, Postgres on localhost).
 # Dev-only credentials; override via env vars. Never reuse them outside local development.
+# One project name for both compose files and every checkout or worktree (it is the name the main
+# checkout already uses, so existing volumes keep working): the containers have fixed names and the
+# network is shared, so a second project name would collide with the first.
+name: aero-baggage-tracer
 services:
   kafka:
     image: apache/kafka:latest
@@ -23,7 +27,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
     ports:
-      - "127.0.0.1:29092:29092"
+      - "29092:29092"
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
       interval: 10s
@@ -63,7 +67,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
       POSTGRES_DB: ${POSTGRES_DB:-aerotrace}
     volumes:
-      - postgres-data:/var/lib/postgresql
+      - postgres-18-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -126,6 +130,51 @@ services:
     networks:
       - aerotrace
 
+  identity-service:
+    image: ${REGISTRY:-ghcr.io/rapter1990}/aerotrace-identity-service:${TAG:-latest}
+    container_name: identity-service
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+    environment:
+      EUREKA_URL: http://${EUREKA_USER:-eureka}:${EUREKA_PASSWORD:-eureka}@discovery-server:8761/eureka/
+      EUREKA_INSTANCE_HOSTNAME: identity-service
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-aerotrace}
+      DB_USER: ${POSTGRES_USER:-aerotrace}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
+      # "dev" also creates the dummy accounts (dummy.agent, ...; password dummy-password-1). Set
+      # LIQUIBASE_CONTEXTS=schema in .env to start without them.
+      LIQUIBASE_CONTEXTS: ${LIQUIBASE_CONTEXTS:-dev}
+      # The RSA key pair (PEM) that signs the tokens. Empty: the development pair bundled in
+      # the image is used, whose private key is in the repository. Use your own for
+      # anything that matters, e.g. IDENTITY_JWT_PRIVATE_KEY_LOCATION=file:/run/secrets/jwt.pem
+      # with a bind mount or a secret.
+      IDENTITY_JWT_PRIVATE_KEY_LOCATION: ${IDENTITY_JWT_PRIVATE_KEY_LOCATION:-}
+      IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-1.0}
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    # Clients normally reach it through the gateway (/api/v1/auth/**); 1112 is its own port.
+    ports:
+      - "1112:1112"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:1112/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 40s
+    networks:
+      - aerotrace
+
   api-gateway:
     image: ${REGISTRY:-ghcr.io/rapter1990}/aerotrace-api-gateway:${TAG:-latest}
     container_name: api-gateway
@@ -138,8 +187,11 @@ services:
       EUREKA_INSTANCE_HOSTNAME: api-gateway
       REDIS_HOST: redis
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redis}
-      JWT_ISSUER: ${COMPOSE_JWT_ISSUER:-http://identity-service:8081}
-      JWK_SET_URI: ${COMPOSE_JWK_SET_URI:-http://identity-service:8081/.well-known/jwks.json}
+      # The public key (PEM) that verifies the tokens. Empty: the copy of identity-service's
+      # keys/public.pem that is packaged into the image (the development pair). Set it to your
+      # own public key together with IDENTITY_JWT_PRIVATE_KEY_LOCATION / _PUBLIC_KEY_LOCATION of
+      # the identity-service, e.g. JWT_PUBLIC_KEY_LOCATION=file:/run/secrets/jwt-public.pem
+      JWT_PUBLIC_KEY_LOCATION: ${JWT_PUBLIC_KEY_LOCATION:-}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
@@ -149,7 +201,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      identity-service:
+        condition: service_healthy
     ports:
+      # Loopback only: put a reverse proxy with TLS in front of it to expose it further.
       - "8080:8080"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
@@ -201,7 +256,7 @@ services:
     restart: unless-stopped
     # Anyone who can reach it could push fake numbers: loopback only (the script runs on the host).
     ports:
-      - "127.0.0.1:9091:9091"
+      - "9091:9091"
     networks:
       - aerotrace
 
@@ -248,7 +303,11 @@ services:
       - aerotrace
 
 volumes:
-  postgres-data:
+  # postgres-18-data: PostgreSQL 18 needs its own volume. The old postgres-data volume was made by an
+  # older, Alpine-based or version 17 image (data owned by uid 70, layout of 17), so the current
+  # image cannot start on it and the container exits. It is left untouched; remove it with
+  # `docker volume rm aero-baggage-tracer_postgres-data` once you no longer need its contents.
+  postgres-18-data:
   tempo-data:
   loki-data:
 

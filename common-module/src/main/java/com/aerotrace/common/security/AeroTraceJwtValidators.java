@@ -15,8 +15,8 @@ import org.springframework.util.Assert;
 
 /**
  * Claim validation shared by the gateway and resource services: expiration, issuer, audience.
- * Signature verification is done by each service's {@code JwtDecoder} (JWKS or public key); set
- * this validator on that decoder.
+ * Signature verification is done by each service's {@code JwtDecoder} (with its RSA public key);
+ * set this validator on that decoder.
  */
 public final class AeroTraceJwtValidators {
 

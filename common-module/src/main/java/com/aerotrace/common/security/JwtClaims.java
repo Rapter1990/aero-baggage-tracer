@@ -1,7 +1,13 @@
 package com.aerotrace.common.security;
 
-/** JWT claim names shared by identity-service (issuer) and all resource servers. */
+/** JWT claim names (and the fixed issuer) shared by identity-service and all resource servers. */
 public final class JwtClaims {
+
+  /**
+   * The {@code iss} claim of every token identity-service issues, and the only issuer resource
+   * servers accept. A fixed value, so no setting has to be kept equal in two services.
+   */
+  public static final String ISSUER = "aerotrace-identity-service";
 
   /** List of role names, see {@link Role}. */
   public static final String ROLES = "roles";

@@ -1,0 +1,42 @@
+# Defaults for every Spring test. A profile file sits below @TestPropertySource, so single tests
+# (the OTLP export tests, for one) can still switch things back on.
+spring:
+  liquibase:
+    contexts: dev
+  datasource:
+    hikari:
+      # Spring caches one context per distinct configuration, each with its own pool: keep them
+      # small so many cached contexts fit within the database's connection limit.
+      maximum-pool-size: 6
+      minimum-idle: 0
+  cloud:
+    config:
+      enabled: false
+    discovery:
+      enabled: false
+eureka:
+  client:
+    enabled: false
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  tracing:
+    export:
+      otlp:
+        enabled: false
+  logging:
+    export:
+      otlp:
+        enabled: false
+aerotrace:
+  identity:
+    # A low BCrypt cost keeps the tests fast; production uses the default.
+    bcrypt-strength: 4
+    jwt:
+      private-key-location: classpath:keys/private.pem
+      public-key-location: classpath:keys/public.pem
+    auth:
+      refresh-token-ttl: 7d
+      password-reset-ttl: 15m

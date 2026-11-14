@@ -1,0 +1,137 @@
+server:
+  port: 1112
+
+spring:
+  application:
+    name: identity-service
+  web:
+    error:
+      # Never put exception messages, stack traces or binding details into error responses.
+      include-message: never
+      include-stacktrace: never
+      include-binding-errors: never
+      include-exception: false
+  config:
+    # Optional local settings (see the .env section of the README); real environment variables take precedence.
+    import: optional:file:.env[.properties],optional:file:../.env[.properties]
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:aerotrace}
+    username: ${DB_USER:aerotrace}
+    # No default: the service refuses to start rather than guess a database password.
+    password: ${DB_PASSWORD}
+    hikari:
+      # Explicit, so it is a decision and not a default. Each request holds one connection.
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      # Liquibase does not create the schema that holds its own tracking tables, so make sure it
+      # exists before the first migration runs (a no-op once it does).
+      connection-init-sql: CREATE SCHEMA IF NOT EXISTS identity
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Liquibase owns the schema; Hibernate only checks that the entities match it.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  liquibase:
+    # This service owns the "identity" schema; Liquibase tracks its changes there too.
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    # Only changesets without a context, or with one of these, run. The dummy accounts are in the
+    # "dev" context, so they exist only where LIQUIBASE_CONTEXTS=dev is set explicitly.
+    contexts: ${LIQUIBASE_CONTEXTS:schema}
+    default-schema: identity
+    liquibase-schema: identity
+
+aerotrace:
+  identity:
+    # BCrypt cost factor for password hashes.
+    bcrypt-strength: ${IDENTITY_BCRYPT_STRENGTH:12}
+    docs:
+      # The OpenAPI definition at /v3/api-docs, which the gateway's Swagger UI reads. It is served
+      # without a token. Set DOCS_ENABLED=false to turn it off where the API map should stay private.
+      enabled: ${DOCS_ENABLED:true}
+    jwt:
+      audience: ${IDENTITY_AUDIENCE:aerotrace-api}
+      ttl: 15m
+      clock-skew: 1m
+      # The RSA key pair that signs and verifies the tokens, as PEM: a private key in PKCS#8
+      # ("BEGIN PRIVATE KEY") and the matching public key. Each is read from the inline text if
+      # given, otherwise from the location (a Spring resource such as file:/run/secrets/x.pem, or a
+      # path). With nothing set, the development pair bundled in src/main/resources/keys is used:
+      # its private key is in the repository, so replace it wherever the tokens matter.
+      private-key: ${IDENTITY_JWT_PRIVATE_KEY:}
+      private-key-location: ${IDENTITY_JWT_PRIVATE_KEY_LOCATION:}
+      public-key: ${IDENTITY_JWT_PUBLIC_KEY:}
+      public-key-location: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:}
+    auth:
+      # How long a refresh token can be exchanged, and how long a password reset token can be used.
+      refresh-token-ttl: ${IDENTITY_REFRESH_TOKEN_TTL:7d}
+      password-reset-ttl: ${IDENTITY_PASSWORD_RESET_TTL:15m}
+      # Slowing down guessing. A typed name (known or not) with this many wrong passwords within
+      # the window is refused with a 429 for the lockout time, even with the right password. The
+      # lock is a fixed time: trying again during it does not extend it.
+      max-failed-logins: ${IDENTITY_MAX_FAILED_LOGINS:5}
+      failure-window: ${IDENTITY_FAILURE_WINDOW:15m}
+      lockout-duration: ${IDENTITY_LOCKOUT_DURATION:15m}
+      # Password reset requests answered per typed name within the window; the next one is refused.
+      max-password-reset-requests: ${IDENTITY_MAX_RESET_REQUESTS:3}
+      password-reset-request-window: ${IDENTITY_RESET_REQUEST_WINDOW:15m}
+    # Password hashes (BCrypt) that may run at once; 0 means one per CPU core (at least 2). A call
+    # that waits longer than hash-wait for a slot is refused with a 429.
+    max-concurrent-hashes: ${IDENTITY_MAX_CONCURRENT_HASHES:0}
+    hash-wait: ${IDENTITY_HASH_WAIT:2s}
+
+
+eureka:
+  instance:
+    hostname: ${EUREKA_INSTANCE_HOSTNAME:localhost}
+    # One entry per running instance, so several replicas can register side by side.
+    instance-id: ${spring.application.name}:${eureka.instance.hostname}:${server.port}
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: ${EUREKA_URL:http://${EUREKA_USER:eureka}:${EUREKA_PASSWORD}@localhost:8761/eureka/}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+    logging:
+      export:
+        otlp:
+          # Log lines go to the collector (and on to Loki), tagged with their trace id.
+          endpoint: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:http://localhost:4318/v1/logs}
+  otlp:
+    metrics:
+      export:
+        # Metrics go to the OpenTelemetry collector, which Prometheus scrapes (no token needed).
+        url: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:http://localhost:4318/v1/metrics}
+        step: ${METRICS_EXPORT_STEP:15s}
+
+springdoc:
+  api-docs:
+    enabled: ${aerotrace.identity.docs.enabled}

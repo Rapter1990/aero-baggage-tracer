@@ -73,6 +73,32 @@ class RedisRateLimiterIT extends AbstractTestContainerConfiguration {
   }
 
   @Test
+  void aFractionalRefillRateAndARetryAfterTelling_whenToComeBack() {
+    // 0.5 tokens a second: one token every two seconds.
+    RedisRateLimiter limiter = new RedisRateLimiter(template, 0.5, 1);
+    String key = "slow-" + java.util.UUID.randomUUID();
+
+    assertThat(limiter.tryAcquire(key).allowed()).isTrue();
+    RateLimiter.Decision denied = limiter.tryAcquire(key);
+
+    assertThat(denied.allowed()).isFalse();
+    assertThat(denied.retryAfterSeconds()).isBetween(1L, 2L);
+  }
+
+  @Test
+  void anAllowedCallNeedsNoRetryAfter() {
+    RedisRateLimiter limiter = new RedisRateLimiter(template, 1, 3);
+
+    assertThat(limiter.tryAcquire("fresh-" + java.util.UUID.randomUUID()).retryAfterSeconds())
+        .isZero();
+  }
+
+  @Test
+  void aDecisionBuiltWithoutARetryAfterSaysOneSecond() {
+    assertThat(new RateLimiter.Decision(false, 0).retryAfterSeconds()).isEqualTo(1);
+  }
+
+  @Test
   void refillsOverTime() throws InterruptedException {
     RedisRateLimiter limiter = new RedisRateLimiter(template, 1, 1);
     // The first call pays for connection setup; do that before timing the bucket.

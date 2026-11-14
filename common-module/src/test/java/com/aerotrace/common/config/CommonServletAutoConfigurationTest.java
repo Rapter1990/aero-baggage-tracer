@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.aerotrace.common.correlation.CorrelationIdFilter;
 import com.aerotrace.common.correlation.CorrelationIdInterceptor;
+import com.aerotrace.common.error.ApiErrorWriter;
 import com.aerotrace.common.error.BaseExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -30,6 +31,7 @@ class CommonServletAutoConfigurationTest {
               assertThat(ctx).hasSingleBean(CorrelationIdFilter.class);
               assertThat(ctx).hasSingleBean(CorrelationIdInterceptor.class);
               assertThat(ctx).hasSingleBean(BaseExceptionHandler.class);
+              assertThat(ctx).hasSingleBean(ApiErrorWriter.class);
               assertThat(ctx.getBean(CorrelationIdFilter.class).getOrder())
                   .isEqualTo(Ordered.HIGHEST_PRECEDENCE);
             });

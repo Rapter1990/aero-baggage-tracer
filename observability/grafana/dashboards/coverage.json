@@ -66,7 +66,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "JaCoCo test coverage per module. The numbers are loaded by `observability/push-jacoco.ps1` after a build:\n\n```\nmvn verify\n./observability/push-jacoco.ps1\n```\n\nPick one or more **modules** at the top. Green means at or above the build gate (**90 %** of lines, **60 %** of branches in the api-gateway). *Report age* shows when a module was last pushed; the trend charts grow with every push."
+        "content": "JaCoCo test coverage per module. The numbers are loaded by `observability/push-jacoco.ps1`, which runs `mvn verify` and then pushes the reports:\n\n```\npowershell -ExecutionPolicy Bypass -File .\\observability\\push-jacoco.ps1\n```\n\nPick one or more **modules** at the top. Green means at or above the build gate (**90 %** of lines, **60 %** of branches in the api-gateway). *Report age* shows when a module was last pushed; the trend charts grow with every push.\n\nThe last table lists only the classes **below the 90 % line gate** (more than 10 % of their lines uncovered), most uncovered lines first. A class that meets the gate is not listed."
       }
     },
     {
@@ -611,7 +611,7 @@
     {
       "id": 9,
       "type": "table",
-      "title": "Classes with the most uncovered lines",
+      "title": "Classes below the 90 % line gate, most uncovered lines first",
       "gridPos": {
         "h": 10,
         "w": 24,
@@ -627,13 +627,19 @@
           "refId": "A",
           "instant": true,
           "format": "table",
-          "expr": "topk(20, sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"}) > 0)"
+          "expr": "topk(20, (sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"}) > 0) and on (module, package, class) ((100 * sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"}) / ((sum by (module, package, class) (jacoco_covered{counter=\"line\",module=~\"$module\"}) + sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"})) > 0)) > 10))"
         },
         {
           "refId": "B",
           "instant": true,
           "format": "table",
-          "expr": "(100 * sum by (module, package, class) (jacoco_covered{counter=\"line\",module=~\"$module\"}) / ((sum by (module, package, class) (jacoco_covered{counter=\"line\",module=~\"$module\"}) + sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"})) > 0)) and on (module, package, class) topk(20, sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"}) > 0)"
+          "expr": "(sum by (module, package, class) (jacoco_covered{counter=\"line\",module=~\"$module\"}) + sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"})) and on (module, package, class) topk(20, (sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"}) > 0) and on (module, package, class) ((100 * sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"}) / ((sum by (module, package, class) (jacoco_covered{counter=\"line\",module=~\"$module\"}) + sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"})) > 0)) > 10))"
+        },
+        {
+          "refId": "C",
+          "instant": true,
+          "format": "table",
+          "expr": "(100 * sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"}) / ((sum by (module, package, class) (jacoco_covered{counter=\"line\",module=~\"$module\"}) + sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"})) > 0)) and on (module, package, class) topk(20, (sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"}) > 0) and on (module, package, class) ((100 * sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"}) / ((sum by (module, package, class) (jacoco_covered{counter=\"line\",module=~\"$module\"}) + sum by (module, package, class) (jacoco_missed{counter=\"line\",module=~\"$module\"})) > 0)) > 10))"
         }
       ],
       "transformations": [
@@ -652,14 +658,16 @@
               "package": 1,
               "class": 2,
               "Value #A": 3,
-              "Value #B": 4
+              "Value #B": 4,
+              "Value #C": 5
             },
             "renameByName": {
               "module": "Module",
               "package": "Package",
               "class": "Class",
               "Value #A": "Uncovered lines",
-              "Value #B": "Line coverage"
+              "Value #B": "Lines",
+              "Value #C": "Uncovered share"
             }
           }
         },
@@ -680,7 +688,8 @@
         "defaults": {
           "custom": {
             "align": "auto"
-          }
+          },
+          "noValue": "Every class meets the 90 % line gate"
         },
         "overrides": [
           {
@@ -696,13 +705,47 @@
               {
                 "id": "decimals",
                 "value": 0
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "Line coverage"
+              "options": "Lines"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Uncovered share"
             },
             "properties": [
               {
@@ -724,8 +767,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "gauge",
-                  "mode": "basic"
+                  "type": "color-text"
                 }
               },
               {
@@ -734,16 +776,16 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "red",
+                      "color": "green",
                       "value": null
                     },
                     {
                       "color": "orange",
-                      "value": 70
+                      "value": 10
                     },
                     {
-                      "color": "green",
-                      "value": 90
+                      "color": "red",
+                      "value": 30
                     }
                   ]
                 }
@@ -754,7 +796,8 @@
       },
       "options": {
         "showHeader": true
-      }
+      },
+      "description": "Only classes with more than 10 % of their lines uncovered (line coverage below the 90 % gate) are listed, up to 20, ranked by the number of uncovered lines. A class that meets the gate never appears here, however many lines it has. \"Uncovered share\" is the part of the class that no test runs."
     }
   ]
 }
