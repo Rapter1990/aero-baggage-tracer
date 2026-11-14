@@ -125,6 +125,33 @@ Guessing passwords, flooding registrations and burning CPU on password hashes ar
 - **Bounded hashing:** at most one BCrypt hash per CPU core (at least 2) runs at once; a call that cannot get a slot within 2 seconds gets a `429` with `Retry-After: 1` instead of queueing.
 - The counters store only a SHA-256 hash of the typed name, never the text. The lock itself is written to the audit trail once (`LOGIN_LOCKED`, `PASSWORD_RESET_LOCKED`), not for every refused attempt, and refused calls are counted by reason (`identity.auth.refused{reason=locked|throttled|busy}`), never by name. Counters that stopped changing a day ago are deleted hourly.
 
+### How many requests are allowed?
+
+Think of a **bucket of tokens**. Every request takes one token. The bucket holds a fixed number of tokens, and new tokens drip in at a steady speed. When the bucket is empty, the request is refused with a `429` and a `Retry-After` header (the seconds to wait).
+
+| Limit | What is counted | Allowed right away (full bucket) | Then (refill) | Per minute once steady | Most in the first minute |
+|---|---|---|---|---|---|
+| General API limit (gateway) | each signed-in caller (by token), or each address when there is no token | **20** requests | 10 more every second | 600 | 620 |
+| Authentication endpoints (gateway) | each endpoint separately (`login`, `register`, `refresh-token`, `forgot-password`, `reset-password`, `logout`), per client address | **10** requests | 1 more every 5 seconds | 12 | 22 |
+
+The most requests that fit into a time span is: **bucket size + refill per second × seconds**. For `login` that is 10 + 0.2 × 60 = 22 in the first minute and 12 in every minute after.
+
+Example, `login` from one address with the defaults:
+
+1. The first 10 calls go through at once.
+2. The 11th is refused (`429`, `Retry-After` about 5).
+3. After waiting 5 seconds one more call is allowed; after about 50 seconds without calls the bucket is full again.
+
+The identity-service adds limits that count something other than all requests:
+
+| Limit | What is counted | Allowed | What happens after |
+|---|---|---|---|
+| Wrong passwords | wrong passwords for one typed name (the name need not exist) | 5 within 15 minutes | the name is locked for 15 minutes, even for the right password |
+| Password reset requests | `forgot-password` calls for one typed name | 3 within 15 minutes | the next one is refused, and everything for 15 minutes |
+| Password hashing | all sign-ins and password changes at the same moment | one per CPU core (at least 2) at once | a call that waits more than 2 seconds gets a `429` |
+
+All numbers are defaults and can be changed (see the variables below).
+
 Change the limits with the `IDENTITY_*` and `AUTH_RATE_LIMIT_*` variables in the table above.
 
 ## Known limitations of the identity-service
