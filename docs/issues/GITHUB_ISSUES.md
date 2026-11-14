@@ -196,10 +196,10 @@ Baggage registration, itinerary snapshots, scan ingestion API and authoritative 
 - Transactional outbox + scheduled relay (at-least-once).
 
 **Acceptance criteria**
-- [ ] AT-01, AT-02, AT-03, AT-04, AT-05, AT-15.
-- [ ] Two replicas run correctly (no double-publish side effects).
-- [ ] Liquibase V1–V3 (see #16).
-- [ ] ≥ 80% coverage of domain/application code.
+- [x] AT-01, AT-02, AT-03, AT-04, AT-05, AT-15.
+- [x] Two replicas run correctly (no double-publish side effects).
+- [x] Liquibase V1–V3 (see #16).
+- [x] ≥ 80% coverage of domain/application code.
 
 ---
 

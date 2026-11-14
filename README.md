@@ -152,6 +152,20 @@ Change the limits with the `IDENTITY_*` and `AUTH_RATE_LIMIT_*` variables in the
 - The signing key pair is one static pair read at start-up, and the gateway holds a copy of the public key (packaged at build time, or from `JWT_PUBLIC_KEY_LOCATION`). There is no key-set endpoint, no `kid`, and no rotation: replacing the pair means restarting identity-service and the gateway, and tokens signed with the old pair stop verifying.
 - The development key pair that ships with the service has its private key in the repository (see above).
 
+## Journey service
+
+The journey-service (port 1113, schema `journey` in PostgreSQL) registers bags with an itinerary snapshot, ingests scans and answers the journey of a bag. Through the gateway the calls are under `/api/v1/bags` and `/api/v1/scans`; all need a bearer token and answer `{"success":true,"data":...,"timestamp":...}`.
+
+| Call | Roles | What it does |
+|---|---|---|
+| `POST /api/v1/bags` `{bagTag,passengerRef,legs[]}` | AGENT, ADMIN | Registers a bag (201). `bagTag` is 10 digits and unique (`409 BAG_TAG_DUPLICATE`); airports are 3-letter IATA codes; legs must be chained, in order and respect the minimum connection time (`JOURNEY_MIN_CONNECTION_TIME`, default `45m`) |
+| `GET /api/v1/bags/{bagTag}/journey` | all roles | The latest accepted state and the immutable scan history. A passenger sees only a bag registered to their own `passengerRef`; any other bag answers `404`, like an unknown one |
+| `POST /api/v1/scans` `{protocol,version?,payload}` with an `Idempotency-Key` header | AGENT, DISPATCHER, ADMIN | Accepts a scan (202 `QUEUED`) and queues `baggage.scan.received.v1`. `protocol` is `BARCODE`, `RFID` or `CONVEYOR`, each with its own payload format (see the handlers in `journey-service/.../scan`). The same key again returns the original scan and creates nothing new |
+
+Times are stored in UTC with the zone the device reported. A scan older than `JOURNEY_LATE_EVENT_GRACE` (default `10m`) on arrival is flagged `lateEvent` (BR-06); it is kept and published, but never replaces a newer state. Events leave through a transactional outbox: a relay (every `JOURNEY_OUTBOX_RELAY_DELAY`, default `200ms`) publishes them to Kafka at least once, keyed by bag tag. One relay runs at a time across all replicas (a PostgreSQL advisory lock), so the events of a bag leave in order; an event the broker refuses for good (for example too large) is parked and counted in `journey.outbox.parked`, a temporary broker problem stops the run and is retried.
+
+Known limitations: scans must come from a staff account (no separate device identity yet); the relay is a single stream (throughput is one relay, sending in order); the journey lists at most the newest 500 scans (`historyTruncated` says so); a reused idempotency key for a different scan is a `409`; tokens are checked against one static identity public key (no key set or rotation yet), and the bundled development key is used when none is configured.
+
 ## Observability (OpenTelemetry Collector, Tempo, Loki, Prometheus, Grafana)
 
 Both compose files start an OpenTelemetry Collector, Tempo, Loki, Prometheus and Grafana next to the infrastructure:
