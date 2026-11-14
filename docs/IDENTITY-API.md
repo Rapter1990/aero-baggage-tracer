@@ -2,9 +2,17 @@
 
 [← API overview](API.md) · [Journey Service API](JOURNEY-API.md) · [README](../README.md)
 
-Registers users, signs them in and issues signed tokens.
+Registers users, signs them in, issues tokens.
 
-**Contents:** [At a glance](#at-a-glance) · [Calls](#calls) · [Tokens and keys](#tokens-and-keys) · [Flows](#flows) · [Every request in the Postman collection](#every-request-in-the-postman-collection)
+## Contents
+
+| Section | What it covers |
+|---|---|
+| [At a glance](#at-a-glance) | Addresses, database, limits |
+| [Calls](#calls) | The six auth requests |
+| [Tokens and keys](#tokens-and-keys) | Token rules, your own key pair |
+| [Flows](#flows) | Sequence diagrams |
+| [Every request](#every-request-in-the-postman-collection) | Postman requests, expected status |
 
 ## At a glance
 
@@ -13,37 +21,50 @@ Registers users, signs them in and issues signed tokens.
 | Through the gateway | `http://localhost:8080/api/v1/auth` |
 | Directly | `http://localhost:1112/api/v1/auth` |
 | Database | PostgreSQL, schema `identity` |
-| Answers | `{"success":true,"data":...,"timestamp":...}`. Errors use the shared shape, see [API response format](../README.md#api-response-format) |
-| Limits and lockout | See the [README](../README.md#rate-limits-and-lockout-of-the-authentication-endpoints) |
+| Success answer | `{"success":true,"data":...,"timestamp":...}` |
+| Errors | Shared shape, see [response format](../README.md#api-response-format) |
+| Limits and lockout | See [README rate limits](../README.md#rate-limits-and-lockout-of-the-authentication-endpoints) |
 
 ## Calls
 
-| Call | Body | What it does |
-|---|---|---|
-| `POST /register` | `username`, `email`, `password`, `fullName`, `role` (optional) | Creates an account (201). Without a token, only `PASSENGER`. `AGENT`, `DISPATCHER` and `ADMIN` need an ADMIN access token |
-| `POST /login` | `usernameOrEmail`, `password` | Returns `accessToken`, `refreshToken`, `tokenType`, the expiry times and the roles |
-| `POST /refresh-token` | `refreshToken` | Returns a new token pair. A refresh token works once. Using a used one ends every session of that user |
-| `POST /forgot-password` | `usernameOrEmail` | Starts a password reset. The answer is the same for unknown accounts |
-| `POST /reset-password` | `resetToken`, `newPassword` | Sets a new password. The reset token works once, for 15 minutes. Every session of the user ends |
-| `POST /logout` | `refreshToken` | Revokes the refresh token. Always answers 200 |
+| Call | Token | Body | What it does |
+|---|---|---|---|
+| `POST /register` | none (staff role: ADMIN) | `username`, `email`, `password`, `fullName`, `role` (optional) | Creates an account (201) |
+| `POST /login` | none | `usernameOrEmail`, `password` | Returns tokens, expiry times, roles |
+| `POST /refresh-token` | none | `refreshToken` | Returns a new token pair |
+| `POST /forgot-password` | none | `usernameOrEmail` | Starts a password reset |
+| `POST /reset-password` | none | `resetToken`, `newPassword` | Sets a new password |
+| `POST /logout` | none | `refreshToken` | Revokes the refresh token |
 
-Which calls need a token:
+Rules per call:
 
-| Call | Token |
+| Call | Rule |
 |---|---|
-| `register` (passenger), `login`, `refresh-token`, `forgot-password`, `reset-password`, `logout` | none |
-| `register` (staff role) | ADMIN access token |
+| `register` | Without a token: `PASSENGER` only |
+| `register` | `AGENT`, `DISPATCHER`, `ADMIN` need an ADMIN token |
+| `refresh-token` | A refresh token works once |
+| `refresh-token` | Reusing a used one ends all sessions |
+| `forgot-password` | Same answer for unknown accounts |
+| `reset-password` | Reset token works once, for 15 minutes |
+| `reset-password` | Ends every session of the user |
+| `logout` | Always answers 200 |
 
 ## Tokens and keys
 
 | Topic | Rule |
 |---|---|
 | Passwords | 12 to 72 bytes |
-| Access token | Valid for 15 minutes |
-| Refresh token | Valid for 7 days. A signed JWT (RS256, same issuer) with its own audience. It is refused as an access token, and the other way round |
-| Storage | Refresh and reset tokens are stored only as SHA-256 hashes |
-| Development key pair | Ships with identity-service. Its private key is in this repository, so anyone can create valid tokens. Use it only for a local stack. A warning is logged at every start while it is in use |
-| Key set | There is no key-set (JWKS) endpoint and no issuer setting |
+| Access token | Valid 15 minutes |
+| Refresh token | Valid 7 days |
+| Token type | RS256 JWT, same issuer |
+| Audience | Refresh and access tokens differ |
+| Cross-use | Refused in both directions |
+| Storage | Refresh and reset tokens: SHA-256 hashes only |
+| Development key | Ships with identity-service |
+| Development key | Private key is in this repository |
+| Development key | Anyone can create valid tokens |
+| Development key | Local stack only. Warned at every start |
+| Key set | No JWKS endpoint, no issuer setting |
 
 To use your own key pair:
 
@@ -132,9 +153,9 @@ Generated from `postman/AeroTrace.postman_collection.json`.
 
 | Column | Meaning |
 |---|---|
-| Step | The number in front of the request name in Postman |
-| Call | Path through the gateway, unless marked direct |
-| Expect | The status the test script checks |
+| Step | Number before the request name |
+| Call | Path via gateway, unless marked direct |
+| Expect | Status the test script checks |
 
 ### 1. Register
 
@@ -201,7 +222,7 @@ Generated from `postman/AeroTrace.postman_collection.json`.
 | 3.3 | Refresh with an unknown token | `POST /api/v1/auth/refresh-token` | 401 |
 | 3.4 | Refresh with an empty body | `POST /api/v1/auth/refresh-token` | 400 |
 | 3.5 | Refresh with an access token (refused) | `POST /api/v1/auth/refresh-token` | 401 |
-| 3.6 | Use the refresh token as an access token (refused) | `POST /api/v1/auth/register` | 401 |
+| 3.6 | Use refresh token as access token (refused) | `POST /api/v1/auth/register` | 401 |
 
 ### 4. Forgot password
 

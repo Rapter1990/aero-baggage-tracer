@@ -1331,7 +1331,7 @@
               }
             },
             {
-              "name": "3.6 Use the refresh token as an access token (refused)",
+              "name": "3.6 Use refresh token as access token (refused)",
               "event": [
                 {
                   "listen": "test",

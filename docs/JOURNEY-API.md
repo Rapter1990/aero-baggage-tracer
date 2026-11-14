@@ -2,9 +2,21 @@
 
 [← API overview](API.md) · [Identity Service API](IDENTITY-API.md) · [README](../README.md)
 
-Registers bags with an itinerary, takes in scans from devices and shows the journey of a bag.
+Registers bags, takes in device scans, shows each bag's journey.
 
-**Contents:** [At a glance](#at-a-glance) · [Calls](#calls) · [Rules](#rules) · [Scan formats](#scan-formats) · [Errors](#errors) · [How events are published](#how-events-are-published) · [Known limitations](#known-limitations) · [Flows](#flows) · [Every request in the Postman collection](#every-request-in-the-postman-collection)
+## Contents
+
+| Section | What it covers |
+|---|---|
+| [At a glance](#at-a-glance) | Addresses, database, messages |
+| [Calls](#calls) | The three requests |
+| [Rules](#rules) | Registering, reading, scanning |
+| [Scan formats](#scan-formats) | Payload fields per protocol |
+| [Errors](#errors) | Status and code per case |
+| [How events are published](#how-events-are-published) | Outbox and Kafka relay |
+| [Known limitations](#known-limitations) | What is not done yet |
+| [Flows](#flows) | Sequence and decision diagrams |
+| [Every request](#every-request-in-the-postman-collection) | Postman requests, expected status |
 
 ## At a glance
 
@@ -13,17 +25,24 @@ Registers bags with an itinerary, takes in scans from devices and shows the jour
 | Through the gateway | `http://localhost:8080/api/v1/bags` and `/api/v1/scans` |
 | Directly | `http://localhost:1113` |
 | Database | PostgreSQL, schema `journey` |
-| Messages | Kafka topic `baggage.scan.received.v1`, key = bag tag |
-| Token | All calls need a bearer token from the [Identity Service](IDENTITY-API.md) |
-| Answers | `{"success":true,"data":...,"timestamp":...}`. Errors use the shared shape, see [API response format](../README.md#api-response-format) |
+| Messages | Topic `baggage.scan.received.v1`, key = bag tag |
+| Token | Bearer token from [Identity Service](IDENTITY-API.md) |
+| Success answer | `{"success":true,"data":...,"timestamp":...}` |
+| Errors | Shared shape, see [response format](../README.md#api-response-format) |
 
 ## Calls
 
 | Call | Roles | What it does |
 |---|---|---|
-| `POST /api/v1/bags` with `bagTag`, `passengerRef`, `legs[]` | AGENT, ADMIN | Registers a bag (201) |
-| `GET /api/v1/bags/{bagTag}/journey` | all roles | Returns the latest accepted state and the immutable scan history |
-| `POST /api/v1/scans` with `protocol`, `version` (optional), `payload`, and an `Idempotency-Key` header | AGENT, DISPATCHER, ADMIN | Accepts a scan (202 `QUEUED`) and queues the event |
+| `POST /api/v1/bags` | AGENT, ADMIN | Registers a bag (201) |
+| `GET /api/v1/bags/{bagTag}/journey` | all roles | Returns latest state and scan history |
+| `POST /api/v1/scans` | AGENT, DISPATCHER, ADMIN | Accepts a scan (202 `QUEUED`) |
+
+| Call | Body |
+|---|---|
+| `POST /api/v1/bags` | `bagTag`, `passengerRef`, `legs[]` |
+| `POST /api/v1/scans` | `protocol`, `version` (optional), `payload` |
+| `POST /api/v1/scans` | Header `Idempotency-Key` (required) |
 
 ## Rules
 
@@ -31,33 +50,42 @@ Registers bags with an itinerary, takes in scans from devices and shows the jour
 
 | Topic | Rule |
 |---|---|
-| Bag tag | 10 digits, unique. A second registration is `409 BAG_TAG_DUPLICATE`, also under parallel requests |
-| Passenger reference | `P-` and 20 digits (the `passengerRef` claim of the passenger token) |
-| Airports | 3-letter uppercase IATA codes. A leg must leave and arrive at different airports |
-| Legs | 1 to 8. Each leg arrives after it departs. Each leg starts where the previous one ended. Legs are in order |
-| Connection time | At least `JOURNEY_MIN_CONNECTION_TIME` between two legs. Default `45m` |
+| Bag tag | 10 digits, unique |
+| Duplicate tag | `409 BAG_TAG_DUPLICATE`, also in parallel |
+| Passenger reference | `P-` and 20 digits |
+| Airports | 3 uppercase IATA letters |
+| Each leg | Different airports, arrives after departing |
+| Legs | 1 to 8, chained, in order |
+| Connection time | At least `JOURNEY_MIN_CONNECTION_TIME` (`45m`) |
 
 **Reading a journey**
 
 | Topic | Rule |
 |---|---|
-| Content | The latest accepted state, the itinerary and the scan history in event order |
-| Staff | AGENT, DISPATCHER and ADMIN see every bag |
-| Passengers | A passenger sees only a bag registered to their own `passengerRef`. Any other bag answers `404`, like an unknown one |
-| Size | At most the newest 500 scans. `historyTruncated` says when older ones are left out |
+| Content | Latest state, itinerary, scan history |
+| History order | By event time |
+| Staff | See every bag |
+| Passengers | Only bags of their own `passengerRef` |
+| Other bags | `404`, like an unknown bag |
+| Size | Newest 500 scans (`historyTruncated`) |
 
 **Scans**
 
 | Topic | Rule |
 |---|---|
-| Idempotency-Key | Required. 1 to 128 visible characters. Send the same key again and you get the original answer (`duplicate: true`). Nothing new is created |
-| Same key, different scan | `409 VERSION_CONFLICT`. Nothing of the first scan is revealed |
-| Time | Stored in UTC, with the zone the device reported |
-| Future | A scan stamped more than `JOURNEY_MAX_CLOCK_SKEW` (default `5m`) ahead is refused (400) |
-| Late scan | Older than `JOURNEY_LATE_EVENT_GRACE` (default `10m`) on arrival: flagged `lateEvent`. It is kept and published, but never replaces a newer state |
-| Latest state | The scan with the newest event time wins. For the same time, the higher device sequence wins. The arrival order does not matter |
+| Idempotency-Key | Required, 1 to 128 visible characters |
+| Same key again | Original answer, `duplicate: true` |
+| Same key, other scan | `409 VERSION_CONFLICT` |
+| Time | Stored in UTC, device zone kept |
+| Future scan | More than `JOURNEY_MAX_CLOCK_SKEW` ahead: 400 |
+| Late scan | Older than `JOURNEY_LATE_EVENT_GRACE` on arrival: `lateEvent` |
+| Late scan | Kept and published, never the newest state |
+| Latest state | Newest event time wins |
+| Same time | Higher device sequence wins |
 | Unknown bag | `404` |
-| Size | The payload has at most 20 fields |
+| Payload | At most 20 fields |
+
+Defaults: `JOURNEY_MAX_CLOCK_SKEW` is `5m`, `JOURNEY_LATE_EVENT_GRACE` is `10m`.
 
 ## Scan formats
 
@@ -65,41 +93,54 @@ Registers bags with an itinerary, takes in scans from devices and shows the jour
 
 | Protocol | Payload fields |
 |---|---|
-| `BARCODE` | `bagTag`, `airport`, `checkpoint`, `sequence`, `scannedAt` (ISO-8601 time with offset, for example `2026-11-14T08:15:00+02:00`) |
-| `RFID` | `tagId` (the bag tag), `airport`, `checkpoint`, `readCount`, `readAt` (epoch milliseconds), `timezone` (IANA zone, for example `Europe/Istanbul`) |
-| `CONVEYOR` | `bagTag`, `airport`, `checkpoint`, `seq`, `timestamp` (local time without offset, for example `2026-11-14T08:15:00`), `timezone` (IANA zone) |
+| `BARCODE` | `bagTag`, `airport`, `checkpoint`, `sequence`, `scannedAt` |
+| `RFID` | `tagId`, `airport`, `checkpoint`, `readCount`, `readAt`, `timezone` |
+| `CONVEYOR` | `bagTag`, `airport`, `checkpoint`, `seq`, `timestamp`, `timezone` |
 
-`checkpoint` is one of: `CHECK_IN`, `SORTING`, `TRANSFER`, `LOADED`, `ARRIVED`, `CLAIM`. The sequence or count is a number of 0 or more.
+| Field | Format |
+|---|---|
+| `tagId` | The bag tag |
+| `scannedAt` | ISO-8601 with offset, `2026-11-14T08:15:00+02:00` |
+| `readAt` | Epoch milliseconds |
+| `timestamp` | Local time, no offset, `2026-11-14T08:15:00` |
+| `timezone` | IANA zone, `Europe/Istanbul` |
+| `sequence`, `readCount`, `seq` | Number, 0 or more |
+| `checkpoint` | `CHECK_IN`, `SORTING`, `TRANSFER`, `LOADED`, `ARRIVED`, `CLAIM` |
 
 ## Errors
 
 | Status | `code` | When |
 |---|---|---|
-| 400 | `VALIDATION_ERROR` | A field, the itinerary, the payload, the scan version or the Idempotency-Key is invalid |
-| 401 | `UNAUTHENTICATED` | No token, or an invalid or expired one |
-| 403 | `ACCESS_DENIED` | The token's role may not make this call |
-| 404 | `NOT_FOUND` | Unknown bag. Also another passenger's bag |
-| 409 | `BAG_TAG_DUPLICATE` | The bag tag is already registered |
-| 409 | `VERSION_CONFLICT` | The Idempotency-Key was already used for a different scan |
+| 400 | `VALIDATION_ERROR` | Invalid field, itinerary, payload or key |
+| 401 | `UNAUTHENTICATED` | No, invalid or expired token |
+| 403 | `ACCESS_DENIED` | Role may not make this call |
+| 404 | `NOT_FOUND` | Unknown bag, or another passenger's |
+| 409 | `BAG_TAG_DUPLICATE` | Bag tag already registered |
+| 409 | `VERSION_CONFLICT` | Key already used for another scan |
 
 ## How events are published
 
 | Topic | What happens |
 |---|---|
-| Outbox | Each scan stores an event in an outbox, in the same transaction as the scan |
-| Relay | Sends the events to Kafka at least once. The key is the bag tag. It runs every `JOURNEY_OUTBOX_RELAY_DELAY` (default `200ms`) |
-| Order | One relay runs at a time across all replicas (a PostgreSQL advisory lock). The events of one bag stay in order |
-| Temporary Kafka problem | The run stops. The relay tries again |
-| Event refused for good | For example too large. It is parked and counted in `journey.outbox.parked` |
+| Outbox | Event stored with the scan, same transaction |
+| Relay | Sends events to Kafka, at least once |
+| Key | The bag tag |
+| Interval | `JOURNEY_OUTBOX_RELAY_DELAY` (`200ms`) |
+| Order | One relay at a time (advisory lock) |
+| Per bag | Events stay in order |
+| Kafka down | Run stops, retried later |
+| Refused for good | Parked, counted in `journey.outbox.parked` |
 
 ## Known limitations
 
 | Area | Limitation |
 |---|---|
-| Scanners | Scans must come from a staff account. There is no device identity yet |
-| Throughput | One relay sends at a time: one stream |
-| History | A journey lists at most the newest 500 scans |
-| Tokens | Checked with one static identity public key. There is no key set and no rotation. If no key is configured, the bundled development key is used |
+| Scanners | Staff accounts only, no device identity |
+| Throughput | One relay, one stream |
+| History | Newest 500 scans only |
+| Tokens | One static identity public key |
+| Tokens | No key set, no rotation |
+| Tokens | Bundled development key if none set |
 
 ## Flows
 
@@ -214,9 +255,9 @@ Generated from `postman/AeroTrace.postman_collection.json`.
 
 | Column | Meaning |
 |---|---|
-| Step | The number in front of the request name in Postman |
-| Call | Path through the gateway, unless marked direct |
-| Expect | The status the test script checks |
+| Step | Number before the request name |
+| Call | Path via gateway, unless marked direct |
+| Expect | Status the test script checks |
 
 ### 1. Sign in (dev dummy accounts)
 

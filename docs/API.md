@@ -1,24 +1,24 @@
 # API requests and flows
 
-What the platform offers today, how a request flows through it, and how to try it in Postman.
+What the platform offers, how requests flow, how to try them in Postman.
 
 ## Documents
 
 | Document | What it has |
 |---|---|
-| [Identity Service API](IDENTITY-API.md) | Calls, tokens and keys, flows, every Postman request |
-| [Journey Service API](JOURNEY-API.md) | Calls, rules, scan formats, errors, events, flows, every Postman request |
-| [README](../README.md) | Setup, variables, response format, rate limits, observability |
+| [Identity Service API](IDENTITY-API.md) | Calls, tokens, flows, requests |
+| [Journey Service API](JOURNEY-API.md) | Calls, rules, scans, events, requests |
+| [README](../README.md) | Setup, variables, limits, observability |
 
 ## At a glance
 
-| What | Address | Routes |
+| Service | Address | Gateway path |
 |---|---|---|
-| api-gateway (clients call this) | `http://localhost:8080` | `/api/v1/auth/**` to identity-service. `/api/v1/bags/**` and `/api/v1/scans/**` to journey-service |
-| identity-service (direct) | `http://localhost:1112` | |
-| journey-service (direct) | `http://localhost:1113` | |
+| api-gateway | `http://localhost:8080` | clients call this |
+| identity-service | `http://localhost:1112` | `/api/v1/auth/**` |
+| journey-service | `http://localhost:1113` | `/api/v1/bags/**`, `/api/v1/scans/**` |
 
-Success answers look like `{"success":true,"data":...,"timestamp":...}`. Errors use the shared shape. See [API response format](../README.md#api-response-format).
+Success answers look like `{"success":true,"data":...,"timestamp":...}`. Errors use the shared shape, see [response format](../README.md#api-response-format).
 
 ```mermaid
 flowchart LR
@@ -40,32 +40,52 @@ Two files in `postman/`:
 
 | File | Content |
 |---|---|
-| `AeroTrace.postman_collection.json` | The requests, with test scripts |
-| `AeroTrace-local.postman_environment.json` | The variables (`baseUrl`, `identityUrl`, `journeyUrl`, accounts, tokens) |
+| `AeroTrace.postman_collection.json` | Requests with test scripts |
+| `AeroTrace-local.postman_environment.json` | Variables: URLs, accounts, tokens |
 
 **Set up**
 
-1. Start the stack with Docker Compose. The `dev` Liquibase context creates the dummy accounts.
+1. Start the stack with Docker Compose. The `dev` context creates dummy accounts.
 2. Import both files into Postman.
-3. Select the environment "AeroTrace - local". `baseUrl` is `http://localhost:8080`.
-4. Run a service folder from top to bottom. Use a delay of 150 ms or more between requests. The gateway allows about 10 requests per second per address.
+3. Select the environment "AeroTrace - local".
+4. Run a service folder top to bottom, 150 ms or more between requests.
 
-**Folders**
-
-| Folder | Steps |
-|---|---|
-| Identity Service | 1 Register, 2 Login, 3 Refresh token, 4 Forgot password, 5 Reset password, 6 Logout, 7 Gateway rules, 8 Direct calls to port 1112 (`identityUrl`) |
-| Journey Service | 1 Sign in, 2 Register a bag, 3 Scans, 4 Journey, 5 Direct calls to port 1113 (`journeyUrl`) |
-
-**What each folder does**
+**Identity Service folders**
 
 | Folder | What it does |
 |---|---|
-| Identity Service | 1 Register creates a passenger. The later folders log in, refresh, reset the password and log out. The test scripts store the tokens in the environment. The refusals (wrong password, validation, duplicate, unknown tokens) are in the same folders |
-| Identity Service 1.2 | Registers staff. Needs `adminUsername` and `adminPassword` in the environment. By default this is the dev dummy admin. You can also make the first admin by hand, see the [README](../README.md#first-administrator-without-the-dev-context) |
-| Journey Service | Signs in the dev dummy agent and two dummy passengers, registers a bag, sends barcode, RFID and conveyor scans (an `Idempotency-Key` is generated for each), reads the journey as staff, as the owner and as another passenger, and checks the refusals. Needs the Compose stack with the `dev` Liquibase context |
+| 1 Register | Passenger, staff, refusals |
+| 2 Login | Passenger, staff, refusals |
+| 3 Refresh token | Rotation and refusals |
+| 4 Forgot password | Starts a reset |
+| 5 Reset password | Resets, then logs in again |
+| 6 Logout | Revokes the refresh token |
+| 7 Gateway rules | Unexposed paths are refused |
+| 8 Direct (port 1112) | Health and login via `identityUrl` |
 
-Variables of the Journey Service folder: `journeyAgentUsername`, `journeyPassengerUsername`, `journeyOtherPassengerUsername`, `journeyAgentPassword`, `journeyPassengerPassword`.
+**Journey Service folders**
+
+| Folder | What it does |
+|---|---|
+| 1 Sign in | Dev dummy agent and passengers |
+| 2 Register a bag | Happy path and refusals |
+| 3 Scans | Barcode, RFID, conveyor, idempotency, late |
+| 4 Journey | Staff, owner, other passenger |
+| 5 Direct (port 1113) | Health and OpenAPI via `journeyUrl` |
+
+**Notes**
+
+| Topic | What to know |
+|---|---|
+| Tokens | Test scripts store them in the environment |
+| Identity 1.2 | Needs `adminUsername` and `adminPassword` |
+| Default admin | The dev dummy admin |
+| First admin | By hand, see [README](../README.md#first-administrator-without-the-dev-context) |
+| Journey scans | `Idempotency-Key` generated per scan |
+| Journey | Needs Compose with the `dev` context |
+| Journey variables | `journeyAgentUsername`, `journeyPassengerUsername`, `journeyOtherPassengerUsername` |
+| Journey passwords | `journeyAgentPassword`, `journeyPassengerPassword` |
+| Base URL | `baseUrl` is `http://localhost:8080` |
 
 **With newman**
 
