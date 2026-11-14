@@ -127,15 +127,35 @@ Guessing passwords, flooding registrations and burning CPU on password hashes ar
 
 ### How many requests are allowed?
 
-The most requests that are allowed within a given time (default settings). More than that gets a `429` with a `Retry-After` header.
+**The rate (default settings).** You may send a number of requests at once; after that you get new requests back at a fixed speed.
 
-| Time | General API limit (per signed-in caller, or per address without a token) | One authentication endpoint, e.g. `login` (per client address) |
+| Limit | Allowed at once | Then you get requests back at |
+|---|---|---|
+| General API limit (per signed-in caller, or per address without a token) | 20 requests | 10 per second (1 every 0.1 seconds) |
+| One authentication endpoint, e.g. `login` (per client address) | 10 requests | 1 every 5 seconds (12 per minute) |
+
+**How many requests are allowed in a given time** (sending as fast as allowed). More than that gets a `429` with a `Retry-After` header.
+
+| Time | General API limit | One authentication endpoint, e.g. `login` |
 |---|---|---|
 | 1 second | 30 requests | 10 requests |
 | 10 seconds | 120 requests | 12 requests |
 | 1 minute | 620 requests | 22 requests |
 | 10 minutes | 6,020 requests | 130 requests |
 | 1 hour | 36,020 requests | 730 requests |
+
+**I sent requests at once: how long must I wait for the next one?**
+
+| I sent at once | General API limit | One authentication endpoint, e.g. `login` |
+|---|---|---|
+| 1 to 9 requests | send the next one right away | send the next one right away |
+| 10 requests | right away (10 of 20 used) | **wait 5 seconds** |
+| 11 or more requests | the 11th to 20th go through | the 11th is refused with a `429` (`Retry-After` about 5) |
+| 20 requests | wait 0.1 seconds (`Retry-After` says 1) | the 11th to 20th were refused |
+
+Example: you call `login` 10 times within 2 seconds. All 10 are allowed, but that used everything you were allowed at once. In 2 seconds you got back only 0.4 of a request (1 every 5 seconds), so the 11th call must wait until 5 seconds after you started, which is **3 more seconds**. A call sooner than that is refused, and `Retry-After` tells you how long to wait. After about 50 seconds without calls you may send 10 at once again. The same 10 calls to the general limit need no waiting, because 20 are allowed at once.
+
+After you used up what is allowed at once, each new request is allowed only as the requests come back: for `login` that is 5 seconds for 1 request, 10 seconds for 2, 30 seconds for 6.
 
 Change the limits with the `IDENTITY_*` and `AUTH_RATE_LIMIT_*` variables in the table above.
 
