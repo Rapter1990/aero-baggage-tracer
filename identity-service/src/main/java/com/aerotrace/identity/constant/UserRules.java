@@ -19,7 +19,6 @@ public final class UserRules {
   public static final String PASSENGER_REF_PREFIX = "P-";
 
   public static final int PASSENGER_REF_DIGITS = 20;
-  public static final String PASSENGER_REF_PATTERN = "P-[0-9]{20}";
 
   public static final int MIN_PASSWORD_LENGTH = 12;
 

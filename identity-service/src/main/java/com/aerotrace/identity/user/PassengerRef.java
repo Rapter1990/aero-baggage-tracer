@@ -2,7 +2,6 @@ package com.aerotrace.identity.user;
 
 import com.aerotrace.identity.constant.UserRules;
 import java.security.SecureRandom;
-import java.util.regex.Pattern;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
@@ -14,7 +13,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class PassengerRef {
 
-  private static final Pattern FORMAT = Pattern.compile(UserRules.PASSENGER_REF_PATTERN);
   private static final SecureRandom RANDOM = new SecureRandom();
 
   public static String generate() {
@@ -23,9 +21,5 @@ public final class PassengerRef {
       reference.append(RANDOM.nextInt(10));
     }
     return reference.toString();
-  }
-
-  public static boolean isValid(String value) {
-    return value != null && FORMAT.matcher(value).matches();
   }
 }
