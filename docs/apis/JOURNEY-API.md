@@ -15,6 +15,7 @@ Registers bags, takes in device scans, shows each bag's journey.
 | [Errors](#errors) | Status and code per case |
 | [How events are published](#how-events-are-published) | Outbox and Kafka relay |
 | [Known limitations](#known-limitations) | What is not done yet |
+| [Postman flow by actor](#postman-flow-by-actor) | Agent, passenger, other passenger |
 | [Flows](#flows) | Sequence and decision diagrams |
 | [Every request](#every-request-in-the-postman-collection) | Postman requests, expected status |
 
@@ -142,6 +143,45 @@ Defaults: `JOURNEY_MAX_CLOCK_SKEW` is `5m`, `JOURNEY_LATE_EVENT_GRACE` is `10m`.
 | Tokens | No key set, no rotation |
 | Tokens | Bundled development key if none set |
 
+## Postman flow by actor
+
+The collection has one folder per actor, in run order. Run it top to bottom.
+
+| Order | Actor | Step | What happens |
+|---|---|---|---|
+| 1 | Agent | 1 - Sign in | Dummy agent gets a token |
+| 1 | Agent | 2 - Register a bag | Bag registered, refusals checked |
+| 1 | Agent | 3 - Send scans | Barcode, RFID, conveyor, retry, late |
+| 1 | Agent | 4 - Read the journey | Agent sees state and history |
+| 2 | Passenger (owner) | 1 - Sign in | Token carries the bag's reference |
+| 2 | Passenger (owner) | 2 - Try staff calls | Register and scan are refused |
+| 2 | Passenger (owner) | 3 - Read my journey | Owner sees the own bag |
+| 3 | Other passenger | 1 - Sign in | Second dummy passenger gets a token |
+| 3 | Other passenger | 2 - Read another's bag | Answer is `404` |
+| 4 | Service checks | 1 - Health, 2 - OpenAPI | Direct calls to port 1113 |
+
+The agent runs first, because the bag must exist before passengers read it. The agent registers the bag for the seeded reference `P-00000000000000000001` of `dummy.passenger` (`journeyPassengerRef`).
+
+```mermaid
+flowchart LR
+    subgraph AG[1. Agent]
+        A1[Sign in] --> A2[Register a bag] --> A3[Send scans] --> A4[Read the journey]
+    end
+    subgraph PA[2. Passenger - owner]
+        P1[Sign in] --> P2[Staff calls refused] --> P3[Read my journey]
+    end
+    subgraph OT[3. Other passenger]
+        O1[Sign in] --> O2[Read the bag: 404]
+    end
+    subgraph SC[4. Service checks]
+        S1[Health] --> S2[OpenAPI]
+    end
+    A4 --> P1
+    P3 --> O1
+    O2 --> S1
+    A3 -. scans make the bag readable .-> P3
+```
+
 ## Flows
 
 The diagrams are Mermaid. GitHub and IntelliJ render them.
@@ -259,15 +299,15 @@ Generated from `postman/AeroTrace.postman_collection.json`.
 | Call | Path via gateway, unless marked direct |
 | Expect | Status the test script checks |
 
-### 1. Sign in (dev dummy accounts)
+### 1. Agent (check-in desk)
+
+#### 1 - Sign in
 
 | Step | Request | Call | Expect |
 |---|---|---|---|
-| 1.1 | Agent | `POST /api/v1/auth/login` | 200 |
-| 1.2 | Passenger (owner of the bag) | `POST /api/v1/auth/login` | 200 |
-| 1.3 | Other passenger | `POST /api/v1/auth/login` | 200 |
+| 1.1 | Sign in as the agent | `POST /api/v1/auth/login` | 200 |
 
-### 2. Register a bag
+#### 2 - Register a bag
 
 | Step | Request | Call | Expect |
 |---|---|---|---|
@@ -275,10 +315,9 @@ Generated from `postman/AeroTrace.postman_collection.json`.
 | 2.2 | Register the same tag again (refused) | `POST /api/v1/bags` | 409 |
 | 2.3 | Invalid tag (refused) | `POST /api/v1/bags` | 400 |
 | 2.4 | Connection shorter than the minimum (refused) | `POST /api/v1/bags` | 400 |
-| 2.5 | As a passenger (refused) | `POST /api/v1/bags` | 403 |
-| 2.6 | Without a token (refused) | `POST /api/v1/bags` | 401 |
+| 2.5 | Without a token (refused) | `POST /api/v1/bags` | 401 |
 
-### 3. Scans
+#### 3 - Send scans
 
 | Step | Request | Call | Expect |
 |---|---|---|---|
@@ -290,22 +329,61 @@ Generated from `postman/AeroTrace.postman_collection.json`.
 | 3.6 | A late scan (flagged LATE_EVENT, state unchanged) | `POST /api/v1/scans` | 202 |
 | 3.7 | Without an Idempotency-Key (refused) | `POST /api/v1/scans` | 400 |
 | 3.8 | A bag that is not registered (refused) | `POST /api/v1/scans` | 404 |
-| 3.9 | As a passenger (refused) | `POST /api/v1/scans` | 403 |
-| 3.10 | Without a token (refused) | `POST /api/v1/scans` | 401 |
+| 3.9 | Without a token (refused) | `POST /api/v1/scans` | 401 |
 
-### 4. Journey
-
-| Step | Request | Call | Expect |
-|---|---|---|---|
-| 4.1 | As the agent | `GET /api/v1/bags/{journeyBagTag}/journey` | 200 |
-| 4.2 | As the passenger who owns the bag | `GET /api/v1/bags/{journeyBagTag}/journey` | 200 |
-| 4.3 | As another passenger (404, like an unknown bag) | `GET /api/v1/bags/{journeyBagTag}/journey` | 404 |
-| 4.4 | Without a token (refused) | `GET /api/v1/bags/{journeyBagTag}/journey` | 401 |
-| 4.5 | A malformed bag tag (refused) | `GET /api/v1/bags/12345/journey` | 400 |
-
-### 5. Journey service direct (port 1113)
+#### 4 - Read the journey
 
 | Step | Request | Call | Expect |
 |---|---|---|---|
-| 5.1 | Health | `GET /actuator/health` (direct :1113) | 200 |
-| 5.2 | OpenAPI definition | `GET /v3/api-docs` (direct :1113) | 200 |
+| 4.1 | Read the journey as the agent | `GET /api/v1/bags/{journeyBagTag}/journey` | 200 |
+| 4.2 | A malformed bag tag (refused) | `GET /api/v1/bags/12345/journey` | 400 |
+| 4.3 | Without a token (refused) | `GET /api/v1/bags/{journeyBagTag}/journey` | 401 |
+
+### 2. Passenger (owner of the bag)
+
+#### 1 - Sign in
+
+| Step | Request | Call | Expect |
+|---|---|---|---|
+| 1.1 | Sign in as the passenger | `POST /api/v1/auth/login` | 200 |
+
+#### 2 - Try staff calls (refused)
+
+| Step | Request | Call | Expect |
+|---|---|---|---|
+| 2.1 | Register a bag as a passenger (refused) | `POST /api/v1/bags` | 403 |
+| 2.2 | Send a scan as a passenger (refused) | `POST /api/v1/scans` | 403 |
+
+#### 3 - Read my journey
+
+| Step | Request | Call | Expect |
+|---|---|---|---|
+| 3.1 | Read my own journey | `GET /api/v1/bags/{journeyBagTag}/journey` | 200 |
+
+### 3. Other passenger
+
+#### 1 - Sign in
+
+| Step | Request | Call | Expect |
+|---|---|---|---|
+| 1.1 | Sign in as the other passenger | `POST /api/v1/auth/login` | 200 |
+
+#### 2 - Read another passenger's bag
+
+| Step | Request | Call | Expect |
+|---|---|---|---|
+| 2.1 | Read the bag of another passenger (404) | `GET /api/v1/bags/{journeyBagTag}/journey` | 404 |
+
+### 4. Service checks (direct, port 1113)
+
+#### 1 - Health
+
+| Step | Request | Call | Expect |
+|---|---|---|---|
+| 1.1 | Health | `GET /actuator/health` (direct :1113) | 200 |
+
+#### 2 - OpenAPI definition
+
+| Step | Request | Call | Expect |
+|---|---|---|---|
+| 2.1 | OpenAPI definition | `GET /v3/api-docs` (direct :1113) | 200 |

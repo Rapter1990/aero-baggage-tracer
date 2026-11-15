@@ -2051,1398 +2051,1449 @@
     },
     {
       "name": "Journey Service",
-      "description": "The journey-service through the gateway: register a bag, ingest scans from barcode, RFID and conveyor devices, read the journey. Needs the compose stack with the dev dummy accounts (LIQUIBASE_CONTEXTS=dev). Run the folders top to bottom; folder 2 creates the bag the later requests use.",
+      "description": "The journey-service through the gateway, one folder per actor, in run order: the agent registers the bag and sends scans, then the owner passenger and another passenger read it. Needs the compose stack with the dev dummy accounts (LIQUIBASE_CONTEXTS=dev). Run the folders top to bottom.",
       "item": [
         {
-          "name": "1. Sign in (dev dummy accounts)",
-          "description": "Signs in the dev dummy accounts the compose stack creates (LIQUIBASE_CONTEXTS=dev): an agent, and two passengers to show that a passenger sees only their own bag. The tokens are stored in the environment (journeyAgentToken, journeyPassengerToken, journeyOtherPassengerToken, and journeyPassengerRef read from the passenger token).",
+          "name": "1. Agent (check-in desk)",
+          "description": "The check-in agent registers the bag and sends its scans. Runs first, so the bag exists for the passengers. Uses the dev dummy agent and the seeded reference of dummy.passenger (journeyPassengerRef).",
           "item": [
             {
-              "name": "1.1 Agent",
-              "event": [
+              "name": "1 - Sign in",
+              "item": [
                 {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "function claims(token) {",
-                      "  const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
-                      "  return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4)));",
-                      "}",
-                      "pm.test('200', () => pm.response.to.have.status(200));",
-                      "const result = pm.response.json().data;",
-                      "pm.environment.set('journeyAgentToken', result.accessToken);"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"usernameOrEmail\": \"{{journeyAgentUsername}}\",\n  \"password\": \"{{journeyAgentPassword}}\"\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/auth/login",
-                  "host": [
-                    "{{baseUrl}}"
+                  "name": "1.1 Sign in as the agent",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "function claims(token) {",
+                          "  const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                          "  return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4)));",
+                          "}",
+                          "pm.test('200', () => pm.response.to.have.status(200));",
+                          "const result = pm.response.json().data;",
+                          "pm.environment.set('journeyAgentToken', result.accessToken);"
+                        ]
+                      }
+                    }
                   ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "auth",
-                    "login"
-                  ]
-                },
-                "auth": {
-                  "type": "noauth"
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"usernameOrEmail\": \"{{journeyAgentUsername}}\",\n  \"password\": \"{{journeyAgentPassword}}\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/auth/login",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "auth",
+                        "login"
+                      ]
+                    },
+                    "auth": {
+                      "type": "noauth"
+                    }
+                  }
                 }
-              }
+              ]
             },
             {
-              "name": "1.2 Passenger (owner of the bag)",
-              "event": [
+              "name": "2 - Register a bag",
+              "item": [
                 {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "function claims(token) {",
-                      "  const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
-                      "  return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4)));",
-                      "}",
-                      "pm.test('200', () => pm.response.to.have.status(200));",
-                      "const result = pm.response.json().data;",
-                      "pm.environment.set('journeyPassengerToken', result.accessToken);",
-                      "const ref = claims(result.accessToken).passengerRef;",
-                      "pm.test('the passenger token carries a passenger reference', () => pm.expect(ref).to.match(/^P-[0-9]{20}$/));",
-                      "pm.environment.set('journeyPassengerRef', ref);"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"usernameOrEmail\": \"{{journeyPassengerUsername}}\",\n  \"password\": \"{{journeyPassengerPassword}}\"\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/auth/login",
-                  "host": [
-                    "{{baseUrl}}"
+                  "name": "2.1 Register a bag",
+                  "event": [
+                    {
+                      "listen": "prerequest",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "let tag = '';",
+                          "for (let i = 0; i < 10; i++) { tag += Math.floor(Math.random() * 10); }",
+                          "pm.environment.set('journeyBagTag', tag);",
+                          "const hour = 3600 * 1000;",
+                          "const d1 = new Date(Date.now() + 24 * hour);",
+                          "pm.environment.set('journeyLeg1Departure', d1.toISOString());",
+                          "pm.environment.set('journeyLeg1Arrival', new Date(d1.getTime() + 3 * hour).toISOString());",
+                          "pm.environment.set('journeyLeg2Departure', new Date(d1.getTime() + 5 * hour).toISOString());",
+                          "pm.environment.set('journeyLeg2Arrival', new Date(d1.getTime() + 7 * hour).toISOString());",
+                          "pm.environment.set('journeyShortConnectionDeparture', new Date(d1.getTime() + 3.5 * hour).toISOString());"
+                        ]
+                      }
+                    },
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('201', () => pm.response.to.have.status(201));",
+                          "pm.test('the bag and its two legs', () => {",
+                          "  const result = pm.response.json().data;",
+                          "  pm.expect(result.bagTag).to.eql(pm.environment.get('journeyBagTag'));",
+                          "  pm.expect(result.legs).to.have.lengthOf(2);",
+                          "});"
+                        ]
+                      }
+                    }
                   ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "auth",
-                    "login"
-                  ]
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"bagTag\": \"{{journeyBagTag}}\",\n  \"passengerRef\": \"{{journeyPassengerRef}}\",\n  \"legs\": [\n    {\"flightNumber\": \"TK1234\", \"origin\": \"IST\", \"destination\": \"FRA\", \"departureAt\": \"{{journeyLeg1Departure}}\", \"arrivalAt\": \"{{journeyLeg1Arrival}}\"},\n    {\"flightNumber\": \"LH902\", \"origin\": \"FRA\", \"destination\": \"LHR\", \"departureAt\": \"{{journeyLeg2Departure}}\", \"arrivalAt\": \"{{journeyLeg2Arrival}}\"}\n  ]\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/bags",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "bags"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyAgentToken}}",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
                 },
-                "auth": {
-                  "type": "noauth"
+                {
+                  "name": "2.2 Register the same tag again (refused)",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('409', () => pm.response.to.have.status(409));",
+                          "pm.test('error code BAG_TAG_DUPLICATE', () => pm.expect(pm.response.json().code).to.eql('BAG_TAG_DUPLICATE'));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"bagTag\": \"{{journeyBagTag}}\",\n  \"passengerRef\": \"{{journeyPassengerRef}}\",\n  \"legs\": [\n    {\"flightNumber\": \"TK1234\", \"origin\": \"IST\", \"destination\": \"FRA\", \"departureAt\": \"{{journeyLeg1Departure}}\", \"arrivalAt\": \"{{journeyLeg1Arrival}}\"},\n    {\"flightNumber\": \"LH902\", \"origin\": \"FRA\", \"destination\": \"LHR\", \"departureAt\": \"{{journeyLeg2Departure}}\", \"arrivalAt\": \"{{journeyLeg2Arrival}}\"}\n  ]\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/bags",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "bags"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyAgentToken}}",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "2.3 Invalid tag (refused)",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('400', () => pm.response.to.have.status(400));",
+                          "pm.test('error code VALIDATION_ERROR', () => pm.expect(pm.response.json().code).to.eql('VALIDATION_ERROR'));",
+                          "pm.test('the rule is named, the value is not echoed', () => pm.expect(pm.response.json().validationErrors.bagTag).to.be.a('string'));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"bagTag\": \"12345\",\n  \"passengerRef\": \"{{journeyPassengerRef}}\",\n  \"legs\": [\n    {\"flightNumber\": \"TK1234\", \"origin\": \"IST\", \"destination\": \"FRA\", \"departureAt\": \"{{journeyLeg1Departure}}\", \"arrivalAt\": \"{{journeyLeg1Arrival}}\"},\n    {\"flightNumber\": \"LH902\", \"origin\": \"FRA\", \"destination\": \"LHR\", \"departureAt\": \"{{journeyLeg2Departure}}\", \"arrivalAt\": \"{{journeyLeg2Arrival}}\"}\n  ]\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/bags",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "bags"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyAgentToken}}",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "2.4 Connection shorter than the minimum (refused)",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('400', () => pm.response.to.have.status(400));",
+                          "pm.test('error code VALIDATION_ERROR', () => pm.expect(pm.response.json().code).to.eql('VALIDATION_ERROR'));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"bagTag\": \"9999999999\",\n  \"passengerRef\": \"{{journeyPassengerRef}}\",\n  \"legs\": [\n    {\"flightNumber\": \"TK1234\", \"origin\": \"IST\", \"destination\": \"FRA\", \"departureAt\": \"{{journeyLeg1Departure}}\", \"arrivalAt\": \"{{journeyLeg1Arrival}}\"},\n    {\"flightNumber\": \"LH902\", \"origin\": \"FRA\", \"destination\": \"LHR\", \"departureAt\": \"{{journeyShortConnectionDeparture}}\", \"arrivalAt\": \"{{journeyLeg2Arrival}}\"}\n  ]\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/bags",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "bags"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyAgentToken}}",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "2.5 Without a token (refused)",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('401', () => pm.response.to.have.status(401));",
+                          "pm.test('error code UNAUTHENTICATED', () => pm.expect(pm.response.json().code).to.eql('UNAUTHENTICATED'));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"bagTag\": \"9999999997\",\n  \"passengerRef\": \"{{journeyPassengerRef}}\",\n  \"legs\": [\n    {\"flightNumber\": \"TK1234\", \"origin\": \"IST\", \"destination\": \"FRA\", \"departureAt\": \"{{journeyLeg1Departure}}\", \"arrivalAt\": \"{{journeyLeg1Arrival}}\"},\n    {\"flightNumber\": \"LH902\", \"origin\": \"FRA\", \"destination\": \"LHR\", \"departureAt\": \"{{journeyLeg2Departure}}\", \"arrivalAt\": \"{{journeyLeg2Arrival}}\"}\n  ]\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/bags",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "bags"
+                      ]
+                    },
+                    "auth": {
+                      "type": "noauth"
+                    }
+                  }
                 }
-              }
+              ]
             },
             {
-              "name": "1.3 Other passenger",
-              "event": [
+              "name": "3 - Send scans",
+              "item": [
                 {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "function claims(token) {",
-                      "  const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
-                      "  return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4)));",
-                      "}",
-                      "pm.test('200', () => pm.response.to.have.status(200));",
-                      "const result = pm.response.json().data;",
-                      "pm.environment.set('journeyOtherPassengerToken', result.accessToken);"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"usernameOrEmail\": \"{{journeyOtherPassengerUsername}}\",\n  \"password\": \"{{journeyPassengerPassword}}\"\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/auth/login",
-                  "host": [
-                    "{{baseUrl}}"
+                  "name": "3.1 Barcode scan (CHECK_IN)",
+                  "event": [
+                    {
+                      "listen": "prerequest",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.environment.set('journeyScanKey', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));",
+                          "const at = new Date(Date.now() - 5 * 60 * 1000);",
+                          "pm.environment.set('journeyScanTime', at.toISOString());",
+                          "pm.environment.set('journeyScanEpoch', at.getTime());",
+                          "pm.environment.set('journeyScanLocal', at.toISOString().slice(0, 19));"
+                        ]
+                      }
+                    },
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('202', () => pm.response.to.have.status(202));",
+                          "const result = pm.response.json().data;",
+                          "pm.test('queued', () => pm.expect(result.status).to.eql('QUEUED'));",
+                          "pm.test('not a duplicate, not late', () => { pm.expect(result.duplicate).to.eql(false); pm.expect(result.lateEvent).to.eql(false); });",
+                          "pm.environment.set('journeyScanId', result.scanId);"
+                        ]
+                      }
+                    }
                   ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "auth",
-                    "login"
-                  ]
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      },
+                      {
+                        "key": "Idempotency-Key",
+                        "value": "{{journeyScanKey}}"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"protocol\": \"BARCODE\",\n  \"payload\": {\n    \"bagTag\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"CHECK_IN\", \"sequence\": 1, \"scannedAt\": \"{{journeyScanTime}}\"\n  }\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/scans",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "scans"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyAgentToken}}",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
                 },
-                "auth": {
-                  "type": "noauth"
+                {
+                  "name": "3.2 Same Idempotency-Key again (original answer)",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('202', () => pm.response.to.have.status(202));",
+                          "const result = pm.response.json().data;",
+                          "pm.test('queued', () => pm.expect(result.status).to.eql('QUEUED'));",
+                          "pm.test('the same scan, marked duplicate', () => { pm.expect(result.scanId).to.eql(pm.environment.get('journeyScanId')); pm.expect(result.duplicate).to.eql(true); });"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      },
+                      {
+                        "key": "Idempotency-Key",
+                        "value": "{{journeyScanKey}}"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"protocol\": \"BARCODE\",\n  \"payload\": {\n    \"bagTag\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"CHECK_IN\", \"sequence\": 1, \"scannedAt\": \"{{journeyScanTime}}\"\n  }\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/scans",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "scans"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyAgentToken}}",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "3.3 Same Idempotency-Key for another scan (refused)",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('409', () => pm.response.to.have.status(409));",
+                          "pm.test('error code VERSION_CONFLICT', () => pm.expect(pm.response.json().code).to.eql('VERSION_CONFLICT'));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      },
+                      {
+                        "key": "Idempotency-Key",
+                        "value": "{{journeyScanKey}}"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"protocol\": \"BARCODE\",\n  \"payload\": {\n    \"bagTag\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"SORTING\", \"sequence\": 9, \"scannedAt\": \"{{journeyScanTime}}\"\n  }\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/scans",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "scans"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyAgentToken}}",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "3.4 RFID scan (SORTING)",
+                  "event": [
+                    {
+                      "listen": "prerequest",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.environment.set('journeyScanKey', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));",
+                          "const at = new Date(Date.now() - 4 * 60 * 1000);",
+                          "pm.environment.set('journeyScanTime', at.toISOString());",
+                          "pm.environment.set('journeyScanEpoch', at.getTime());",
+                          "pm.environment.set('journeyScanLocal', at.toISOString().slice(0, 19));"
+                        ]
+                      }
+                    },
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('202', () => pm.response.to.have.status(202));",
+                          "const result = pm.response.json().data;",
+                          "pm.test('queued', () => pm.expect(result.status).to.eql('QUEUED'));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      },
+                      {
+                        "key": "Idempotency-Key",
+                        "value": "{{journeyScanKey}}"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"protocol\": \"RFID\",\n  \"payload\": {\n    \"tagId\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"SORTING\", \"readCount\": 2, \"readAt\": {{journeyScanEpoch}}, \"timezone\": \"Europe/Istanbul\"\n  }\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/scans",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "scans"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyAgentToken}}",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "3.5 Conveyor scan (LOADED)",
+                  "event": [
+                    {
+                      "listen": "prerequest",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.environment.set('journeyScanKey', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));",
+                          "const at = new Date(Date.now() - 3 * 60 * 1000);",
+                          "pm.environment.set('journeyScanTime', at.toISOString());",
+                          "pm.environment.set('journeyScanEpoch', at.getTime());",
+                          "pm.environment.set('journeyScanLocal', at.toISOString().slice(0, 19));"
+                        ]
+                      }
+                    },
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('202', () => pm.response.to.have.status(202));",
+                          "const result = pm.response.json().data;",
+                          "pm.test('queued', () => pm.expect(result.status).to.eql('QUEUED'));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      },
+                      {
+                        "key": "Idempotency-Key",
+                        "value": "{{journeyScanKey}}"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"protocol\": \"CONVEYOR\",\n  \"payload\": {\n    \"bagTag\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"LOADED\", \"seq\": 3, \"timestamp\": \"{{journeyScanLocal}}\", \"timezone\": \"UTC\"\n  }\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/scans",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "scans"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyAgentToken}}",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "3.6 A late scan (flagged LATE_EVENT, state unchanged)",
+                  "event": [
+                    {
+                      "listen": "prerequest",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.environment.set('journeyScanKey', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));",
+                          "const at = new Date(Date.now() - 30 * 60 * 1000);",
+                          "pm.environment.set('journeyScanTime', at.toISOString());",
+                          "pm.environment.set('journeyScanEpoch', at.getTime());",
+                          "pm.environment.set('journeyScanLocal', at.toISOString().slice(0, 19));"
+                        ]
+                      }
+                    },
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('202', () => pm.response.to.have.status(202));",
+                          "const result = pm.response.json().data;",
+                          "pm.test('queued', () => pm.expect(result.status).to.eql('QUEUED'));",
+                          "pm.test('flagged late', () => pm.expect(result.lateEvent).to.eql(true));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      },
+                      {
+                        "key": "Idempotency-Key",
+                        "value": "{{journeyScanKey}}"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"protocol\": \"BARCODE\",\n  \"payload\": {\n    \"bagTag\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"CHECK_IN\", \"sequence\": 4, \"scannedAt\": \"{{journeyScanTime}}\"\n  }\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/scans",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "scans"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyAgentToken}}",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "3.7 Without an Idempotency-Key (refused)",
+                  "event": [
+                    {
+                      "listen": "prerequest",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.environment.set('journeyScanKey', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));",
+                          "const at = new Date(Date.now() - 1 * 60 * 1000);",
+                          "pm.environment.set('journeyScanTime', at.toISOString());",
+                          "pm.environment.set('journeyScanEpoch', at.getTime());",
+                          "pm.environment.set('journeyScanLocal', at.toISOString().slice(0, 19));"
+                        ]
+                      }
+                    },
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('400', () => pm.response.to.have.status(400));",
+                          "pm.test('error code VALIDATION_ERROR', () => pm.expect(pm.response.json().code).to.eql('VALIDATION_ERROR'));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"protocol\": \"BARCODE\",\n  \"payload\": {\n    \"bagTag\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"CHECK_IN\", \"sequence\": 5, \"scannedAt\": \"{{journeyScanTime}}\"\n  }\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/scans",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "scans"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyAgentToken}}",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "3.8 A bag that is not registered (refused)",
+                  "event": [
+                    {
+                      "listen": "prerequest",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.environment.set('journeyScanKey', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));",
+                          "const at = new Date(Date.now() - 1 * 60 * 1000);",
+                          "pm.environment.set('journeyScanTime', at.toISOString());",
+                          "pm.environment.set('journeyScanEpoch', at.getTime());",
+                          "pm.environment.set('journeyScanLocal', at.toISOString().slice(0, 19));"
+                        ]
+                      }
+                    },
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('404', () => pm.response.to.have.status(404));",
+                          "pm.test('error code NOT_FOUND', () => pm.expect(pm.response.json().code).to.eql('NOT_FOUND'));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      },
+                      {
+                        "key": "Idempotency-Key",
+                        "value": "{{journeyScanKey}}"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"protocol\": \"BARCODE\",\n  \"payload\": {\n    \"bagTag\": \"0000000000\", \"airport\": \"IST\", \"checkpoint\": \"CHECK_IN\", \"sequence\": 1, \"scannedAt\": \"{{journeyScanTime}}\"\n  }\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/scans",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "scans"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyAgentToken}}",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "3.9 Without a token (refused)",
+                  "event": [
+                    {
+                      "listen": "prerequest",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.environment.set('journeyScanKey', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));",
+                          "const at = new Date(Date.now() - 1 * 60 * 1000);",
+                          "pm.environment.set('journeyScanTime', at.toISOString());",
+                          "pm.environment.set('journeyScanEpoch', at.getTime());",
+                          "pm.environment.set('journeyScanLocal', at.toISOString().slice(0, 19));"
+                        ]
+                      }
+                    },
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('401', () => pm.response.to.have.status(401));",
+                          "pm.test('error code UNAUTHENTICATED', () => pm.expect(pm.response.json().code).to.eql('UNAUTHENTICATED'));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      },
+                      {
+                        "key": "Idempotency-Key",
+                        "value": "{{journeyScanKey}}"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"protocol\": \"BARCODE\",\n  \"payload\": {\n    \"bagTag\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"CHECK_IN\", \"sequence\": 7, \"scannedAt\": \"{{journeyScanTime}}\"\n  }\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/scans",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "scans"
+                      ]
+                    },
+                    "auth": {
+                      "type": "noauth"
+                    }
+                  }
                 }
-              }
+              ]
+            },
+            {
+              "name": "4 - Read the journey",
+              "item": [
+                {
+                  "name": "4.1 Read the journey as the agent",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('200', () => pm.response.to.have.status(200));",
+                          "const result = pm.response.json().data;",
+                          "pm.test('the latest state is the newest scan by event time', () => pm.expect(result.latestState.checkpoint).to.eql('LOADED'));",
+                          "pm.test('the history has all four scans, the late one first', () => {",
+                          "  pm.expect(result.history).to.have.lengthOf(4);",
+                          "  pm.expect(result.history[0].lateEvent).to.eql(true);",
+                          "  pm.expect(result.history[0].applied).to.eql(false);",
+                          "});",
+                          "pm.test('the itinerary has two legs', () => pm.expect(result.itinerary).to.have.lengthOf(2));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/bags/{{journeyBagTag}}/journey",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "bags",
+                        "{{journeyBagTag}}",
+                        "journey"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyAgentToken}}",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "4.2 A malformed bag tag (refused)",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('400', () => pm.response.to.have.status(400));",
+                          "pm.test('error code VALIDATION_ERROR', () => pm.expect(pm.response.json().code).to.eql('VALIDATION_ERROR'));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/bags/12345/journey",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "bags",
+                        "12345",
+                        "journey"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyAgentToken}}",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "4.3 Without a token (refused)",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('401', () => pm.response.to.have.status(401));",
+                          "pm.test('error code UNAUTHENTICATED', () => pm.expect(pm.response.json().code).to.eql('UNAUTHENTICATED'));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/bags/{{journeyBagTag}}/journey",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "bags",
+                        "{{journeyBagTag}}",
+                        "journey"
+                      ]
+                    },
+                    "auth": {
+                      "type": "noauth"
+                    }
+                  }
+                }
+              ]
             }
           ]
         },
         {
-          "name": "2. Register a bag",
-          "description": "POST /api/v1/bags needs an AGENT or ADMIN token. The tag is 10 digits and unique; airports are IATA codes; legs must be chained, in order and at least the minimum connection time (45 minutes) apart.",
+          "name": "2. Passenger (owner of the bag)",
+          "description": "The passenger the bag belongs to (dummy.passenger). Signs in, cannot do staff work, and reads their own journey after the agent has scanned the bag.",
           "item": [
             {
-              "name": "2.1 Register a bag",
-              "event": [
+              "name": "1 - Sign in",
+              "item": [
                 {
-                  "listen": "prerequest",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "let tag = '';",
-                      "for (let i = 0; i < 10; i++) { tag += Math.floor(Math.random() * 10); }",
-                      "pm.environment.set('journeyBagTag', tag);",
-                      "const hour = 3600 * 1000;",
-                      "const d1 = new Date(Date.now() + 24 * hour);",
-                      "pm.environment.set('journeyLeg1Departure', d1.toISOString());",
-                      "pm.environment.set('journeyLeg1Arrival', new Date(d1.getTime() + 3 * hour).toISOString());",
-                      "pm.environment.set('journeyLeg2Departure', new Date(d1.getTime() + 5 * hour).toISOString());",
-                      "pm.environment.set('journeyLeg2Arrival', new Date(d1.getTime() + 7 * hour).toISOString());",
-                      "pm.environment.set('journeyShortConnectionDeparture', new Date(d1.getTime() + 3.5 * hour).toISOString());"
-                    ]
-                  }
-                },
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('201', () => pm.response.to.have.status(201));",
-                      "pm.test('the bag and its two legs', () => {",
-                      "  const result = pm.response.json().data;",
-                      "  pm.expect(result.bagTag).to.eql(pm.environment.get('journeyBagTag'));",
-                      "  pm.expect(result.legs).to.have.lengthOf(2);",
-                      "});"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"bagTag\": \"{{journeyBagTag}}\",\n  \"passengerRef\": \"{{journeyPassengerRef}}\",\n  \"legs\": [\n    {\"flightNumber\": \"TK1234\", \"origin\": \"IST\", \"destination\": \"FRA\", \"departureAt\": \"{{journeyLeg1Departure}}\", \"arrivalAt\": \"{{journeyLeg1Arrival}}\"},\n    {\"flightNumber\": \"LH902\", \"origin\": \"FRA\", \"destination\": \"LHR\", \"departureAt\": \"{{journeyLeg2Departure}}\", \"arrivalAt\": \"{{journeyLeg2Arrival}}\"}\n  ]\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/bags",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "bags"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
+                  "name": "1.1 Sign in as the passenger",
+                  "event": [
                     {
-                      "key": "token",
-                      "value": "{{journeyAgentToken}}",
-                      "type": "string"
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "const expected = pm.environment.get('journeyPassengerRef');",
+                          "function claims(token) {",
+                          "  const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                          "  return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4)));",
+                          "}",
+                          "pm.test('200', () => pm.response.to.have.status(200));",
+                          "const result = pm.response.json().data;",
+                          "pm.environment.set('journeyPassengerToken', result.accessToken);",
+                          "const ref = claims(result.accessToken).passengerRef;",
+                          "pm.test('the passenger token carries a passenger reference', () => pm.expect(ref).to.match(/^P-[0-9]{20}$/));",
+                          "pm.test('the reference the bag was registered for', () => pm.expect(ref).to.eql(expected));",
+                          "pm.environment.set('journeyPassengerRef', ref);"
+                        ]
+                      }
                     }
-                  ]
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"usernameOrEmail\": \"{{journeyPassengerUsername}}\",\n  \"password\": \"{{journeyPassengerPassword}}\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/auth/login",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "auth",
+                        "login"
+                      ]
+                    },
+                    "auth": {
+                      "type": "noauth"
+                    }
+                  }
                 }
-              }
+              ]
             },
             {
-              "name": "2.2 Register the same tag again (refused)",
-              "event": [
+              "name": "2 - Try staff calls (refused)",
+              "item": [
                 {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('409', () => pm.response.to.have.status(409));",
-                      "pm.test('error code BAG_TAG_DUPLICATE', () => pm.expect(pm.response.json().code).to.eql('BAG_TAG_DUPLICATE'));"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"bagTag\": \"{{journeyBagTag}}\",\n  \"passengerRef\": \"{{journeyPassengerRef}}\",\n  \"legs\": [\n    {\"flightNumber\": \"TK1234\", \"origin\": \"IST\", \"destination\": \"FRA\", \"departureAt\": \"{{journeyLeg1Departure}}\", \"arrivalAt\": \"{{journeyLeg1Arrival}}\"},\n    {\"flightNumber\": \"LH902\", \"origin\": \"FRA\", \"destination\": \"LHR\", \"departureAt\": \"{{journeyLeg2Departure}}\", \"arrivalAt\": \"{{journeyLeg2Arrival}}\"}\n  ]\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/bags",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "bags"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
+                  "name": "2.1 Register a bag as a passenger (refused)",
+                  "event": [
                     {
-                      "key": "token",
-                      "value": "{{journeyAgentToken}}",
-                      "type": "string"
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('403', () => pm.response.to.have.status(403));",
+                          "pm.test('error code ACCESS_DENIED', () => pm.expect(pm.response.json().code).to.eql('ACCESS_DENIED'));"
+                        ]
+                      }
                     }
-                  ]
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"bagTag\": \"9999999998\",\n  \"passengerRef\": \"{{journeyPassengerRef}}\",\n  \"legs\": [\n    {\"flightNumber\": \"TK1234\", \"origin\": \"IST\", \"destination\": \"FRA\", \"departureAt\": \"{{journeyLeg1Departure}}\", \"arrivalAt\": \"{{journeyLeg1Arrival}}\"},\n    {\"flightNumber\": \"LH902\", \"origin\": \"FRA\", \"destination\": \"LHR\", \"departureAt\": \"{{journeyLeg2Departure}}\", \"arrivalAt\": \"{{journeyLeg2Arrival}}\"}\n  ]\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/bags",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "bags"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyPassengerToken}}",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "2.2 Send a scan as a passenger (refused)",
+                  "event": [
+                    {
+                      "listen": "prerequest",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.environment.set('journeyScanKey', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));",
+                          "const at = new Date(Date.now() - 1 * 60 * 1000);",
+                          "pm.environment.set('journeyScanTime', at.toISOString());",
+                          "pm.environment.set('journeyScanEpoch', at.getTime());",
+                          "pm.environment.set('journeyScanLocal', at.toISOString().slice(0, 19));"
+                        ]
+                      }
+                    },
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('403', () => pm.response.to.have.status(403));",
+                          "pm.test('error code ACCESS_DENIED', () => pm.expect(pm.response.json().code).to.eql('ACCESS_DENIED'));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      },
+                      {
+                        "key": "Idempotency-Key",
+                        "value": "{{journeyScanKey}}"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"protocol\": \"BARCODE\",\n  \"payload\": {\n    \"bagTag\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"CHECK_IN\", \"sequence\": 6, \"scannedAt\": \"{{journeyScanTime}}\"\n  }\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/scans",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "scans"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyPassengerToken}}",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
                 }
-              }
+              ]
             },
             {
-              "name": "2.3 Invalid tag (refused)",
-              "event": [
+              "name": "3 - Read my journey",
+              "item": [
                 {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('400', () => pm.response.to.have.status(400));",
-                      "pm.test('error code VALIDATION_ERROR', () => pm.expect(pm.response.json().code).to.eql('VALIDATION_ERROR'));",
-                      "pm.test('the rule is named, the value is not echoed', () => pm.expect(pm.response.json().validationErrors.bagTag).to.be.a('string'));"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"bagTag\": \"12345\",\n  \"passengerRef\": \"{{journeyPassengerRef}}\",\n  \"legs\": [\n    {\"flightNumber\": \"TK1234\", \"origin\": \"IST\", \"destination\": \"FRA\", \"departureAt\": \"{{journeyLeg1Departure}}\", \"arrivalAt\": \"{{journeyLeg1Arrival}}\"},\n    {\"flightNumber\": \"LH902\", \"origin\": \"FRA\", \"destination\": \"LHR\", \"departureAt\": \"{{journeyLeg2Departure}}\", \"arrivalAt\": \"{{journeyLeg2Arrival}}\"}\n  ]\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/bags",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "bags"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
+                  "name": "3.1 Read my own journey",
+                  "event": [
                     {
-                      "key": "token",
-                      "value": "{{journeyAgentToken}}",
-                      "type": "string"
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('200', () => pm.response.to.have.status(200));",
+                          "pm.test('the same bag', () => pm.expect(pm.response.json().data.bagTag).to.eql(pm.environment.get('journeyBagTag')));"
+                        ]
+                      }
                     }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "2.4 Connection shorter than the minimum (refused)",
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('400', () => pm.response.to.have.status(400));",
-                      "pm.test('error code VALIDATION_ERROR', () => pm.expect(pm.response.json().code).to.eql('VALIDATION_ERROR'));"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"bagTag\": \"9999999999\",\n  \"passengerRef\": \"{{journeyPassengerRef}}\",\n  \"legs\": [\n    {\"flightNumber\": \"TK1234\", \"origin\": \"IST\", \"destination\": \"FRA\", \"departureAt\": \"{{journeyLeg1Departure}}\", \"arrivalAt\": \"{{journeyLeg1Arrival}}\"},\n    {\"flightNumber\": \"LH902\", \"origin\": \"FRA\", \"destination\": \"LHR\", \"departureAt\": \"{{journeyShortConnectionDeparture}}\", \"arrivalAt\": \"{{journeyLeg2Arrival}}\"}\n  ]\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/bags",
-                  "host": [
-                    "{{baseUrl}}"
                   ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "bags"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{journeyAgentToken}}",
-                      "type": "string"
+                  "request": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/bags/{{journeyBagTag}}/journey",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "bags",
+                        "{{journeyBagTag}}",
+                        "journey"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyPassengerToken}}",
+                          "type": "string"
+                        }
+                      ]
                     }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "2.5 As a passenger (refused)",
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('403', () => pm.response.to.have.status(403));",
-                      "pm.test('error code ACCESS_DENIED', () => pm.expect(pm.response.json().code).to.eql('ACCESS_DENIED'));"
-                    ]
                   }
                 }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"bagTag\": \"9999999998\",\n  \"passengerRef\": \"{{journeyPassengerRef}}\",\n  \"legs\": [\n    {\"flightNumber\": \"TK1234\", \"origin\": \"IST\", \"destination\": \"FRA\", \"departureAt\": \"{{journeyLeg1Departure}}\", \"arrivalAt\": \"{{journeyLeg1Arrival}}\"},\n    {\"flightNumber\": \"LH902\", \"origin\": \"FRA\", \"destination\": \"LHR\", \"departureAt\": \"{{journeyLeg2Departure}}\", \"arrivalAt\": \"{{journeyLeg2Arrival}}\"}\n  ]\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/bags",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "bags"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{journeyPassengerToken}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "2.6 Without a token (refused)",
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('401', () => pm.response.to.have.status(401));",
-                      "pm.test('error code UNAUTHENTICATED', () => pm.expect(pm.response.json().code).to.eql('UNAUTHENTICATED'));"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"bagTag\": \"9999999997\",\n  \"passengerRef\": \"{{journeyPassengerRef}}\",\n  \"legs\": [\n    {\"flightNumber\": \"TK1234\", \"origin\": \"IST\", \"destination\": \"FRA\", \"departureAt\": \"{{journeyLeg1Departure}}\", \"arrivalAt\": \"{{journeyLeg1Arrival}}\"},\n    {\"flightNumber\": \"LH902\", \"origin\": \"FRA\", \"destination\": \"LHR\", \"departureAt\": \"{{journeyLeg2Departure}}\", \"arrivalAt\": \"{{journeyLeg2Arrival}}\"}\n  ]\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/bags",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "bags"
-                  ]
-                },
-                "auth": {
-                  "type": "noauth"
-                }
-              }
+              ]
             }
           ]
         },
         {
-          "name": "3. Scans",
-          "description": "POST /api/v1/scans needs an AGENT, DISPATCHER or ADMIN token and an Idempotency-Key. The payload has the format of the protocol (BARCODE, RFID, CONVEYOR). Run these in order: they use the bag registered in folder 2.",
+          "name": "3. Other passenger",
+          "description": "A second passenger (dummy.passenger2) who does not own the bag. Signs in and cannot see it: the answer is the same as for an unknown bag.",
           "item": [
             {
-              "name": "3.1 Barcode scan (CHECK_IN)",
-              "event": [
+              "name": "1 - Sign in",
+              "item": [
                 {
-                  "listen": "prerequest",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.environment.set('journeyScanKey', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));",
-                      "const at = new Date(Date.now() - 5 * 60 * 1000);",
-                      "pm.environment.set('journeyScanTime', at.toISOString());",
-                      "pm.environment.set('journeyScanEpoch', at.getTime());",
-                      "pm.environment.set('journeyScanLocal', at.toISOString().slice(0, 19));"
-                    ]
-                  }
-                },
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('202', () => pm.response.to.have.status(202));",
-                      "const result = pm.response.json().data;",
-                      "pm.test('queued', () => pm.expect(result.status).to.eql('QUEUED'));",
-                      "pm.test('not a duplicate, not late', () => { pm.expect(result.duplicate).to.eql(false); pm.expect(result.lateEvent).to.eql(false); });",
-                      "pm.environment.set('journeyScanId', result.scanId);"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{journeyScanKey}}"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"protocol\": \"BARCODE\",\n  \"payload\": {\n    \"bagTag\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"CHECK_IN\", \"sequence\": 1, \"scannedAt\": \"{{journeyScanTime}}\"\n  }\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/scans",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "scans"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
+                  "name": "1.1 Sign in as the other passenger",
+                  "event": [
                     {
-                      "key": "token",
-                      "value": "{{journeyAgentToken}}",
-                      "type": "string"
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "function claims(token) {",
+                          "  const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                          "  return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4)));",
+                          "}",
+                          "pm.test('200', () => pm.response.to.have.status(200));",
+                          "const result = pm.response.json().data;",
+                          "pm.environment.set('journeyOtherPassengerToken', result.accessToken);"
+                        ]
+                      }
                     }
-                  ]
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"usernameOrEmail\": \"{{journeyOtherPassengerUsername}}\",\n  \"password\": \"{{journeyPassengerPassword}}\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/auth/login",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "auth",
+                        "login"
+                      ]
+                    },
+                    "auth": {
+                      "type": "noauth"
+                    }
+                  }
                 }
-              }
+              ]
             },
             {
-              "name": "3.2 Same Idempotency-Key again (original answer)",
-              "event": [
+              "name": "2 - Read another passenger's bag",
+              "item": [
                 {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('202', () => pm.response.to.have.status(202));",
-                      "const result = pm.response.json().data;",
-                      "pm.test('queued', () => pm.expect(result.status).to.eql('QUEUED'));",
-                      "pm.test('the same scan, marked duplicate', () => { pm.expect(result.scanId).to.eql(pm.environment.get('journeyScanId')); pm.expect(result.duplicate).to.eql(true); });"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{journeyScanKey}}"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"protocol\": \"BARCODE\",\n  \"payload\": {\n    \"bagTag\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"CHECK_IN\", \"sequence\": 1, \"scannedAt\": \"{{journeyScanTime}}\"\n  }\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/scans",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "scans"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
+                  "name": "2.1 Read the bag of another passenger (404)",
+                  "event": [
                     {
-                      "key": "token",
-                      "value": "{{journeyAgentToken}}",
-                      "type": "string"
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('404', () => pm.response.to.have.status(404));",
+                          "pm.test('error code NOT_FOUND', () => pm.expect(pm.response.json().code).to.eql('NOT_FOUND'));"
+                        ]
+                      }
                     }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "3.3 Same Idempotency-Key for another scan (refused)",
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('409', () => pm.response.to.have.status(409));",
-                      "pm.test('error code VERSION_CONFLICT', () => pm.expect(pm.response.json().code).to.eql('VERSION_CONFLICT'));"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{journeyScanKey}}"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"protocol\": \"BARCODE\",\n  \"payload\": {\n    \"bagTag\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"SORTING\", \"sequence\": 9, \"scannedAt\": \"{{journeyScanTime}}\"\n  }\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/scans",
-                  "host": [
-                    "{{baseUrl}}"
                   ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "scans"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{journeyAgentToken}}",
-                      "type": "string"
+                  "request": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "{{baseUrl}}/api/v1/bags/{{journeyBagTag}}/journey",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "api",
+                        "v1",
+                        "bags",
+                        "{{journeyBagTag}}",
+                        "journey"
+                      ]
+                    },
+                    "auth": {
+                      "type": "bearer",
+                      "bearer": [
+                        {
+                          "key": "token",
+                          "value": "{{journeyOtherPassengerToken}}",
+                          "type": "string"
+                        }
+                      ]
                     }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "3.4 RFID scan (SORTING)",
-              "event": [
-                {
-                  "listen": "prerequest",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.environment.set('journeyScanKey', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));",
-                      "const at = new Date(Date.now() - 4 * 60 * 1000);",
-                      "pm.environment.set('journeyScanTime', at.toISOString());",
-                      "pm.environment.set('journeyScanEpoch', at.getTime());",
-                      "pm.environment.set('journeyScanLocal', at.toISOString().slice(0, 19));"
-                    ]
-                  }
-                },
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('202', () => pm.response.to.have.status(202));",
-                      "const result = pm.response.json().data;",
-                      "pm.test('queued', () => pm.expect(result.status).to.eql('QUEUED'));"
-                    ]
                   }
                 }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{journeyScanKey}}"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"protocol\": \"RFID\",\n  \"payload\": {\n    \"tagId\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"SORTING\", \"readCount\": 2, \"readAt\": {{journeyScanEpoch}}, \"timezone\": \"Europe/Istanbul\"\n  }\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/scans",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "scans"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{journeyAgentToken}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "3.5 Conveyor scan (LOADED)",
-              "event": [
-                {
-                  "listen": "prerequest",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.environment.set('journeyScanKey', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));",
-                      "const at = new Date(Date.now() - 3 * 60 * 1000);",
-                      "pm.environment.set('journeyScanTime', at.toISOString());",
-                      "pm.environment.set('journeyScanEpoch', at.getTime());",
-                      "pm.environment.set('journeyScanLocal', at.toISOString().slice(0, 19));"
-                    ]
-                  }
-                },
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('202', () => pm.response.to.have.status(202));",
-                      "const result = pm.response.json().data;",
-                      "pm.test('queued', () => pm.expect(result.status).to.eql('QUEUED'));"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{journeyScanKey}}"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"protocol\": \"CONVEYOR\",\n  \"payload\": {\n    \"bagTag\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"LOADED\", \"seq\": 3, \"timestamp\": \"{{journeyScanLocal}}\", \"timezone\": \"UTC\"\n  }\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/scans",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "scans"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{journeyAgentToken}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "3.6 A late scan (flagged LATE_EVENT, state unchanged)",
-              "event": [
-                {
-                  "listen": "prerequest",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.environment.set('journeyScanKey', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));",
-                      "const at = new Date(Date.now() - 30 * 60 * 1000);",
-                      "pm.environment.set('journeyScanTime', at.toISOString());",
-                      "pm.environment.set('journeyScanEpoch', at.getTime());",
-                      "pm.environment.set('journeyScanLocal', at.toISOString().slice(0, 19));"
-                    ]
-                  }
-                },
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('202', () => pm.response.to.have.status(202));",
-                      "const result = pm.response.json().data;",
-                      "pm.test('queued', () => pm.expect(result.status).to.eql('QUEUED'));",
-                      "pm.test('flagged late', () => pm.expect(result.lateEvent).to.eql(true));"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{journeyScanKey}}"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"protocol\": \"BARCODE\",\n  \"payload\": {\n    \"bagTag\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"CHECK_IN\", \"sequence\": 4, \"scannedAt\": \"{{journeyScanTime}}\"\n  }\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/scans",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "scans"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{journeyAgentToken}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "3.7 Without an Idempotency-Key (refused)",
-              "event": [
-                {
-                  "listen": "prerequest",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.environment.set('journeyScanKey', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));",
-                      "const at = new Date(Date.now() - 1 * 60 * 1000);",
-                      "pm.environment.set('journeyScanTime', at.toISOString());",
-                      "pm.environment.set('journeyScanEpoch', at.getTime());",
-                      "pm.environment.set('journeyScanLocal', at.toISOString().slice(0, 19));"
-                    ]
-                  }
-                },
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('400', () => pm.response.to.have.status(400));",
-                      "pm.test('error code VALIDATION_ERROR', () => pm.expect(pm.response.json().code).to.eql('VALIDATION_ERROR'));"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"protocol\": \"BARCODE\",\n  \"payload\": {\n    \"bagTag\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"CHECK_IN\", \"sequence\": 5, \"scannedAt\": \"{{journeyScanTime}}\"\n  }\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/scans",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "scans"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{journeyAgentToken}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "3.8 A bag that is not registered (refused)",
-              "event": [
-                {
-                  "listen": "prerequest",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.environment.set('journeyScanKey', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));",
-                      "const at = new Date(Date.now() - 1 * 60 * 1000);",
-                      "pm.environment.set('journeyScanTime', at.toISOString());",
-                      "pm.environment.set('journeyScanEpoch', at.getTime());",
-                      "pm.environment.set('journeyScanLocal', at.toISOString().slice(0, 19));"
-                    ]
-                  }
-                },
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('404', () => pm.response.to.have.status(404));",
-                      "pm.test('error code NOT_FOUND', () => pm.expect(pm.response.json().code).to.eql('NOT_FOUND'));"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{journeyScanKey}}"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"protocol\": \"BARCODE\",\n  \"payload\": {\n    \"bagTag\": \"0000000000\", \"airport\": \"IST\", \"checkpoint\": \"CHECK_IN\", \"sequence\": 1, \"scannedAt\": \"{{journeyScanTime}}\"\n  }\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/scans",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "scans"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{journeyAgentToken}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "3.9 As a passenger (refused)",
-              "event": [
-                {
-                  "listen": "prerequest",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.environment.set('journeyScanKey', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));",
-                      "const at = new Date(Date.now() - 1 * 60 * 1000);",
-                      "pm.environment.set('journeyScanTime', at.toISOString());",
-                      "pm.environment.set('journeyScanEpoch', at.getTime());",
-                      "pm.environment.set('journeyScanLocal', at.toISOString().slice(0, 19));"
-                    ]
-                  }
-                },
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('403', () => pm.response.to.have.status(403));",
-                      "pm.test('error code ACCESS_DENIED', () => pm.expect(pm.response.json().code).to.eql('ACCESS_DENIED'));"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{journeyScanKey}}"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"protocol\": \"BARCODE\",\n  \"payload\": {\n    \"bagTag\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"CHECK_IN\", \"sequence\": 6, \"scannedAt\": \"{{journeyScanTime}}\"\n  }\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/scans",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "scans"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{journeyPassengerToken}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "3.10 Without a token (refused)",
-              "event": [
-                {
-                  "listen": "prerequest",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.environment.set('journeyScanKey', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));",
-                      "const at = new Date(Date.now() - 1 * 60 * 1000);",
-                      "pm.environment.set('journeyScanTime', at.toISOString());",
-                      "pm.environment.set('journeyScanEpoch', at.getTime());",
-                      "pm.environment.set('journeyScanLocal', at.toISOString().slice(0, 19));"
-                    ]
-                  }
-                },
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('401', () => pm.response.to.have.status(401));",
-                      "pm.test('error code UNAUTHENTICATED', () => pm.expect(pm.response.json().code).to.eql('UNAUTHENTICATED'));"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{journeyScanKey}}"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"protocol\": \"BARCODE\",\n  \"payload\": {\n    \"bagTag\": \"{{journeyBagTag}}\", \"airport\": \"IST\", \"checkpoint\": \"CHECK_IN\", \"sequence\": 7, \"scannedAt\": \"{{journeyScanTime}}\"\n  }\n}"
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/scans",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "scans"
-                  ]
-                },
-                "auth": {
-                  "type": "noauth"
-                }
-              }
+              ]
             }
           ]
         },
         {
-          "name": "4. Journey",
-          "description": "GET /api/v1/bags/{bagTag}/journey: the latest accepted state and the scan history in event order. Staff see every bag; a passenger sees only their own, and any other bag answers 404 like an unknown one.",
-          "item": [
-            {
-              "name": "4.1 As the agent",
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('200', () => pm.response.to.have.status(200));",
-                      "const result = pm.response.json().data;",
-                      "pm.test('the latest state is the newest scan by event time', () => pm.expect(result.latestState.checkpoint).to.eql('LOADED'));",
-                      "pm.test('the history has all four scans, the late one first', () => {",
-                      "  pm.expect(result.history).to.have.lengthOf(4);",
-                      "  pm.expect(result.history[0].lateEvent).to.eql(true);",
-                      "  pm.expect(result.history[0].applied).to.eql(false);",
-                      "});",
-                      "pm.test('the itinerary has two legs', () => pm.expect(result.itinerary).to.have.lengthOf(2));"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/bags/{{journeyBagTag}}/journey",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "bags",
-                    "{{journeyBagTag}}",
-                    "journey"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{journeyAgentToken}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "4.2 As the passenger who owns the bag",
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('200', () => pm.response.to.have.status(200));",
-                      "pm.test('the same bag', () => pm.expect(pm.response.json().data.bagTag).to.eql(pm.environment.get('journeyBagTag')));"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/bags/{{journeyBagTag}}/journey",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "bags",
-                    "{{journeyBagTag}}",
-                    "journey"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{journeyPassengerToken}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "4.3 As another passenger (404, like an unknown bag)",
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('404', () => pm.response.to.have.status(404));",
-                      "pm.test('error code NOT_FOUND', () => pm.expect(pm.response.json().code).to.eql('NOT_FOUND'));"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/bags/{{journeyBagTag}}/journey",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "bags",
-                    "{{journeyBagTag}}",
-                    "journey"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{journeyOtherPassengerToken}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "4.4 Without a token (refused)",
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('401', () => pm.response.to.have.status(401));",
-                      "pm.test('error code UNAUTHENTICATED', () => pm.expect(pm.response.json().code).to.eql('UNAUTHENTICATED'));"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/bags/{{journeyBagTag}}/journey",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "bags",
-                    "{{journeyBagTag}}",
-                    "journey"
-                  ]
-                },
-                "auth": {
-                  "type": "noauth"
-                }
-              }
-            },
-            {
-              "name": "4.5 A malformed bag tag (refused)",
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('400', () => pm.response.to.have.status(400));",
-                      "pm.test('error code VALIDATION_ERROR', () => pm.expect(pm.response.json().code).to.eql('VALIDATION_ERROR'));"
-                    ]
-                  }
-                }
-              ],
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/bags/12345/journey",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "bags",
-                    "12345",
-                    "journey"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{journeyAgentToken}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            }
-          ]
-        },
-        {
-          "name": "5. Journey service direct (port 1113)",
+          "name": "4. Service checks (direct, port 1113)",
           "description": "The journey-service on its own port (journeyUrl), without the gateway.",
           "item": [
             {
-              "name": "5.1 Health",
-              "event": [
+              "name": "1 - Health",
+              "item": [
                 {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('200', () => pm.response.to.have.status(200));",
-                      "pm.test('UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
-                    ]
+                  "name": "1.1 Health",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('200', () => pm.response.to.have.status(200));",
+                          "pm.test('UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "{{journeyUrl}}/actuator/health",
+                      "host": [
+                        "{{journeyUrl}}"
+                      ],
+                      "path": [
+                        "actuator",
+                        "health"
+                      ]
+                    },
+                    "auth": {
+                      "type": "noauth"
+                    }
                   }
                 }
-              ],
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{journeyUrl}}/actuator/health",
-                  "host": [
-                    "{{journeyUrl}}"
-                  ],
-                  "path": [
-                    "actuator",
-                    "health"
-                  ]
-                },
-                "auth": {
-                  "type": "noauth"
-                }
-              }
+              ]
             },
             {
-              "name": "5.2 OpenAPI definition",
-              "event": [
+              "name": "2 - OpenAPI definition",
+              "item": [
                 {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test('200', () => pm.response.to.have.status(200));",
-                      "pm.test('the journey API', () => pm.expect(pm.response.json().info.title).to.eql('AeroTrace Journey Service'));"
-                    ]
+                  "name": "2.1 OpenAPI definition",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('200', () => pm.response.to.have.status(200));",
+                          "pm.test('the journey API', () => pm.expect(pm.response.json().info.title).to.eql('AeroTrace Journey Service'));"
+                        ]
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "{{journeyUrl}}/v3/api-docs",
+                      "host": [
+                        "{{journeyUrl}}"
+                      ],
+                      "path": [
+                        "v3",
+                        "api-docs"
+                      ]
+                    },
+                    "auth": {
+                      "type": "noauth"
+                    }
                   }
                 }
-              ],
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{journeyUrl}}/v3/api-docs",
-                  "host": [
-                    "{{journeyUrl}}"
-                  ],
-                  "path": [
-                    "v3",
-                    "api-docs"
-                  ]
-                },
-                "auth": {
-                  "type": "noauth"
-                }
-              }
+              ]
             }
           ]
         }

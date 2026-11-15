@@ -63,15 +63,14 @@ Two files in `postman/`:
 | 7 Gateway rules | Unexposed paths are refused |
 | 8 Direct (port 1112) | Health and login via `identityUrl` |
 
-**Journey Service folders**
+**Journey Service folders** (one per actor, in run order)
 
 | Folder | What it does |
 |---|---|
-| 1 Sign in | Dev dummy agent and passengers |
-| 2 Register a bag | Happy path and refusals |
-| 3 Scans | Barcode, RFID, conveyor, idempotency, late |
-| 4 Journey | Staff, owner, other passenger |
-| 5 Direct (port 1113) | Health and OpenAPI via `journeyUrl` |
+| 1 Agent (check-in desk) | Sign in, register a bag, send scans, read |
+| 2 Passenger (owner of the bag) | Sign in, staff calls refused, read own journey |
+| 3 Other passenger | Sign in, cannot read the bag |
+| 4 Service checks (port 1113) | Health and OpenAPI via `journeyUrl` |
 
 **Notes**
 
@@ -85,6 +84,7 @@ Two files in `postman/`:
 | Journey | Needs Compose with the `dev` context |
 | Journey variables | `journeyAgentUsername`, `journeyPassengerUsername`, `journeyOtherPassengerUsername` |
 | Journey passwords | `journeyAgentPassword`, `journeyPassengerPassword` |
+| Journey reference | `journeyPassengerRef`, seeded `P-00000000000000000001` |
 | Base URL | `baseUrl` is `http://localhost:8080` |
 
 **With newman**
@@ -103,7 +103,7 @@ flowchart LR
         I1[1 Register] --> I2[2 Login] --> I3[3 Refresh token] --> I4[4 Forgot password] --> I5[5 Reset password] --> I6[6 Logout] --> I7[7 Gateway rules] --> I8[8 Direct :1112]
     end
     subgraph Journey Service
-        J1[1 Sign in] --> J2[2 Register a bag] --> J3[3 Scans] --> J4[4 Journey] --> J5[5 Direct :1113]
+        J1[1 Agent] --> J2[2 Passenger - owner] --> J3[3 Other passenger] --> J4[4 Service checks :1113]
     end
 ```
 
