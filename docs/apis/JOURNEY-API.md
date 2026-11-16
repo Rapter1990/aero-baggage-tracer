@@ -133,6 +133,35 @@ Defaults: `JOURNEY_MAX_CLOCK_SKEW` is `5m`, `JOURNEY_LATE_EVENT_GRACE` is `10m`.
 | Kafka down | Run stops, retried later |
 | Refused for good | Parked, counted in `journey.outbox.parked` |
 
+**The scan event**
+
+Envelope `eventType` is `baggage.scan.received`, `schemaVersion` is `2`, `aggregateId` is the bag tag.
+
+| Payload field | Meaning |
+|---|---|
+| `scanEventId` | Id of the audited scan |
+| `bagTag`, `airport`, `checkpoint` | As scanned |
+| `deviceSequence` | Device counter |
+| `occurredAt`, `deviceTimestamp`, `ingestedAt` | UTC instants |
+| `sourceTimezone` | Zone or offset of the device |
+| `lateEvent` | Older than the grace on arrival |
+| `legId` | Id of the itinerary leg, or `null` (since 2) |
+| `flightNumber` | Flight of that leg, or `null` (since 2) |
+| `departureAt` | Departure of that leg, UTC, or `null` (since 2) |
+
+| Checkpoint | Leg |
+|---|---|
+| `CHECK_IN`, `SORTING`, `TRANSFER`, `LOADED` | Leg whose `origin` is the scan airport |
+| `ARRIVED`, `CLAIM` | Leg whose `destination` is the scan airport |
+| Airport used by two legs | By scan time: next leg to depart, last leg to have landed |
+| No such leg | Leg fields `null`, scan still accepted |
+
+| Compatibility | Rule |
+|---|---|
+| Version 1 events | No leg fields; read as `null` |
+| Readers | Ignore unknown fields |
+| Needs the leg | Require `schemaVersion` 2 or more |
+
 ## Metrics and traces
 
 Exported over OTLP. Dashboards: **AeroTrace - Outbox** and **AeroTrace - Kafka Topics** (see the [README](../../README.md#dashboards)).
