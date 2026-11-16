@@ -14,6 +14,7 @@ Registers bags, takes in device scans, shows each bag's journey.
 | [Scan formats](#scan-formats) | Payload fields per protocol |
 | [Errors](#errors) | Status and code per case |
 | [How events are published](#how-events-are-published) | Outbox and Kafka relay |
+| [Risk Streams Service (Kafka Streams)](#risk-streams-service-kafka-streams) | Who reads the scan event, what it publishes |
 | [Metrics and traces](#metrics-and-traces) | What the dashboards read |
 | [Known limitations](#known-limitations) | What is not done yet |
 | [Postman flow by actor](#postman-flow-by-actor) | Agent, passenger, other passenger |
@@ -161,6 +162,19 @@ Envelope `eventType` is `baggage.scan.received`, `schemaVersion` is `2`, `aggreg
 | Version 1 events | No leg fields; read as `null` |
 | Readers | Ignore unknown fields |
 | Needs the leg | Require `schemaVersion` 2 or more |
+
+## Risk Streams Service (Kafka Streams)
+
+The scan event above is read by the Risk Streams Service (`risk-streams-service`, a Kafka Streams application). It has no REST API of its own; its actuator health is on port `1114`.
+
+| Topic | Value |
+|---|---|
+| Reads | `baggage.scan.received.v1`, key = bag tag, `schemaVersion` 2 or more |
+| Publishes | `baggage.risk.changed.v1`, key = `bagTag:legId`, only when the level changes |
+| Publishes | `baggage.scan.anomaly.v1`, key = bag tag, once per 5-minute window |
+| Publishes | `baggage.dead-letter.v1` for records it cannot process |
+| Needs from the scan event | `legId` and `departureAt`; a scan with no leg is accepted but gives no risk |
+| Older events | Version 1 events are dead-lettered as `UNSUPPORTED_SCHEMA_VERSION` |
 
 ## Metrics and traces
 
