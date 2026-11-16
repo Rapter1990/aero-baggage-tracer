@@ -2,23 +2,35 @@ package com.aerotrace.riskstreams;
 
 import com.aerotrace.common.event.Topics;
 import java.time.Clock;
+import java.time.Duration;
+import java.util.Map;
+import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.streams.Topology;
-import org.apache.kafka.streams.processor.api.Processor;
-import org.apache.kafka.streams.processor.api.ProcessorSupplier;
-import org.apache.kafka.streams.processor.api.Record;
+import org.apache.kafka.streams.state.Stores;
 
 /**
- * Builds the risk topology with the Processor API.
+ * Builds the risk topology with the Processor API: one source, one processor, three sinks.
  *
- * <p>STUB (stage 2): wires the source and the three sinks but processes nothing. Stage 3 replaces
- * the no-op processor with dedup, leg risk, anomaly counting and dead-lettering.
+ * <p>Partitioning: the source topic is keyed by bagTag, so every scan of a bag (and so of each of
+ * its legs) reaches the same task and per-bag ordering holds. The stores are partitioned the same
+ * way, so the task count equals the partition count of {@code baggage.scan.received.v1} (see the
+ * README for the number and why it cannot be reduced later).
  */
 public final class RiskStreamsTopology {
 
   /** Durable (changelog-backed) store of seen scanEventIds. */
   public static final String DEDUP_STORE = "scan-dedup-store";
+
+  /** Latest legitimate checkpoint, departure, airport, loaded flag and level per leg. */
+  public static final String LEG_STORE = "leg-state-store";
+
+  /** Active legs ordered by eviction time, so the punctuator range-scans only what is due. */
+  public static final String DEPARTURE_INDEX_STORE = "departure-index-store";
+
+  /** Rejected-transition counts per bagTag and tumbling event-time window. */
+  public static final String ANOMALY_STORE = "anomaly-window-store";
 
   public static final String EVENT_TYPE_RISK_CHANGED = "baggage.risk.changed";
   public static final String EVENT_TYPE_SCAN_ANOMALY = "baggage.scan.anomaly";
@@ -45,33 +57,54 @@ public final class RiskStreamsTopology {
     Topology topology = new Topology();
     topology.addSource(
         "scan-source", new StringDeserializer(), new StringDeserializer(), Topics.SCAN_RECEIVED);
-    ProcessorSupplier<String, String, String, String> noop =
-        () ->
-            new Processor<>() {
-              @Override
-              public void process(Record<String, String> record) {
-                // stub: stage 3 implements the topology
-              }
-            };
-    topology.addProcessor("risk-processor", noop, "scan-source");
-    topology.addSink(
-        "risk-sink",
-        Topics.RISK_CHANGED,
-        new StringSerializer(),
-        new StringSerializer(),
+    topology.addProcessor(
+        "risk-processor", () -> new ScanProcessor(props, clock, metrics), "scan-source");
+
+    // Every store keeps its changelog (default <application.id>-<store>-changelog) so that state
+    // survives a restart and a rebalance; this is what makes deduplication durable.
+    topology.addStateStore(
+        Stores.windowStoreBuilder(
+                Stores.persistentWindowStore(
+                    DEDUP_STORE, props.dedupRetention(), Duration.ofMillis(1), false),
+                Serdes.String(),
+                Serdes.Long())
+            .withLoggingEnabled(Map.of()),
         "risk-processor");
-    topology.addSink(
-        "anomaly-sink",
-        Topics.SCAN_ANOMALY,
-        new StringSerializer(),
-        new StringSerializer(),
+    topology.addStateStore(
+        Stores.keyValueStoreBuilder(
+                Stores.persistentKeyValueStore(LEG_STORE),
+                Serdes.String(),
+                new JsonSerde<>(LegState.class))
+            .withLoggingEnabled(Map.of()),
         "risk-processor");
-    topology.addSink(
-        "dead-letter-sink",
-        Topics.DEAD_LETTER,
-        new StringSerializer(),
-        new StringSerializer(),
+    topology.addStateStore(
+        Stores.keyValueStoreBuilder(
+                Stores.persistentKeyValueStore(DEPARTURE_INDEX_STORE),
+                Serdes.String(),
+                Serdes.String())
+            .withLoggingEnabled(Map.of()),
         "risk-processor");
+    topology.addStateStore(
+        Stores.windowStoreBuilder(
+                Stores.persistentWindowStore(
+                    ANOMALY_STORE,
+                    props.anomalyWindow().plus(props.grace()),
+                    props.anomalyWindow(),
+                    false),
+                Serdes.String(),
+                new JsonSerde<>(AnomalyWindow.class))
+            .withLoggingEnabled(Map.of()),
+        "risk-processor");
+
+    for (String[] sink :
+        new String[][] {
+          {ScanProcessor.RISK_SINK, Topics.RISK_CHANGED},
+          {ScanProcessor.ANOMALY_SINK, Topics.SCAN_ANOMALY},
+          {ScanProcessor.DEAD_LETTER_SINK, Topics.DEAD_LETTER}
+        }) {
+      topology.addSink(
+          sink[0], sink[1], new StringSerializer(), new StringSerializer(), "risk-processor");
+    }
     return topology;
   }
 }
