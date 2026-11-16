@@ -41,12 +41,13 @@ class ReviewHardeningTest extends AbstractApiTest {
   @Autowired private JourneyProperties properties;
   @Autowired private Clock clock;
   @Autowired private MeterRegistry meters;
+  @Autowired private io.micrometer.observation.ObservationRegistry observations;
   @Autowired private PlatformTransactionManager transactions;
   @Autowired private DataSource dataSource;
 
   @SuppressWarnings("unchecked")
   private OutboxRelay relayWith(KafkaTemplate<String, String> kafka) {
-    return new OutboxRelay(outbox, kafka, properties, clock, meters, transactions);
+    return new OutboxRelay(outbox, kafka, properties, clock, meters, observations, transactions);
   }
 
   @SuppressWarnings("unchecked")

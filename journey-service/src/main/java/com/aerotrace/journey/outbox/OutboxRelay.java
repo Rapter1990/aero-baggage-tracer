@@ -5,7 +5,11 @@ import com.aerotrace.journey.constant.MetricNames;
 import com.aerotrace.journey.model.entity.OutboxEventEntity;
 import com.aerotrace.journey.repository.OutboxEventRepository;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -35,6 +39,8 @@ public class OutboxRelay {
   private final JourneyProperties properties;
   private final Clock clock;
   private final MeterRegistry meters;
+  private final ObservationRegistry observations;
+  private final Timer publishDelay;
   private final TransactionTemplate transaction;
 
   public OutboxRelay(
@@ -43,6 +49,7 @@ public class OutboxRelay {
       JourneyProperties properties,
       Clock clock,
       MeterRegistry meters,
+      ObservationRegistry observations,
       PlatformTransactionManager transactionManager) {
     this.transaction = new TransactionTemplate(transactionManager);
     this.outbox = outbox;
@@ -50,6 +57,14 @@ public class OutboxRelay {
     this.properties = properties;
     this.clock = clock;
     this.meters = meters;
+    this.observations = observations;
+    this.publishDelay =
+        Timer.builder(MetricNames.OUTBOX_PUBLISH_DELAY)
+            .description("Time from storing an event to the broker acknowledging it")
+            .publishPercentileHistogram()
+            // Beyond the 30 s default, so a long Kafka outage still shows its real delay.
+            .maximumExpectedValue(Duration.ofMinutes(10))
+            .register(meters);
   }
 
   @Scheduled(fixedDelayString = "${aerotrace.journey.outbox.relay-delay:1s}")
@@ -74,6 +89,25 @@ public class OutboxRelay {
       return 0;
     }
     List<OutboxEventEntity> batch = outbox.claimPending(properties.outbox().batchSize());
+    if (batch.isEmpty()) {
+      return 0;
+    }
+    // One span (and timer) per run that has work, so idle runs do not fill the traces.
+    Observation run = Observation.createNotStarted(MetricNames.OUTBOX_RELAY, observations).start();
+    try (Observation.Scope scope = run.openScope()) {
+      int sent = send(batch);
+      run.highCardinalityKeyValue("outbox.events.claimed", String.valueOf(batch.size()));
+      run.highCardinalityKeyValue("outbox.events.sent", String.valueOf(sent));
+      return sent;
+    } catch (RuntimeException e) {
+      run.error(e);
+      throw e;
+    } finally {
+      run.stop();
+    }
+  }
+
+  private int send(List<OutboxEventEntity> batch) {
     int sent = 0;
     for (OutboxEventEntity row : batch) {
       try {
@@ -98,7 +132,9 @@ public class OutboxRelay {
         LOG.warn("Could not publish an outbox event: {}", rootName(e));
         break;
       }
-      row.markPublished(Instant.now(clock));
+      Instant now = Instant.now(clock);
+      row.markPublished(now);
+      publishDelay.record(Duration.between(row.getCreatedAt(), now));
       meters.counter(MetricNames.OUTBOX_PUBLISHED).increment();
       sent++;
     }

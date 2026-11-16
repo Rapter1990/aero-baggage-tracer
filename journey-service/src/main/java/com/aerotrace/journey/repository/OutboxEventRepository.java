@@ -3,6 +3,7 @@ package com.aerotrace.journey.repository;
 import com.aerotrace.journey.model.entity.OutboxEventEntity;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -34,6 +35,17 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEventEntity, 
               + " ORDER BY created_at, id LIMIT :limit FOR UPDATE SKIP LOCKED",
       nativeQuery = true)
   List<OutboxEventEntity> claimPending(@Param("limit") int limit);
+
+  /** How many events wait to be published. */
+  @Query(
+      "select count(e) from OutboxEventEntity e where e.publishedAt is null and e.parkedAt is null")
+  long countPending();
+
+  /** When the oldest waiting event was stored, or empty when nothing waits. */
+  @Query(
+      "select min(e.createdAt) from OutboxEventEntity e"
+          + " where e.publishedAt is null and e.parkedAt is null")
+  Optional<Instant> oldestPendingCreatedAt();
 
   /** The events of one bag, oldest first. */
   List<OutboxEventEntity> findByMessageKeyOrderByCreatedAt(String messageKey);

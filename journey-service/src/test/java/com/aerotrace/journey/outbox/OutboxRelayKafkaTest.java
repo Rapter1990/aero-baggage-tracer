@@ -192,7 +192,8 @@ class OutboxRelayKafkaTest extends AbstractApiTest {
                     "request.timeout.ms",
                     500)));
     OutboxRelay brokenRelay =
-        new OutboxRelay(outbox, unreachable, properties, clock, meters, transactionManager);
+        new OutboxRelay(
+            outbox, unreachable, properties, clock, meters, observations, transactionManager);
 
     assertThat(brokenRelay.publishPending()).isZero();
 
@@ -210,6 +211,7 @@ class OutboxRelayKafkaTest extends AbstractApiTest {
   @Autowired private com.aerotrace.journey.config.JourneyProperties properties;
   @Autowired private java.time.Clock clock;
   @Autowired private io.micrometer.core.instrument.MeterRegistry meters;
+  @Autowired private io.micrometer.observation.ObservationRegistry observations;
 
   @Autowired private org.springframework.transaction.PlatformTransactionManager transactionManager;
 }

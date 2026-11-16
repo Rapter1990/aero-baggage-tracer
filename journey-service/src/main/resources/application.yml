@@ -41,6 +41,9 @@ spring:
     liquibase-schema: journey
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    template:
+      # Every send is a span with the topic, so Kafka traffic shows up in Tempo.
+      observation-enabled: true
     producer:
       # The outbox relay retries, so the producer must not reorder or duplicate on its own retries.
       acks: all
@@ -101,6 +104,19 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    distribution:
+      # Timers made from observations have no buckets by default. The Kafka and Outbox dashboards
+      # need buckets to show percentiles.
+      percentiles-histogram:
+        spring.kafka.template: true
+        journey.outbox.relay: true
+  observations:
+    enable:
+      # The relay runs every 200 ms. Without this, every idle run would be a trace of its own; the
+      # relay creates a span itself for each run that has events.
+      tasks:
+        scheduled:
+          execution: false
   tracing:
     sampling:
       probability: ${TRACING_SAMPLING_PROBABILITY:1.0}

@@ -131,6 +131,7 @@ docker compose up -d
 | Passengers | Anyone can register |
 | Staff accounts | Only an ADMIN token can create them |
 | API docs | On by default. `DOCS_ENABLED=false` turns them off |
+| Kafka UI | Port 8090, cluster `local` |
 
 ### Dev accounts
 
@@ -280,6 +281,8 @@ Both compose files start these tools:
 docker compose -f docker-compose-local.yml up -d otel-collector tempo loki pushgateway prometheus grafana
 ```
 
+Kafka UI starts with Kafka: `docker compose -f docker-compose-local.yml up -d kafka kafka-ui`.
+
 | Tool | Where | What it does |
 |---|---|---|
 | OpenTelemetry Collector | `localhost:4318` (HTTP), `localhost:4317` (gRPC) | Routes traces, metrics, logs to the stores |
@@ -288,6 +291,7 @@ docker compose -f docker-compose-local.yml up -d otel-collector tempo loki pushg
 | Pushgateway | http://localhost:9091 | Holds coverage numbers for Prometheus |
 | Prometheus | http://localhost:9090 | Scrapes collector and Pushgateway |
 | Grafana | http://localhost:3000 (`admin` / `grafana`) | Dashboards for all three stores |
+| Kafka UI | http://localhost:8090 | Browse Kafka topics and messages |
 
 ### How the services connect
 
@@ -312,6 +316,8 @@ They are in the AeroTrace folder, provisioned from `observability/grafana`.
 | **AeroTrace - Traces** | Single requests, one row per span |
 | **AeroTrace - Logs** | Service logs from Loki |
 | **AeroTrace - Coverage** | JaCoCo coverage of every module |
+| **AeroTrace - Kafka Topics** | Messages, errors, send time per topic |
+| **AeroTrace - Outbox** | Outbox backlog, delay, failures, relay runs |
 
 | Dashboard | How to use it |
 |---|---|
@@ -325,6 +331,11 @@ They are in the AeroTrace folder, provisioned from `observability/grafana`.
 | Coverage | Green = gateway gate (90 % lines) |
 | Coverage | Branch gate is 60 % |
 | Coverage | Lists classes below the 90 % line gate |
+| Kafka Topics | Pick topics, open a send trace |
+| Kafka Topics | Link opens Kafka UI for messages |
+| Outbox | Waiting and oldest should stay near 0 |
+| Outbox | Parked above 0 needs a person |
+| Outbox | Open a relay run to see its sends |
 
 Tables of the Traces dashboard:
 

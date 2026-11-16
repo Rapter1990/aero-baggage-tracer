@@ -14,6 +14,7 @@ Registers bags, takes in device scans, shows each bag's journey.
 | [Scan formats](#scan-formats) | Payload fields per protocol |
 | [Errors](#errors) | Status and code per case |
 | [How events are published](#how-events-are-published) | Outbox and Kafka relay |
+| [Metrics and traces](#metrics-and-traces) | What the dashboards read |
 | [Known limitations](#known-limitations) | What is not done yet |
 | [Postman flow by actor](#postman-flow-by-actor) | Agent, passenger, other passenger |
 | [Flows](#flows) | Sequence and decision diagrams |
@@ -131,6 +132,30 @@ Defaults: `JOURNEY_MAX_CLOCK_SKEW` is `5m`, `JOURNEY_LATE_EVENT_GRACE` is `10m`.
 | Per bag | Events stay in order |
 | Kafka down | Run stops, retried later |
 | Refused for good | Parked, counted in `journey.outbox.parked` |
+
+## Metrics and traces
+
+Exported over OTLP. Dashboards: **AeroTrace - Outbox** and **AeroTrace - Kafka Topics** (see the [README](../../README.md#dashboards)).
+
+| Metric | Meaning |
+|---|---|
+| `journey_scans_ingested_total` | Accepted scans (label `late`) |
+| `journey_outbox_pending_events` | Events waiting to be published |
+| `journey_outbox_oldest_pending_age_seconds` | Age of the oldest waiting event |
+| `journey_outbox_published_total` | Events Kafka acknowledged |
+| `journey_outbox_failed_total` | Failed sends, retried later |
+| `journey_outbox_parked_total` | Events Kafka refused for good |
+| `journey_outbox_publish_delay_milliseconds` | Store to acknowledgement time |
+| `journey_outbox_relay_milliseconds` | Relay runs that had events |
+| `spring_kafka_template_milliseconds` | Time of each Kafka send |
+| `kafka_producer_topic_record_send_total` | Messages sent per topic |
+
+| Span | Meaning |
+|---|---|
+| `journey.outbox.relay` | One relay run that had events |
+| `baggage.scan.received.v1 send` | One Kafka send, child of the run |
+
+Failed and parked counters appear after the first failure. Idle relay runs make no span.
 
 ## Known limitations
 

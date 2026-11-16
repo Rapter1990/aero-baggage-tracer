@@ -37,6 +37,29 @@ services:
     networks:
       - aerotrace
 
+  # Web UI for Kafka: topics, messages, consumer groups. The outbox events of the journey-service
+  # (topic baggage.scan.received.v1) show up here. Open http://localhost:8090.
+  kafka-ui:
+    image: kafbat/kafka-ui:latest
+    container_name: kafka-ui
+    restart: unless-stopped
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "8090:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - aerotrace
+
   redis:
     image: redis:latest
     container_name: redis
