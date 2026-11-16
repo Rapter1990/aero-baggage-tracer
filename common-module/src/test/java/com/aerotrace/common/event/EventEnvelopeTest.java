@@ -136,11 +136,70 @@ class EventEnvelopeTest {
             Instant.parse("2026-11-03T11:48:00Z"),
             "Europe/Berlin",
             Instant.parse("2026-11-03T10:48:02Z"),
-            false);
+            false,
+            "6f1c2a7e-0d4b-4a39-9b8e-3c2f1e0a9d11",
+            "LH902",
+            Instant.parse("2026-11-03T11:05:00Z"));
     var env =
-        EventEnvelope.create(Topics.SCAN_RECEIVED, 1, "AB123456", "c", p.occurredAt(), p, CLOCK);
+        EventEnvelope.create(Topics.SCAN_RECEIVED, 2, "AB123456", "c", p.occurredAt(), p, CLOCK);
     var back = EventJson.read(EventJson.write(env), ScanReceivedPayload.class);
+    assertThat(back).isEqualTo(env);
     assertThat(back.payload().sourceTimezone()).isEqualTo("Europe/Berlin");
     assertThat(back.payload().deviceSequence()).isEqualTo(37);
+    assertThat(back.payload().legId()).isEqualTo("6f1c2a7e-0d4b-4a39-9b8e-3c2f1e0a9d11");
+    assertThat(back.payload().flightNumber()).isEqualTo("LH902");
+    assertThat(back.payload().departureAt()).isEqualTo(Instant.parse("2026-11-03T11:05:00Z"));
+  }
+
+  @Test
+  void aScanWithoutALegWritesTheLegFieldsAsNull() {
+    var p =
+        new ScanReceivedPayload(
+            "EV-1002",
+            "AB123456",
+            "XXX",
+            "SORTING",
+            1,
+            OCCURRED,
+            OCCURRED,
+            "Z",
+            OCCURRED,
+            false,
+            null,
+            null,
+            null);
+    var env = EventEnvelope.create(Topics.SCAN_RECEIVED, 2, "AB123456", "c", OCCURRED, p, CLOCK);
+    String json = EventJson.write(env);
+    assertThat(json).contains("\"legId\":null", "\"departureAt\":null");
+    assertThat(EventJson.read(json, ScanReceivedPayload.class)).isEqualTo(env);
+  }
+
+  /** Schema revision 1 had no leg context; such events must still read, with the leg as null. */
+  @Test
+  void aScanEventOfSchemaVersionOneStillReadsWithoutLegContext() {
+    String v1 =
+        "{\"eventId\":\"e1\",\"eventType\":\"baggage.scan.received\",\"schemaVersion\":1,"
+            + "\"aggregateId\":\"0123456789\",\"occurredAt\":\"2026-11-03T10:48:00Z\","
+            + "\"publishedAt\":\"2026-11-03T10:48:03Z\",\"correlationId\":\"c\","
+            + "\"payload\":{\"scanEventId\":\"s1\",\"bagTag\":\"0123456789\","
+            + "\"airport\":\"FRA\",\"checkpoint\":\"TRANSFER\",\"deviceSequence\":37,"
+            + "\"occurredAt\":\"2026-11-03T10:48:00Z\","
+            + "\"deviceTimestamp\":\"2026-11-03T10:48:00Z\","
+            + "\"sourceTimezone\":\"Europe/Berlin\","
+            + "\"ingestedAt\":\"2026-11-03T10:48:02Z\",\"lateEvent\":false}}";
+
+    EventEnvelope<ScanReceivedPayload> env = EventJson.read(v1, ScanReceivedPayload.class);
+
+    assertThat(env.schemaVersion()).isEqualTo(1);
+    assertThat(env.payload().bagTag()).isEqualTo("0123456789");
+    assertThat(env.payload().checkpoint()).isEqualTo("TRANSFER");
+    assertThat(env.payload().deviceSequence()).isEqualTo(37);
+    assertThat(env.payload().deviceTimestamp()).isEqualTo(Instant.parse("2026-11-03T10:48:00Z"));
+    assertThat(env.payload().legId()).isNull();
+    assertThat(env.payload().flightNumber()).isNull();
+    assertThat(env.payload().departureAt()).isNull();
+    // A consumer that needs the leg asks for revision 2 and rejects this one explicitly.
+    assertThatThrownBy(() -> env.requireSchemaVersionAtLeast(2))
+        .isInstanceOf(UnsupportedSchemaVersionException.class);
   }
 }

@@ -25,5 +25,7 @@ public final class JourneyRules {
   public static final int MAX_IDEMPOTENCY_KEY_LENGTH = 128;
   public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
   public static final String EVENT_TYPE_SCAN_RECEIVED = "baggage.scan.received";
-  public static final int SCAN_EVENT_SCHEMA_VERSION = 1;
+
+  /** Revision 2 added the leg (legId, flightNumber, departureAt) to the scan payload. */
+  public static final int SCAN_EVENT_SCHEMA_VERSION = 2;
 }
