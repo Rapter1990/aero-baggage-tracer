@@ -31,14 +31,17 @@ not discarded (the topic keeps it).
 ### Anomaly window [UNVERIFIED BR-03]
 
 5-minute tumbling windows aligned to the epoch, `[start, end)`, per bagTag (all legs of the bag
-together). The third rejection in a window emits exactly one SCANNER_ANOMALY, at that third scan
+together). A scan without a leg is never a rejection (see "Scans without a leg"). The third rejection in a window emits exactly one SCANNER_ANOMALY, at that third scan
 (emit-at-threshold, not suppress-until-window-close: no wait for the window end, and a later
-fourth rejection emits nothing). The "emitted" flag lives in the window store. Retention is
-window + grace.
+fourth rejection emits nothing). The "emitted" flag lives in the anomaly store (key `bagTag|windowStart`). The entry is deleted by
+the wall-clock punctuator once it has not been touched for window + grace (see "Store expiry").
 
 ### Grace and late records
 
-Stream time is the highest `occurredAt` seen by the task. A record is late when
+Stream time is the highest `occurredAt` seen by the task, with each advance clamped to the wall
+clock plus `max-clock-skew` (default 5 min, the value journey-service uses for the same purpose).
+A scan dated far in the future is still processed but cannot make later on-time scans late or
+suppress their anomaly count. A record is late when
 `occurredAt < streamTime - grace` (default 10 min); exactly at the edge is accepted. A late record
 is still applied to leg state and risk (a late LOADED confirmation must clear HIGH), but it is
 excluded from the anomaly window and counted in `risk_streams_late_records`. Late records are
@@ -51,19 +54,42 @@ HIGH when `departureAt - now < threshold` (strict, default 20 min, per-airport o
 airport of the latest legitimate scan on the leg) and no non-rejected LOADED scan exists on that
 leg. LOADED clears to LOW and is sticky. `risk.changed` is emitted only when the level changes. The
 leg is evicted after `departureAt` without output (no LOW on departure). Scans without a leg
-(legId or departureAt null) carry no risk; they live in a bag-level pseudo-leg that only feeds the
-anomaly rule and expires after the dedup retention.
+(legId or departureAt null) carry no risk and are described next.
+
+### Scans without a leg
+
+A scan without a leg updates no leg state and never counts as a rejected transition: it is
+counted in `risk_streams_scans_without_leg` and is otherwise only deduplicated (the raw history
+stays in the topic). Earlier these scans shared one bag-level pseudo-leg, so a legitimate
+connection (ARRIVED or CLAIM, then TRANSFER or CHECK_IN for the next flight) looked like a
+rejected transition and could raise a false SCANNER_ANOMALY. Without a leg there is nothing to
+compare against, so no anomaly can come from such scans. Pseudo-leg entries written by an earlier
+version are no longer read and expire after the dedup retention.
 
 ### Deduplication is a store, not exactly-once
 
 `processing.guarantee=exactly_once_v2` makes read-process-write inside Kafka atomic. It does not
 stop the producer (journey-service outbox) from publishing the same scan twice; those are two
-different records. So `scan-dedup-store` (changelog-backed window store keyed on `scanEventId`,
-retention 7 days) drops redeliveries before any state change or output. Limits: a duplicate older
+different records. So `scan-dedup-store` (changelog-backed key-value store keyed on `scanEventId`,
+retention 7 days from first processing) drops redeliveries before any state change or output. Limits: a duplicate older
 than the retention is processed again; EOS covers only Kafka-to-Kafka, not metrics or other side
 effects; downstream consumers still need to be idempotent (outputs carry deterministic eventIds
 for that). Output eventIds are name-based UUIDs derived from the input (scanEventId + type, or
 `bagTag:legId:level:departureAt` for punctuator output), so a replay produces identical ids.
+
+### Store expiry
+
+Dedup and anomaly counts are key-value stores, not window stores. A Kafka Streams window store
+expires segments against the highest timestamp it has seen and silently drops writes older than
+the retention; with a replayed or delayed backlog (occurredAt days older than "now", or after a
+restart when stream time starts over but the restored store does not) that loses dedup marks and
+anomaly counts. So expiry never looks at the record timestamp or occurredAt. The dedup store keeps
+`id|<scanEventId>` plus an index `ts|<firstProcessedMillis>|<scanEventId>`; the anomaly store keeps
+a last-touched wall-clock time in the value. The WALL_CLOCK punctuator range-deletes dedup entries
+older than the retention and anomaly entries untouched for window + grace (at most 10000 per store
+per tick). Both stores keep their changelogs (`<application.id>-<store>-changelog`). Retention is
+counted from first processing, so a replayed old scan is remembered for the full retention. Late
+events are still decided by event time and the grace period, not by the store.
 
 ### Poison input
 
@@ -71,6 +97,15 @@ Malformed JSON, schemaVersion below 2, unknown checkpoint, missing scanEventId/b
 go to `baggage.dead-letter.v1` once, keyed by the original eventId or, when there is none,
 `topic-partition-offset`. No blocking retry: the failures are deterministic, retrying cannot fix
 them. Replay is from the dead-letter topic after the cause is fixed.
+
+An unexpected exception while processing a record that did parse (reason `PROCESSING_ERROR`) is
+handled the same way: the record is dead-lettered once (attempts 1), `risk_streams_processing_errors`
+is incremented and the stream goes on. Otherwise the uncaught-exception handler (REPLACE_THREAD)
+would re-read the same offset forever. The record is handled in two steps: planning reads state and
+builds the outputs (serialized) without writing anything, then the effects are applied. A failure
+while planning leaves no dedup mark, state write, output or counter behind. A failure while applying
+(store or producer I/O) is not poison; it is left to fail the task, which aborts the exactly-once
+transaction and retries. Logs carry the record location and exception class, never the payload.
 
 ### Partitioning
 
