@@ -57,10 +57,11 @@ Claude Code subagents are in [.claude/agents](.claude/agents). Reusable workflow
 
 #### Implementation procedure
 
-Order in which the skills are used for one issue. `implement-feature` drives the whole flow on a `feature/<N>/<slug>` branch; `create-issues` and `create-pr` open the issue before and the pull request after.
+Order in which the skills are used for one issue. `implement-feature` (step 0) is the driver: it runs the flow below on a `feature/<N>/<slug>` branch. Steps 1 to 4 can also be run on their own. `create-issues` opens the issue before and `create-pr` the pull request after.
 
 | Step | Skill | When | What it does | Done when |
 |---|---|---|---|---|
+| 0 | `/implement-feature <N>` | To build one issue end to end | Reads the issue and confirms its dependencies are done; branches `feature/<N>/<slug>` from `main`; plans the smallest vertical slice and delegates with the delegation map above (`principal-engineer`); writes the failing test first (`test-engineer`), then the code, in Conventional Commits; runs `verify-project`; reviews with `code-reviewer` (and `security-reviewer` when auth or PII is touched); ticks the acceptance criteria; opens the PR with `create-pr` | Verify passes, review findings are fixed, criteria are ticked, and the PR is open (previewed with `-DryRun` first) |
 | 1 | `/analyze-case <N>` | Before any code | Reads the case study (untracked PDF, never committed); extracts modules, topics, roles, business rules (BR-xx), acceptance tests (AT-xx); compares them with `docs/issues/GITHUB_ISSUES.md`; `product-owner` words the result | Coverage table (requirement → issue) and proposed new issues; anything not defined in the repo is marked unverified |
 | 2 | `/architecture-review` | After the design, before the build, and again on the finished diff | `architect` (boundaries), `api-contract-engineer` (contracts) and `database-reviewer` (persistence) review the modules touched; checks no JPA in `common-module`, no cross-service DB access, versioned events, idempotent consumers, correlation id propagated | Findings ranked blocker / should-fix / nit; an ADR in `docs/adr/` when a decision is needed |
 | 3 | `/verify-project` | After every meaningful change, and before each push | `mvn -q spotless:check`, then `mvn -q verify` (Surefire, Failsafe, JaCoCo thresholds), then `git status` (no secrets, no `target/`, no case-study PDF) | Every step actually run and passing; failures reported with their output, never assumed green |
