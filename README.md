@@ -53,7 +53,20 @@ Claude Code subagents are in [.claude/agents](.claude/agents). Reusable workflow
 
 ### Skills
 
-`analyze-case`, `architecture-review`, `implement-feature`, `run`, `verify-project`.
+`analyze-case`, `architecture-review`, `implement-feature`, `run`, `verify-project`, `create-issues`, `create-pr`.
+
+#### Implementation procedure
+
+Order in which the skills are used for one issue. `implement-feature` drives the whole flow on a `feature/<N>/<slug>` branch; `create-issues` and `create-pr` open the issue before and the pull request after.
+
+| Step | Skill | When | What it does | Done when |
+|---|---|---|---|---|
+| 1 | `/analyze-case <N>` | Before any code | Reads the case study (untracked PDF, never committed); extracts modules, topics, roles, business rules (BR-xx), acceptance tests (AT-xx); compares them with `docs/issues/GITHUB_ISSUES.md`; `product-owner` words the result | Coverage table (requirement → issue) and proposed new issues; anything not defined in the repo is marked unverified |
+| 2 | `/architecture-review` | After the design, before the build, and again on the finished diff | `architect` (boundaries), `api-contract-engineer` (contracts) and `database-reviewer` (persistence) review the modules touched; checks no JPA in `common-module`, no cross-service DB access, versioned events, idempotent consumers, correlation id propagated | Findings ranked blocker / should-fix / nit; an ADR in `docs/adr/` when a decision is needed |
+| 3 | `/verify-project` | After every meaningful change, and before each push | `mvn -q spotless:check`, then `mvn -q verify` (Surefire, Failsafe, JaCoCo thresholds), then `git status` (no secrets, no `target/`, no case-study PDF) | Every step actually run and passing; failures reported with their output, never assumed green |
+| 4 | `/run` | After verify passes, to see the change working | Builds (`mvn -q -DskipTests package`), starts the stack with Docker Compose, waits for `/actuator/health` and Eureka registration, smoke-tests through the gateway under `/api/v1` with a token per role | Report of which services are up, which are not, and the log lines of any that failed |
+
+Then fix what the reviews and the run found, repeat steps 3 and 4, tick the issue's acceptance criteria, and open the pull request with `create-pr`.
 
 ## Local configuration (`.env`)
 
