@@ -103,7 +103,7 @@ Defaults marked "Compose" are for local use only.
 | `JOURNEY_OUTBOX_RELAY_DELAY` | journey-service | Pause between relay runs | `200ms` |
 | `JOURNEY_OUTBOX_BATCH_SIZE` | journey-service | Events sent per relay run | `200` |
 | `JOURNEY_OUTBOX_RETENTION` | journey-service | How long published events are kept | `7d` |
-| `KAFKA_BOOTSTRAP_SERVERS` | journey-service | Kafka address | `localhost:9092` (Compose: `kafka:9092`) |
+| `KAFKA_BOOTSTRAP_SERVERS` | journey, risk-streams | Kafka address | `localhost:9092` (Compose: `kafka:9092`) |
 | `TRUSTED_PROXIES` | api-gateway | Proxies whose `X-Forwarded-For` is trusted | empty = header ignored |
 | `AUTH_RATE_LIMIT_REPLENISH_RATE` | api-gateway | Auth tokens refilled per second | `0.2` (12 a minute) |
 | `AUTH_RATE_LIMIT_BURST_CAPACITY` | api-gateway | Auth burst size | `10` |
@@ -174,6 +174,18 @@ SELECT id, 'ADMIN' FROM identity.app_user WHERE username = 'your-username';
 | api-gateway (clients call this) | `http://localhost:8080` |
 | identity-service (direct) | `http://localhost:1112` |
 | journey-service (direct) | `http://localhost:1113` |
+| risk-streams-service (actuator only, no public API) | `http://localhost:1114` |
+
+In Compose, the one-shot `kafka-init` job creates the Kafka topics before journey-service and risk-streams-service start (idempotent, `--if-not-exists`):
+
+| Topic | Partitions | Retention |
+|---|---|---|
+| `baggage.scan.received.v1` | 6 | 7d |
+| `baggage.risk.changed.v1` | 6 | 7d |
+| `baggage.scan.anomaly.v1` | 6 | 7d |
+| `baggage.dead-letter.v1` | 3 | 30d |
+
+All use `cleanup.policy=delete` and replication factor 1. A topic that already exists (for example auto-created earlier with 1 partition) is not changed: delete it once in Kafka UI to get these settings. With `docker-compose-local.yml` the broker auto-creates topics, so create them yourself if you need the partition counts.
 
 Compose publishes the direct ports. Each service has `/actuator/health` and `/v3/api-docs`. The Postman collection `AeroTrace` is in `postman/`, see [Postman collection](docs/apis/API.md#postman-collection).
 
