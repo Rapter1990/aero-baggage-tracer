@@ -24,14 +24,6 @@ class RiskStreamsTopologyShapeTest {
   }
 
   @Test
-  @DisplayName("built with the Processor API: a processor holds the dedup store")
-  void dedupStoreIsAttached() {
-    try (TopologyHarness h = new TopologyHarness()) {
-      assertThat(h.topology().describe().toString()).contains(RiskStreamsTopology.DEDUP_STORE);
-    }
-  }
-
-  @Test
   @DisplayName("the dedup store is durable: it writes to a changelog topic")
   void dedupStoreHasChangelog() {
     try (TopologyHarness h = new TopologyHarness()) {

@@ -14,7 +14,9 @@ import java.util.Objects;
  * @param anomalyWindow tumbling event-time window of the rejected-transition count (BR-03)
  * @param rejectedThreshold rejected transitions per bagTag and window that raise an anomaly
  * @param punctuationInterval wall-clock interval of the risk re-evaluation
- * @param dedupRetention how long a scanEventId is remembered
+ * @param dedupRetention how long a scanEventId is remembered, counted from its first processing
+ * @param maxClockSkew how far past the wall clock an occurredAt may move stream time (the same
+ *     tolerance as journey-service's max-clock-skew)
  */
 public record RiskStreamsProperties(
     Duration highRiskThreshold,
@@ -23,7 +25,8 @@ public record RiskStreamsProperties(
     Duration anomalyWindow,
     int rejectedThreshold,
     Duration punctuationInterval,
-    Duration dedupRetention) {
+    Duration dedupRetention,
+    Duration maxClockSkew) {
 
   public RiskStreamsProperties {
     Objects.requireNonNull(highRiskThreshold, "highRiskThreshold");
@@ -31,6 +34,7 @@ public record RiskStreamsProperties(
     Objects.requireNonNull(anomalyWindow, "anomalyWindow");
     Objects.requireNonNull(punctuationInterval, "punctuationInterval");
     Objects.requireNonNull(dedupRetention, "dedupRetention");
+    Objects.requireNonNull(maxClockSkew, "maxClockSkew");
     airportThresholds = airportThresholds == null ? Map.of() : Map.copyOf(airportThresholds);
   }
 
@@ -42,7 +46,8 @@ public record RiskStreamsProperties(
         Duration.ofMinutes(5),
         3,
         Duration.ofSeconds(30),
-        Duration.ofDays(7));
+        Duration.ofDays(7),
+        Duration.ofMinutes(5));
   }
 
   /** Copy with an airport-specific threshold added. */
@@ -56,7 +61,8 @@ public record RiskStreamsProperties(
         anomalyWindow,
         rejectedThreshold,
         punctuationInterval,
-        dedupRetention);
+        dedupRetention,
+        maxClockSkew);
   }
 
   /** The threshold for an airport, falling back to the default one (also for a null airport). */

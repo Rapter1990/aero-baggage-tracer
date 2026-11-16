@@ -21,6 +21,9 @@ class LateEventGraceTest {
   /** Baseline LOADED at 10:00 for BAG-1, then another bag's scan moves stream time to 10:20. */
   private static void advanceStreamTime(TopologyHarness h) {
     h.pipe(h.scan(Checkpoint.LOADED, at("10:00:00")));
+    // Stream time is clamped to the wall clock + max clock skew (5 minutes), so for it to reach
+    // 10:20 the wall clock must have got there too.
+    h.advanceTo(at("10:20:00"));
     h.pipe(h.scan(Checkpoint.CHECK_IN, at("10:20:00")).bag("OTHER-BAG"));
   }
 

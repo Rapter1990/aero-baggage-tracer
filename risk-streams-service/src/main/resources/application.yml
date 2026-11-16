@@ -2,6 +2,9 @@ server:
   port: 1114
 
 spring:
+  lifecycle:
+    # At least the 30 s KafkaStreams.close in RiskStreamsConfiguration.StreamsLifecycle.
+    timeout-per-shutdown-phase: 45s
   application:
     name: risk-streams-service
   config:
@@ -42,6 +45,9 @@ aerotrace:
     punctuation-interval: ${RISK_PUNCTUATION_INTERVAL:30s}
     # How long a scanEventId is remembered for deduplication.
     dedup-retention: ${RISK_DEDUP_RETENTION:7d}
+    # How far past the wall clock a scan's occurredAt may advance stream time (same value and
+    # meaning as journey-service's max-clock-skew); a scan dated later is clamped, not trusted.
+    max-clock-skew: ${RISK_MAX_CLOCK_SKEW:5m}
 
 eureka:
   instance:

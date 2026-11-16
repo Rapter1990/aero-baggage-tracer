@@ -2,7 +2,6 @@ package com.aerotrace.riskstreams;
 
 import com.aerotrace.common.event.Topics;
 import java.time.Clock;
-import java.time.Duration;
 import java.util.Map;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -20,7 +19,10 @@ import org.apache.kafka.streams.state.Stores;
  */
 public final class RiskStreamsTopology {
 
-  /** Durable (changelog-backed) store of seen scanEventIds. */
+  /**
+   * Durable (changelog-backed) store of seen scanEventIds: {@code id|<scanEventId>} maps to the
+   * wall-clock millis of first processing, {@code ts|<millis>|<scanEventId>} is the expiry index.
+   */
   public static final String DEDUP_STORE = "scan-dedup-store";
 
   /** Latest legitimate checkpoint, departure, airport, loaded flag and level per leg. */
@@ -29,7 +31,7 @@ public final class RiskStreamsTopology {
   /** Active legs ordered by eviction time, so the punctuator range-scans only what is due. */
   public static final String DEPARTURE_INDEX_STORE = "departure-index-store";
 
-  /** Rejected-transition counts per bagTag and tumbling event-time window. */
+  /** Rejected-transition counts, key {@code bagTag|windowStart} (tumbling event-time window). */
   public static final String ANOMALY_STORE = "anomaly-window-store";
 
   public static final String EVENT_TYPE_RISK_CHANGED = "baggage.risk.changed";
@@ -44,6 +46,9 @@ public final class RiskStreamsTopology {
 
   public static final String REASON_UNSUPPORTED_SCHEMA_VERSION = "UNSUPPORTED_SCHEMA_VERSION";
   public static final String REASON_INVALID_PAYLOAD = "INVALID_PAYLOAD";
+
+  /** The record parsed but the processor failed on it; see ScanProcessor.process. */
+  public static final String REASON_PROCESSING_ERROR = "PROCESSING_ERROR";
 
   private RiskStreamsTopology() {}
 
@@ -62,12 +67,13 @@ public final class RiskStreamsTopology {
 
     // Every store keeps its changelog (default <application.id>-<store>-changelog) so that state
     // survives a restart and a rebalance; this is what makes deduplication durable.
+    // Dedup and anomaly counts are plain key-value stores, not window stores: a window store
+    // expires segments against the highest timestamp it has seen, so a replayed or delayed
+    // backlog (occurredAt far older than "now") would have its writes silently dropped. Expiry is
+    // done by the wall-clock punctuator instead (see ScanProcessor and ADR-001).
     topology.addStateStore(
-        Stores.windowStoreBuilder(
-                Stores.persistentWindowStore(
-                    DEDUP_STORE, props.dedupRetention(), Duration.ofMillis(1), false),
-                Serdes.String(),
-                Serdes.Long())
+        Stores.keyValueStoreBuilder(
+                Stores.persistentKeyValueStore(DEDUP_STORE), Serdes.String(), Serdes.Long())
             .withLoggingEnabled(Map.of()),
         "risk-processor");
     topology.addStateStore(
@@ -85,12 +91,8 @@ public final class RiskStreamsTopology {
             .withLoggingEnabled(Map.of()),
         "risk-processor");
     topology.addStateStore(
-        Stores.windowStoreBuilder(
-                Stores.persistentWindowStore(
-                    ANOMALY_STORE,
-                    props.anomalyWindow().plus(props.grace()),
-                    props.anomalyWindow(),
-                    false),
+        Stores.keyValueStoreBuilder(
+                Stores.persistentKeyValueStore(ANOMALY_STORE),
                 Serdes.String(),
                 new JsonSerde<>(AnomalyWindow.class))
             .withLoggingEnabled(Map.of()),

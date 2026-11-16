@@ -22,16 +22,21 @@ public final class RiskStreamsMetrics {
   /** Counter: scans without a leg (legId null), which cannot carry a risk. */
   public static final String SCANS_WITHOUT_LEG = "risk_streams_scans_without_leg";
 
+  /** Counter: records that parsed but failed in the processor and were dead-lettered. */
+  public static final String PROCESSING_ERRORS = "risk_streams_processing_errors";
+
   private final AtomicLong lagSeconds = new AtomicLong();
   private final AtomicInteger highLegs = new AtomicInteger();
   private final Counter lateRecords;
   private final Counter scansWithoutLeg;
+  private final Counter processingErrors;
 
   public RiskStreamsMetrics(MeterRegistry registry) {
     Gauge.builder(STREAM_LAG_SECONDS, lagSeconds, AtomicLong::get).register(registry);
     Gauge.builder(BAGGAGE_RISK_HIGH, highLegs, AtomicInteger::get).register(registry);
     this.lateRecords = Counter.builder(LATE_RECORDS).register(registry);
     this.scansWithoutLeg = Counter.builder(SCANS_WITHOUT_LEG).register(registry);
+    this.processingErrors = Counter.builder(PROCESSING_ERRORS).register(registry);
   }
 
   public void recordStreamLag(Duration lag) {
@@ -48,6 +53,10 @@ public final class RiskStreamsMetrics {
 
   public void lateRecordExcluded() {
     lateRecords.increment();
+  }
+
+  public void processingError() {
+    processingErrors.increment();
   }
 
   public void scanWithoutLeg() {

@@ -27,8 +27,6 @@ import org.apache.kafka.streams.processor.api.Record;
 import org.apache.kafka.streams.processor.api.RecordMetadata;
 import org.apache.kafka.streams.state.KeyValueIterator;
 import org.apache.kafka.streams.state.KeyValueStore;
-import org.apache.kafka.streams.state.WindowStore;
-import org.apache.kafka.streams.state.WindowStoreIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tools.jackson.databind.JsonNode;
@@ -37,7 +35,15 @@ import tools.jackson.databind.JsonNode;
  * The single processor of the topology: validate, deduplicate, apply the scan to its leg, emit.
  *
  * <p>Time: the risk rule (BR-02) uses the wall clock; the anomaly window (BR-03) and the grace
- * period use event time (occurredAt). See ADR-001.
+ * period use event time (occurredAt), with stream time clamped to the wall clock plus the maximum
+ * clock skew. Store expiry uses the wall clock only. See ADR-001.
+ *
+ * <p>A record is handled in two steps: {@link #plan} reads state and computes everything (including
+ * the serialized output), {@link #process} then applies the resulting effects. A failure while
+ * planning therefore leaves no store write, output or counter behind, and the record is
+ * dead-lettered as PROCESSING_ERROR. A failure while applying (a store or producer error) is
+ * infrastructure, not poison: it is allowed to fail the task, which aborts the exactly-once
+ * transaction and retries.
  */
 final class ScanProcessor implements Processor<String, String, String, String> {
 
@@ -47,6 +53,12 @@ final class ScanProcessor implements Processor<String, String, String, String> {
 
   /** Oldest scan revision this topology understands: revision 2 added the leg. */
   static final int MIN_SCHEMA_VERSION = 2;
+
+  /** Entries removed per store and punctuation, so one tick never stalls the stream thread. */
+  private static final int MAX_EXPIRED_PER_TICK = 10_000;
+
+  private static final String DEDUP_ID_PREFIX = "id|";
+  private static final String DEDUP_INDEX_PREFIX = "ts|";
 
   private static final Logger LOG = LoggerFactory.getLogger(ScanProcessor.class);
 
@@ -58,10 +70,10 @@ final class ScanProcessor implements Processor<String, String, String, String> {
   private ProcessorContext<String, String> context;
   private KeyValueStore<String, LegState> legStore;
   private KeyValueStore<String, String> departureIndex;
-  private WindowStore<String, AnomalyWindow> anomalyStore;
-  private WindowStore<String, Long> dedupStore;
+  private KeyValueStore<String, AnomalyWindow> anomalyStore;
+  private KeyValueStore<String, Long> dedupStore;
 
-  /** Highest occurredAt seen by this task (stream time). Not persisted: see ADR-001. */
+  /** Highest (clamped) occurredAt seen by this task (stream time). Not persisted: see ADR-001. */
   private long streamTimeMs = Long.MIN_VALUE;
 
   /** HIGH legs of this task, as reported to the shared gauge. */
@@ -116,33 +128,62 @@ final class ScanProcessor implements Processor<String, String, String, String> {
     try {
       scan = parse(record.value());
     } catch (Invalid invalid) {
-      deadLetter(record, invalid);
+      deadLetter(record, invalid, null);
       return;
     }
+    List<Runnable> effects = new ArrayList<>();
+    try {
+      plan(scan, effects);
+    } catch (RuntimeException e) {
+      metrics.processingError();
+      deadLetter(
+          record,
+          new Invalid(RiskStreamsTopology.REASON_PROCESSING_ERROR, scan.envelope().eventId()),
+          e);
+      return;
+    }
+    effects.forEach(Runnable::run);
+  }
+
+  /** Reads state and computes the outcome of one scan; every write is added to {@code effects}. */
+  private void plan(Scan scan, List<Runnable> effects) {
     ScanReceivedPayload payload = scan.payload();
     Instant now = clock.instant();
     Instant at = payload.occurredAt();
+    long atMs = at.toEpochMilli();
     Duration lag = Duration.between(at, now);
-    metrics.recordStreamLag(lag.isNegative() ? Duration.ZERO : lag);
+    Duration shownLag = lag.isNegative() ? Duration.ZERO : lag;
+    effects.add(() -> metrics.recordStreamLag(shownLag));
 
-    if (isDuplicate(payload.scanEventId(), at)) {
+    String dedupKey = DEDUP_ID_PREFIX + payload.scanEventId();
+    if (dedupStore.get(dedupKey) != null) {
       return;
     }
-    dedupStore.put(payload.scanEventId(), at.toEpochMilli(), at.toEpochMilli());
+    long seenAtMs = now.toEpochMilli();
+    String indexKey = DEDUP_INDEX_PREFIX + "%019d|%s".formatted(seenAtMs, payload.scanEventId());
+    effects.add(
+        () -> {
+          dedupStore.put(dedupKey, seenAtMs);
+          dedupStore.put(indexKey, seenAtMs);
+        });
 
-    boolean late = streamTimeMs != Long.MIN_VALUE && at.toEpochMilli() < streamTimeMs - graceMs();
-    streamTimeMs = Math.max(streamTimeMs, at.toEpochMilli());
+    boolean late = streamTimeMs != Long.MIN_VALUE && atMs < streamTimeMs - graceMs();
+    // A scan dated far in the future must not drag stream time with it.
+    long advanceTo = Math.min(atMs, seenAtMs + props.maxClockSkew().toMillis());
+    effects.add(() -> streamTimeMs = Math.max(streamTimeMs, advanceTo));
     if (late) {
-      metrics.lateRecordExcluded();
+      effects.add(metrics::lateRecordExcluded);
     }
 
-    boolean hasLeg = payload.legId() != null && payload.departureAt() != null;
-    if (!hasLeg) {
-      metrics.scanWithoutLeg();
+    if (payload.legId() == null || payload.departureAt() == null) {
+      // No leg: nothing to compare with and no leg state to update. In particular it cannot be a
+      // rejected transition: a bag may legitimately go ARRIVED -> CHECK_IN on its next flight.
+      effects.add(metrics::scanWithoutLeg);
+      return;
     }
-    String legKey = hasLeg ? payload.bagTag() + ":" + payload.legId() : payload.bagTag() + "|bag";
+    String legKey = payload.bagTag() + ":" + payload.legId();
     LegState old = legStore.get(legKey);
-    boolean departed = hasLeg && !payload.departureAt().isAfter(now);
+    boolean departed = !payload.departureAt().isAfter(now);
     if (old == null && departed) {
       return; // nothing to compare with, and nothing left to be at risk for
     }
@@ -156,47 +197,38 @@ final class ScanProcessor implements Processor<String, String, String, String> {
       state =
           new LegState(
               payload.bagTag(),
-              hasLeg ? payload.legId() : null,
+              payload.legId(),
               payload.airport(),
               scan.checkpoint(),
               at,
-              hasLeg ? payload.departureAt() : null,
+              payload.departureAt(),
               false,
               RiskLevel.LOW,
               null);
     } else if (!rejected && at.isAfter(old.latestAt())) {
-      state =
-          old.advance(
-              payload.airport(), scan.checkpoint(), at, hasLeg ? payload.departureAt() : null);
+      state = old.advance(payload.airport(), scan.checkpoint(), at, payload.departureAt());
     }
     if (!rejected && scan.checkpoint() == Checkpoint.LOADED) {
       state = state.withLoaded();
     }
     if (rejected && !late) {
-      countRejection(scan, at);
+      planRejection(scan, at, effects);
     }
 
     if (state.hasRisk() && !departed) {
       RiskLevel level = state.loaded() ? RiskLevel.LOW : levelAt(state, now);
       if (level != state.lastLevel()) {
-        emitRisk(state, level, scan.envelope().correlationId(), payload.scanEventId(), now);
+        planRisk(
+            state, level, scan.envelope().correlationId(), payload.scanEventId(), now, effects);
         state = state.withLevel(level);
       }
     }
-    save(old, state);
+    LegState finalState = state;
+    effects.add(() -> save(old, finalState));
   }
 
   private long graceMs() {
     return props.grace().toMillis();
-  }
-
-  private boolean isDuplicate(String scanEventId, Instant at) {
-    long retention = props.dedupRetention().toMillis();
-    Instant from = Instant.ofEpochMilli(Math.max(0, at.toEpochMilli() - retention));
-    try (WindowStoreIterator<Long> it =
-        dedupStore.fetch(scanEventId, from, at.plusMillis(retention))) {
-      return it.hasNext();
-    }
   }
 
   private RiskLevel levelAt(LegState state, Instant now) {
@@ -226,7 +258,7 @@ final class ScanProcessor implements Processor<String, String, String, String> {
   }
 
   private static String key(LegState state) {
-    return state.legId() == null ? state.bagTag() + "|bag" : state.bagTag() + ":" + state.legId();
+    return state.bagTag() + ":" + state.legId();
   }
 
   private static String indexKey(Instant expiresAt, String legKey) {
@@ -235,11 +267,12 @@ final class ScanProcessor implements Processor<String, String, String, String> {
 
   // ---------------------------------------------------------------- anomaly (BR-03)
 
-  private void countRejection(Scan scan, Instant at) {
+  private void planRejection(Scan scan, Instant at, List<Runnable> effects) {
     long size = props.anomalyWindow().toMillis();
     long start = Math.floorDiv(at.toEpochMilli(), size) * size;
     String bagTag = scan.payload().bagTag();
-    AnomalyWindow current = anomalyStore.fetch(bagTag, start);
+    String key = bagTag + "|" + start;
+    AnomalyWindow current = anomalyStore.get(key);
     int count = (current == null ? 0 : current.count()) + 1;
     boolean emitted = current != null && current.emitted();
     if (count >= props.rejectedThreshold() && !emitted) {
@@ -251,25 +284,32 @@ final class ScanProcessor implements Processor<String, String, String, String> {
               count,
               Instant.ofEpochMilli(start),
               Instant.ofEpochMilli(start + size));
-      forward(
-          ANOMALY_SINK,
-          bagTag,
-          envelope(
-              scan.payload().scanEventId() + ":" + RiskStreamsTopology.EVENT_TYPE_SCAN_ANOMALY,
-              RiskStreamsTopology.EVENT_TYPE_SCAN_ANOMALY,
+      effects.add(
+          forwardLater(
+              ANOMALY_SINK,
               bagTag,
-              scan.envelope().correlationId(),
-              at,
-              payload),
-          clock.millis());
+              envelope(
+                  scan.payload().scanEventId() + ":" + RiskStreamsTopology.EVENT_TYPE_SCAN_ANOMALY,
+                  RiskStreamsTopology.EVENT_TYPE_SCAN_ANOMALY,
+                  bagTag,
+                  scan.envelope().correlationId(),
+                  at,
+                  payload),
+              clock.millis()));
     }
-    anomalyStore.put(bagTag, new AnomalyWindow(count, emitted), start);
+    AnomalyWindow updated = new AnomalyWindow(count, emitted, clock.millis());
+    effects.add(() -> anomalyStore.put(key, updated));
   }
 
   // ---------------------------------------------------------------- risk (BR-02)
 
-  private void emitRisk(
-      LegState state, RiskLevel level, String correlationId, String scanEventId, Instant now) {
+  private void planRisk(
+      LegState state,
+      RiskLevel level,
+      String correlationId,
+      String scanEventId,
+      Instant now,
+      List<Runnable> effects) {
     RiskChangedPayload payload =
         new RiskChangedPayload(
             state.bagTag(), state.legId(), state.lastLevel(), level, state.departureAt());
@@ -277,27 +317,32 @@ final class ScanProcessor implements Processor<String, String, String, String> {
         scanEventId != null
             ? scanEventId + ":" + RiskStreamsTopology.EVENT_TYPE_RISK_CHANGED
             : "%s:%s:%s:%s".formatted(state.bagTag(), state.legId(), level, state.departureAt());
-    forward(
-        RISK_SINK,
-        state.bagTag() + ":" + state.legId(),
-        envelope(
-            idSeed,
-            RiskStreamsTopology.EVENT_TYPE_RISK_CHANGED,
-            state.bagTag(),
-            correlationId,
-            now,
-            payload),
-        now.toEpochMilli());
-    if (level == RiskLevel.HIGH && state.lastLevel() != RiskLevel.HIGH) {
-      highLegs++;
-      metrics.highRiskLegAdded();
-    } else if (level != RiskLevel.HIGH && state.lastLevel() == RiskLevel.HIGH) {
-      highLegs--;
-      metrics.highRiskLegRemoved();
-    }
+    effects.add(
+        forwardLater(
+            RISK_SINK,
+            state.bagTag() + ":" + state.legId(),
+            envelope(
+                idSeed,
+                RiskStreamsTopology.EVENT_TYPE_RISK_CHANGED,
+                state.bagTag(),
+                correlationId,
+                now,
+                payload),
+            now.toEpochMilli()));
+    RiskLevel previous = state.lastLevel();
+    effects.add(
+        () -> {
+          if (level == RiskLevel.HIGH && previous != RiskLevel.HIGH) {
+            highLegs++;
+            metrics.highRiskLegAdded();
+          } else if (level != RiskLevel.HIGH && previous == RiskLevel.HIGH) {
+            highLegs--;
+            metrics.highRiskLegRemoved();
+          }
+        });
   }
 
-  /** Wall-clock tick: raise HIGH on quiet legs and evict legs that have departed. */
+  /** Wall-clock tick: raise HIGH on quiet legs, evict departed legs, expire dedup and anomalies. */
   private void evaluateActiveLegs() {
     Instant now = clock.instant();
     List<KeyValue<String, String>> due = new ArrayList<>();
@@ -318,11 +363,47 @@ final class ScanProcessor implements Processor<String, String, String, String> {
       } else if (state.hasRisk() && !state.loaded()) {
         RiskLevel level = levelAt(state, now);
         if (level != state.lastLevel()) {
-          emitRisk(state, level, null, null, now);
+          List<Runnable> effects = new ArrayList<>();
+          planRisk(state, level, null, null, now, effects);
+          effects.forEach(Runnable::run);
           legStore.put(entry.value, state.withLevel(level));
         }
       }
     }
+    expireDedup(now);
+    expireAnomalies(now);
+  }
+
+  /** Deletes scanEventIds first processed more than the retention ago (wall clock). */
+  private void expireDedup(Instant now) {
+    long cutoff = now.toEpochMilli() - props.dedupRetention().toMillis();
+    String to = DEDUP_INDEX_PREFIX + "%019d|".formatted(cutoff) + "￿";
+    List<String> expired = new ArrayList<>();
+    try (KeyValueIterator<String, Long> it = dedupStore.range(DEDUP_INDEX_PREFIX, to)) {
+      while (it.hasNext() && expired.size() < MAX_EXPIRED_PER_TICK) {
+        expired.add(it.next().key);
+      }
+    }
+    for (String indexKey : expired) {
+      dedupStore.delete(indexKey);
+      // "ts|<19 digits>|<scanEventId>": the id starts after the second separator.
+      dedupStore.delete(DEDUP_ID_PREFIX + indexKey.substring(DEDUP_INDEX_PREFIX.length() + 20));
+    }
+  }
+
+  /** Deletes anomaly counts not touched for window + grace (wall clock). */
+  private void expireAnomalies(Instant now) {
+    long keepMs = props.anomalyWindow().plus(props.grace()).toMillis();
+    List<String> expired = new ArrayList<>();
+    try (KeyValueIterator<String, AnomalyWindow> it = anomalyStore.all()) {
+      while (it.hasNext() && expired.size() < MAX_EXPIRED_PER_TICK) {
+        KeyValue<String, AnomalyWindow> entry = it.next();
+        if (now.toEpochMilli() - entry.value.touchedAtMs() > keepMs) {
+          expired.add(entry.key);
+        }
+      }
+    }
+    expired.forEach(anomalyStore::delete);
   }
 
   private void evict(LegState state, KeyValue<String, String> entry) {
@@ -408,25 +489,31 @@ final class ScanProcessor implements Processor<String, String, String, String> {
     return value == null || value.isBlank();
   }
 
-  private void deadLetter(Record<String, String> record, Invalid invalid) {
+  private void deadLetter(Record<String, String> record, Invalid invalid, Throwable cause) {
     RecordMetadata meta = context.recordMetadata().orElse(null);
     String topic = meta == null ? Topics.SCAN_RECEIVED : meta.topic();
     String location = meta == null ? topic : topic + "-" + meta.partition() + "-" + meta.offset();
     String key = invalid.eventId != null ? invalid.eventId : location;
-    LOG.warn("Dead-lettering record {} ({})", location, invalid.reason);
+    // Never the payload, nor the exception message (it may quote it): the class is enough.
+    LOG.warn(
+        "Dead-lettering record {} ({}{})",
+        location,
+        invalid.reason,
+        cause == null ? "" : ", " + cause.getClass().getName());
     DeadLetterPayload payload =
         new DeadLetterPayload(topic, invalid.eventId, invalid.reason, 1, record.value());
-    forward(
-        DEAD_LETTER_SINK,
-        key,
-        envelope(
-            key + ":" + invalid.reason,
-            RiskStreamsTopology.EVENT_TYPE_DEAD_LETTER,
+    forwardLater(
+            DEAD_LETTER_SINK,
             key,
-            null,
-            clock.instant(),
-            payload),
-        record.timestamp());
+            envelope(
+                key + ":" + invalid.reason,
+                RiskStreamsTopology.EVENT_TYPE_DEAD_LETTER,
+                key,
+                null,
+                clock.instant(),
+                payload),
+            record.timestamp())
+        .run();
   }
 
   // ---------------------------------------------------------------- output
@@ -460,7 +547,10 @@ final class ScanProcessor implements Processor<String, String, String, String> {
         created.payload());
   }
 
-  private void forward(String sink, String key, EventEnvelope<?> envelope, long timestamp) {
-    context.forward(new Record<>(key, EventJson.write(envelope), timestamp), sink);
+  /** Serializes now (so a failure surfaces while planning); the returned task forwards. */
+  private Runnable forwardLater(
+      String sink, String key, EventEnvelope<?> envelope, long timestamp) {
+    String json = EventJson.write(envelope);
+    return () -> context.forward(new Record<>(key, json, timestamp), sink);
   }
 }

@@ -19,7 +19,8 @@ public record RiskStreamsSettings(
     @DefaultValue("5m") Duration anomalyWindow,
     @DefaultValue("3") int rejectedThreshold,
     @DefaultValue("30s") Duration punctuationInterval,
-    @DefaultValue("7d") Duration dedupRetention) {
+    @DefaultValue("7d") Duration dedupRetention,
+    @DefaultValue("5m") Duration maxClockSkew) {
 
   /** The topology's tunables. */
   public RiskStreamsProperties toProperties() {
@@ -35,6 +36,7 @@ public record RiskStreamsSettings(
         anomalyWindow,
         rejectedThreshold,
         punctuationInterval,
-        dedupRetention);
+        dedupRetention,
+        maxClockSkew);
   }
 }

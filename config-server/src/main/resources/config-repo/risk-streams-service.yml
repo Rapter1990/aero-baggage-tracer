@@ -13,3 +13,4 @@ aerotrace:
     rejected-threshold: 3
     punctuation-interval: 30s
     dedup-retention: 7d
+    max-clock-skew: 5m

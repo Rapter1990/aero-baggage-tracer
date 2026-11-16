@@ -47,12 +47,12 @@ public final class TopologyHarness implements AutoCloseable {
   private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
   private final Fixtures.Scans scans = new Fixtures.Scans();
   private final Topology topology;
-  private final TopologyTestDriver driver;
+  private TopologyTestDriver driver;
   private final Path stateDir;
-  private final TestInputTopic<String, String> input;
-  private final TestOutputTopic<String, String> riskOut;
-  private final TestOutputTopic<String, String> anomalyOut;
-  private final TestOutputTopic<String, String> deadLetterOut;
+  private TestInputTopic<String, String> input;
+  private TestOutputTopic<String, String> riskOut;
+  private TestOutputTopic<String, String> anomalyOut;
+  private TestOutputTopic<String, String> deadLetterOut;
 
   public TopologyHarness() {
     this(RiskStreamsProperties.defaults(), Fixtures.T0);
@@ -70,11 +70,15 @@ public final class TopologyHarness implements AutoCloseable {
     } catch (IOException e) {
       throw new IllegalStateException(e);
     }
+    openDriver();
+  }
+
+  private void openDriver() {
     Properties config = new Properties();
     config.put(StreamsConfig.APPLICATION_ID_CONFIG, APPLICATION_ID);
     config.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "dummy:9092");
     config.put(StreamsConfig.STATE_DIR_CONFIG, stateDir.toString());
-    this.driver = new TopologyTestDriver(topology, config, start);
+    this.driver = new TopologyTestDriver(topology, config, clock.instant());
     this.input =
         driver.createInputTopic(
             Topics.SCAN_RECEIVED, new StringSerializer(), new StringSerializer());
@@ -87,6 +91,48 @@ public final class TopologyHarness implements AutoCloseable {
     this.deadLetterOut =
         driver.createOutputTopic(
             Topics.DEAD_LETTER, new StringDeserializer(), new StringDeserializer());
+  }
+
+  /**
+   * Stops the driver and starts a new one on the same state directory: the processor and its
+   * in-memory state (stream time) are new, the persistent stores keep their content. Output topics
+   * are new too.
+   */
+  public void restart() {
+    Path backup;
+    try {
+      backup = Files.createTempDirectory("risk-streams-test-backup");
+      copyTree(stateDir, backup);
+      driver.close();
+      deleteTree(stateDir);
+      Files.createDirectories(stateDir);
+      copyTree(backup, stateDir);
+      deleteTree(backup);
+    } catch (IOException e) {
+      throw new IllegalStateException(e);
+    }
+    openDriver();
+  }
+
+  private static void copyTree(Path from, Path to) throws IOException {
+    try (var files = Files.walk(from)) {
+      for (Path source : (Iterable<Path>) files::iterator) {
+        Path target = to.resolve(from.relativize(source).toString());
+        if (Files.isDirectory(source)) {
+          Files.createDirectories(target);
+        } else if (!source.getFileName().toString().equals("LOCK")) {
+          Files.copy(source, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+      }
+    }
+  }
+
+  private static void deleteTree(Path root) {
+    try (var files = Files.walk(root)) {
+      files.sorted(java.util.Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
+    } catch (IOException ignored) {
+      // best effort: a temp directory left behind is harmless
+    }
   }
 
   public Topology topology() {
@@ -160,10 +206,6 @@ public final class TopologyHarness implements AutoCloseable {
   @Override
   public void close() {
     driver.close();
-    try (var files = Files.walk(stateDir)) {
-      files.sorted(java.util.Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
-    } catch (IOException ignored) {
-      // best effort: a temp directory left behind is harmless
-    }
+    deleteTree(stateDir);
   }
 }

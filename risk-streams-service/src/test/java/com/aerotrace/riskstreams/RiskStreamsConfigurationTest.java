@@ -18,7 +18,7 @@ class RiskStreamsConfigurationTest {
   private static RiskStreamsSettings bind(Map<String, String> source) {
     return new Binder(new MapConfigurationPropertySource(source))
         .bind("aerotrace.risk", RiskStreamsSettings.class)
-        .orElseGet(() -> new RiskStreamsSettings(20, null, null, null, 0, null, null));
+        .orElseGet(() -> new RiskStreamsSettings(20, null, null, null, 0, null, null, null));
   }
 
   @Test
@@ -41,6 +41,7 @@ class RiskStreamsConfigurationTest {
     assertThat(props.anomalyWindow()).isEqualTo(Duration.ofMinutes(5));
     assertThat(props.punctuationInterval()).isEqualTo(Duration.ofSeconds(30));
     assertThat(props.dedupRetention()).isEqualTo(Duration.ofDays(7));
+    assertThat(props.maxClockSkew()).isEqualTo(Duration.ofMinutes(5));
   }
 
   @Test
