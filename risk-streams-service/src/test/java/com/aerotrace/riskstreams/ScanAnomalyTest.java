@@ -188,9 +188,10 @@ class ScanAnomalyTest {
   }
 
   @Test
-  @DisplayName("legId null still counts rejections toward the anomaly, and risk stays silent")
-  void legIdNullStillCountsAnomalies() {
-    // UNVERIFIED against case study
+  @DisplayName("legId null scans update no leg state and never count as rejections")
+  void legIdNullDoesNotCountRejections() {
+    // Deliberate change (review finding): leg-less scans used to share one bag-level pseudo-leg
+    // and so could look like rejected transitions. Without a leg there is nothing to compare.
     try (TopologyHarness h = new TopologyHarness()) {
       h.pipe(h.scan(Checkpoint.LOADED, at("10:00:00")).withoutLeg());
       h.pipe(
@@ -198,8 +199,26 @@ class ScanAnomalyTest {
           rejected(h, "10:02:00").withoutLeg(),
           rejected(h, "10:03:00").withoutLeg());
 
-      assertThat(h.anomalies()).hasSize(1);
+      assertThat(h.anomalies()).isEmpty();
       assertThat(h.risk()).isEmpty();
+      assertThat(h.counter(RiskStreamsMetrics.SCANS_WITHOUT_LEG)).isEqualTo(4);
+    }
+  }
+
+  @Test
+  @DisplayName("a legitimate multi-leg connection without legId raises no anomaly")
+  void legitimateConnectionWithoutLegIsNotAnAnomaly() {
+    try (TopologyHarness h = new TopologyHarness()) {
+      // Arrive (ARRIVED), then check in for the next flight (CHECK_IN), three times in 5 minutes.
+      h.pipe(
+          h.scan(Checkpoint.ARRIVED, at("10:00:00")).withoutLeg(),
+          h.scan(Checkpoint.CHECK_IN, at("10:00:30")).withoutLeg(),
+          h.scan(Checkpoint.ARRIVED, at("10:01:00")).withoutLeg(),
+          h.scan(Checkpoint.CHECK_IN, at("10:01:30")).withoutLeg(),
+          h.scan(Checkpoint.CLAIM, at("10:02:00")).withoutLeg(),
+          h.scan(Checkpoint.TRANSFER, at("10:02:30")).withoutLeg());
+
+      assertThat(h.anomalies()).isEmpty();
     }
   }
 }
