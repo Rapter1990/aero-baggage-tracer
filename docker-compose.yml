@@ -282,6 +282,12 @@ services:
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
       TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-1.0}
+    # RocksDB state of the topology: on a named volume it survives container recreation (without
+    # it a new container restores every store from the changelog topics before it can serve).
+    volumes:
+      - risk-streams-state:/app/state
+    # The app closes Kafka Streams within 30 s on shutdown; the default 10 s would SIGKILL it first.
+    stop_grace_period: 60s
     depends_on:
       config-server:
         condition: service_healthy
@@ -437,6 +443,7 @@ volumes:
   postgres-18-data:
   tempo-data:
   loki-data:
+  risk-streams-state:
 
 networks:
   aerotrace:
