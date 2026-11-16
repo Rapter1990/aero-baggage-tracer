@@ -9,7 +9,7 @@ import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** A scan dated in the future must not drag stream time forward (ADR-001, max clock skew). */
+/** A scan dated in the future must not drag stream time forward (max clock skew). */
 class StreamTimeClampTest {
 
   @Test

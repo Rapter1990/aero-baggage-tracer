@@ -22,7 +22,7 @@ spring:
       state-dir: ${RISK_STREAMS_STATE_DIR:${java.io.tmpdir}/risk-streams}
       properties:
         # Exactly-once covers read-process-write inside Kafka; deduplication of redelivered scans
-        # is the dedup store (see docs/adr/ADR-001-risk-streams-time-semantics.md).
+        # is the dedup store.
         processing.guarantee: exactly_once_v2
         num.standby.replicas: ${RISK_STREAMS_STANDBY_REPLICAS:0}
         # Wait this long for a rebalance to settle before a thread is considered dead.

@@ -37,7 +37,7 @@ import tools.jackson.databind.JsonNode;
  *
  * <p>Time: the risk rule (BR-02) uses the wall clock; the anomaly window (BR-03) and the grace
  * period use event time (occurredAt), with stream time clamped to the wall clock plus the maximum
- * clock skew. Store expiry uses the wall clock only. See ADR-001.
+ * clock skew. Store expiry uses the wall clock only.
  *
  * <p>A record is handled in two steps: {@link #plan} reads state and computes everything (including
  * the serialized output), {@link #process} then applies the resulting effects. A failure while
@@ -76,7 +76,7 @@ final class ScanProcessor implements Processor<String, String, String, String> {
   private KeyValueStore<String, AnomalyWindow> anomalyStore;
   private KeyValueStore<String, Long> dedupStore;
 
-  /** Highest (clamped) occurredAt seen by this task (stream time). Not persisted: see ADR-001. */
+  /** Highest (clamped) occurredAt seen by this task (stream time). Not persisted. */
   private long streamTimeMs = Long.MIN_VALUE;
 
   /** HIGH legs of this task, as reported to the shared gauge. */

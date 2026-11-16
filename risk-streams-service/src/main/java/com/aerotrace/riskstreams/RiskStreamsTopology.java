@@ -70,7 +70,7 @@ public final class RiskStreamsTopology {
     // Dedup and anomaly counts are plain key-value stores, not window stores: a window store
     // expires segments against the highest timestamp it has seen, so a replayed or delayed
     // backlog (occurredAt far older than "now") would have its writes silently dropped. Expiry is
-    // done by the wall-clock punctuator instead (see ScanProcessor and ADR-001).
+    // done by the wall-clock punctuator instead (see ScanProcessor).
     topology.addStateStore(
         Stores.keyValueStoreBuilder(
                 Stores.persistentKeyValueStore(DEDUP_STORE), Serdes.String(), Serdes.Long())
