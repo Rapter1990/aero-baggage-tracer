@@ -188,7 +188,7 @@ Baggage registration, itinerary snapshots, scan ingestion API and authoritative 
 
 **Scope**
 - `POST /bags` (bagTag unique → 409 `BAG_TAG_DUPLICATE`), validate IATA codes, leg chronology, minimum connection time.
-- `GET /bags/{bagTag}/journey`: latest accepted state **and** immutable `scan_audit` history; passenger row-level ownership (AT-15).
+- `GET /bags/{bagTag}/journey`: latest accepted state **and** immutable `scan_audit` history; passenger row-level ownership.
 - `POST /scans` with `Idempotency-Key` → `202 QUEUED`; publish `baggage.scan.received.v1`.
 - **Factory Method** for versioned scan handlers per protocol; **Adapter** for barcode/RFID/conveyor payloads.
 - Normalize timestamps to UTC while retaining source timezone and device timestamp; flag `LATE_EVENT` beyond grace (BR-06).
@@ -196,10 +196,13 @@ Baggage registration, itinerary snapshots, scan ingestion API and authoritative 
 - Transactional outbox + scheduled relay (at-least-once).
 
 **Acceptance criteria**
-- [ ] AT-01, AT-02, AT-03, AT-04, AT-05, AT-15.
-- [ ] Two replicas run correctly (no double-publish side effects).
-- [ ] Liquibase V1–V3 (see #16).
-- [ ] ≥ 80% coverage of domain/application code.
+- [x] Bag registration validates the tag, IATA codes, leg chronology and minimum connection time; a duplicate tag is `409 BAG_TAG_DUPLICATE`, also under parallel requests.
+- [x] A scan is accepted with `202 QUEUED` and queues `baggage.scan.received.v1`; the same `Idempotency-Key` never creates a second scan or event.
+- [x] Times are stored in UTC with the source timezone kept; a scan beyond the grace is flagged `LATE_EVENT`; an older scan never replaces a newer state and stays in the history.
+- [x] A passenger sees only their own bag's journey; staff see every bag.
+- [x] Two replicas run correctly (no double-publish side effects).
+- [x] Liquibase V1–V3 (see #16).
+- [x] ≥ 80% coverage of domain/application code.
 
 ---
 

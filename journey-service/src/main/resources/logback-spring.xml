@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <!-- Spring Boot defaults (console output with the trace id in each line). -->
+  <include resource="org/springframework/boot/logging/logback/base.xml"/>
+
+  <!-- Also hand every log line to OpenTelemetry (collector -> Loki), tagged with the current
+       trace and span id. Installed with the OpenTelemetry bean: see OpenTelemetryLogsConfiguration. -->
+  <appender name="OPENTELEMETRY"
+            class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender">
+    <captureMdcAttributes>*</captureMdcAttributes>
+  </appender>
+
+  <root level="INFO">
+    <appender-ref ref="OPENTELEMETRY"/>
+  </root>
+</configuration>
