@@ -1,4 +1,4 @@
-package com.aerotrace.journey.scan;
+package com.aerotrace.common.model;
 
 import java.util.Locale;
 import java.util.Optional;

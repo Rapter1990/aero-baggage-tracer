@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.aerotrace.common.error.ApiException;
 import com.aerotrace.common.error.ErrorCode;
+import com.aerotrace.common.model.Checkpoint;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;

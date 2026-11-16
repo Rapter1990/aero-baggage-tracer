@@ -2,6 +2,7 @@ package com.aerotrace.journey.scan;
 
 import com.aerotrace.common.error.ApiException;
 import com.aerotrace.common.error.ErrorCode;
+import com.aerotrace.common.model.Checkpoint;
 import com.aerotrace.journey.constant.ApiMessages;
 import com.aerotrace.journey.constant.JourneyRules;
 import java.time.Instant;
