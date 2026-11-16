@@ -1,0 +1,87 @@
+server:
+  port: 1114
+
+spring:
+  application:
+    name: risk-streams-service
+  config:
+    # Optional local settings (see the .env section of the README); real environment variables take precedence.
+    import: optional:file:.env[.properties],optional:file:../.env[.properties]
+  threads:
+    virtual:
+      enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    streams:
+      # The consumer group and the prefix of every changelog topic (<id>-<store>-changelog).
+      # Changing it starts the topology from scratch: new group, empty stores.
+      application-id: ${RISK_STREAMS_APPLICATION_ID:risk-streams-service}
+      state-dir: ${RISK_STREAMS_STATE_DIR:${java.io.tmpdir}/risk-streams}
+      properties:
+        # Exactly-once covers read-process-write inside Kafka; deduplication of redelivered scans
+        # is the dedup store (see docs/adr/ADR-001-risk-streams-time-semantics.md).
+        processing.guarantee: exactly_once_v2
+        num.standby.replicas: ${RISK_STREAMS_STANDBY_REPLICAS:0}
+        # Wait this long for a rebalance to settle before a thread is considered dead.
+        max.poll.interval.ms: 300000
+
+aerotrace:
+  risk:
+    # Time to departure below which a leg without loading confirmation is HIGH (BR-02). Shared with
+    # config-repo/application.yml; per-airport overrides in minutes, for example: IST: 30
+    threshold-minutes: ${RISK_THRESHOLD_MINUTES:20}
+    airport-thresholds: {}
+    # A record older than (stream time - grace) is late: it still updates risk, but is excluded
+    # from the anomaly window and counted in risk_streams_late_records.
+    grace: ${RISK_GRACE:10m}
+    # Tumbling event-time window of the rejected-transition count (BR-03), and the count that
+    # raises SCANNER_ANOMALY.
+    anomaly-window: ${RISK_ANOMALY_WINDOW:5m}
+    rejected-threshold: ${RISK_REJECTED_THRESHOLD:3}
+    # Wall-clock interval of the re-evaluation of quiet legs and of departure eviction.
+    punctuation-interval: ${RISK_PUNCTUATION_INTERVAL:30s}
+    # How long a scanEventId is remembered for deduplication.
+    dedup-retention: ${RISK_DEDUP_RETENTION:7d}
+
+eureka:
+  instance:
+    hostname: ${EUREKA_INSTANCE_HOSTNAME:localhost}
+    instance-id: ${spring.application.name}:${eureka.instance.hostname}:${server.port}
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: ${EUREKA_URL:http://${EUREKA_USER:eureka}:${EUREKA_PASSWORD}@localhost:8761/eureka/}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+    logging:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:http://localhost:4318/v1/logs}
+  otlp:
+    metrics:
+      export:
+        url: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:http://localhost:4318/v1/metrics}
+        step: ${METRICS_EXPORT_STEP:15s}

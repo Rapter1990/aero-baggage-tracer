@@ -1,0 +1,15 @@
+# Served to risk-streams-service by name. Defaults mirror its local application.yml.
+aerotrace:
+  risk:
+    # Time to departure (minutes) below which a leg without loading confirmation is HIGH (BR-02).
+    threshold-minutes: 20
+    # Per-airport override of the threshold, in minutes, keyed by IATA code. Example:
+    # airport-thresholds:
+    #   IST: 30
+    #   SAW: 25
+    airport-thresholds: {}
+    grace: 10m
+    anomaly-window: 5m
+    rejected-threshold: 3
+    punctuation-interval: 30s
+    dedup-retention: 7d

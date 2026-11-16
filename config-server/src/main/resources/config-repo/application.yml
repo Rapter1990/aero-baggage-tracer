@@ -1,7 +1,8 @@
 # Shared by every service and every profile. No secrets here: use env vars / K8s Secrets.
 aerotrace:
   risk:
-    # Airport-specific risk threshold in minutes; override per airport or service as needed.
+    # Default risk threshold in minutes. Per-airport overrides (airport-thresholds.<IATA>) and the
+    # other risk settings are in risk-streams-service.yml.
     threshold-minutes: 20
 management:
   endpoints:
