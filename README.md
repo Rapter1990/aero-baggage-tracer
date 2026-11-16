@@ -185,7 +185,7 @@ In Compose, the one-shot `kafka-init` job creates the Kafka topics before journe
 | `baggage.scan.anomaly.v1` | 6 | 7d |
 | `baggage.dead-letter.v1` | 3 | 30d |
 
-All use `cleanup.policy=delete` and replication factor 1. A topic that already exists (for example auto-created earlier with 1 partition) is not changed: delete it once in Kafka UI to get these settings. With `docker-compose-local.yml` the broker auto-creates topics, so create them yourself if you need the partition counts.
+All use `cleanup.policy=delete` and replication factor 1. A topic that already exists (for example auto-created earlier with 1 partition) is not changed: delete it once in Kafka UI to get these settings. `docker-compose-local.yml` has the same `kafka-init` job, so the topics exist with these settings when you run the services from the IDE.
 
 Compose publishes the direct ports. Each service has `/actuator/health` and `/v3/api-docs`. The Postman collection `AeroTrace` is in `postman/`, see [Postman collection](docs/apis/API.md#postman-collection).
 
