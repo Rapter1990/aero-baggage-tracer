@@ -211,4 +211,31 @@ class LegRiskTest {
       return h.risk().stream().map(out -> out.envelope().eventId()).toList();
     }
   }
+
+  @Test
+  @DisplayName("a LOADED scan with a legId but no departureAt clears HIGH on the existing leg")
+  void loadedWithoutDepartureClearsExistingLeg() {
+    try (TopologyHarness h = new TopologyHarness()) {
+      h.pipe(h.scan(Checkpoint.CHECK_IN, at("10:00:00")).departure(at("10:10:00")));
+      assertThat(h.risk()).hasSize(1);
+
+      h.pipe(h.scan(Checkpoint.LOADED, at("10:01:00")).departure(null));
+
+      var risk = h.risk();
+      assertThat(risk).hasSize(1);
+      assertThat(risk.getFirst().payload().current()).isEqualTo(RiskLevel.LOW);
+      assertThat(h.gauge(RiskStreamsMetrics.BAGGAGE_RISK_HIGH)).isZero();
+    }
+  }
+
+  @Test
+  @DisplayName("a scan with a legId but no departureAt and no existing leg is skipped")
+  void noDepartureAndNoLegIsSkipped() {
+    try (TopologyHarness h = new TopologyHarness()) {
+      h.pipe(h.scan(Checkpoint.CHECK_IN, at("10:00:00")).departure(null));
+
+      assertThat(h.risk()).isEmpty();
+      assertThat(h.counter(RiskStreamsMetrics.SCANS_WITHOUT_LEG)).isEqualTo(1);
+    }
+  }
 }

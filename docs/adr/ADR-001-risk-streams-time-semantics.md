@@ -91,6 +91,13 @@ per tick). Both stores keep their changelogs (`<application.id>-<store>-changelo
 counted from first processing, so a replayed old scan is remembered for the full retention. Late
 events are still decided by event time and the grace period, not by the store.
 
+### Scans with a legId but no departureAt
+
+If the leg already has state, the scan is applied to it with the stored departure (a LOADED scan
+still clears HIGH, a lower checkpoint still counts as a rejection). It is skipped, and counted in
+`risk_streams_scans_without_leg`, only when legId is null, or when the leg has no state and the
+departure is unknown.
+
 ### Poison input
 
 Malformed JSON, schemaVersion below 2, unknown checkpoint, missing scanEventId/bagTag/occurredAt
@@ -103,9 +110,13 @@ handled the same way: the record is dead-lettered once (attempts 1), `risk_strea
 is incremented and the stream goes on. Otherwise the uncaught-exception handler (REPLACE_THREAD)
 would re-read the same offset forever. The record is handled in two steps: planning reads state and
 builds the outputs (serialized) without writing anything, then the effects are applied. A failure
-while planning leaves no dedup mark, state write, output or counter behind. A failure while applying
-(store or producer I/O) is not poison; it is left to fail the task, which aborts the exactly-once
-transaction and retries. Logs carry the record location and exception class, never the payload.
+while planning leaves no dedup mark, state write or output behind. Store and client failures
+(`KafkaException`, which covers state store errors) are not poison: they are rethrown, the task
+fails, the exactly-once transaction aborts and the record is retried, so a good scan is never
+dead-lettered because of an infrastructure error. Under EOS the Kafka stores and outputs roll back
+then, but in-memory state (stream time, the HIGH-legs gauge, metric counters) does not; those
+effects are applied last to keep that window small, and a retry only makes them slightly
+conservative. Logs carry the record location and exception class, never the payload.
 
 ### Partitioning
 
@@ -122,3 +133,15 @@ stores; plan it up front.
   default (`RISK_STREAMS_STANDBY_REPLICAS`).
 - A leg's state is dropped at departure, so rejections for scans arriving after departure are not
   detected.
+
+### Changing the type of a store
+
+Dedup and anomaly counts changed from window stores to key-value stores under the same store and
+changelog names. risk-streams-service is not deployed anywhere yet, so no migration is needed. Any
+environment that already ran an earlier build must be reset: run `kafka-streams-application-reset`
+for the application.id, delete the state volume and delete the old changelog topics
+(`<application.id>-scan-dedup-store-changelog`, `<application.id>-anomaly-window-store-changelog`).
+Known limits: anomaly entries are touched by wall clock but keyed by event-time window, so after
+more than window + grace (15 min) of quiet a late replay of the same window can raise a second
+SCANNER_ANOMALY for it; and expiry deletes at most 10000 entries per store per tick, so a very
+large backlog of expired entries is cleared over several ticks.

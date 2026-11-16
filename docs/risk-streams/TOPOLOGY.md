@@ -30,7 +30,7 @@ REBALANCING). Metrics leave through OTLP, like journey-service. Port 1114, no RE
 
 Dead letters: reasons `MALFORMED_JSON`, `UNSUPPORTED_SCHEMA_VERSION`, `INVALID_PAYLOAD` and
 `PROCESSING_ERROR` (the record parsed but the processor failed on it: nothing of it is applied and
-it is dead-lettered once, attempts 1, so a poison pill cannot loop; the log carries the location
+it is dead-lettered once, attempts 1, so a poison pill cannot loop, and nothing is written to the stores or output topics; store and client failures are not dead-lettered but fail the task and are retried (in-memory state such as the HIGH gauge may stay changed after such a failure); the log carries the location
 and the exception class, never the payload).
 
 Tests: `TopologyTestDriver` under `src/test/java/com/aerotrace/riskstreams`. The builders in

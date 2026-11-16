@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.processor.PunctuationType;
 import org.apache.kafka.streams.processor.api.Processor;
@@ -40,10 +41,12 @@ import tools.jackson.databind.JsonNode;
  *
  * <p>A record is handled in two steps: {@link #plan} reads state and computes everything (including
  * the serialized output), {@link #process} then applies the resulting effects. A failure while
- * planning therefore leaves no store write, output or counter behind, and the record is
- * dead-lettered as PROCESSING_ERROR. A failure while applying (a store or producer error) is
- * infrastructure, not poison: it is allowed to fail the task, which aborts the exactly-once
- * transaction and retries.
+ * planning therefore leaves no store write or output behind, and the record is dead-lettered as
+ * PROCESSING_ERROR. Store and client failures (KafkaException, which covers state store errors) are
+ * infrastructure, not poison: they are rethrown, the task fails, the exactly-once transaction
+ * aborts and the record is retried. Under EOS the stores and outputs roll back then; the in-memory
+ * state (stream time, the HIGH gauge, metric counters) does not, so those effects run last to keep
+ * the window in which a partial failure can leave them changed as small as possible.
  */
 final class ScanProcessor implements Processor<String, String, String, String> {
 
@@ -131,9 +134,11 @@ final class ScanProcessor implements Processor<String, String, String, String> {
       deadLetter(record, invalid, null);
       return;
     }
-    List<Runnable> effects = new ArrayList<>();
+    Effects effects = new Effects();
     try {
       plan(scan, effects);
+    } catch (KafkaException e) {
+      throw e; // store or client failure: infrastructure, not poison; the task fails and retries
     } catch (RuntimeException e) {
       metrics.processingError();
       deadLetter(
@@ -142,18 +147,18 @@ final class ScanProcessor implements Processor<String, String, String, String> {
           e);
       return;
     }
-    effects.forEach(Runnable::run);
+    effects.run();
   }
 
   /** Reads state and computes the outcome of one scan; every write is added to {@code effects}. */
-  private void plan(Scan scan, List<Runnable> effects) {
+  private void plan(Scan scan, Effects effects) {
     ScanReceivedPayload payload = scan.payload();
     Instant now = clock.instant();
     Instant at = payload.occurredAt();
     long atMs = at.toEpochMilli();
     Duration lag = Duration.between(at, now);
     Duration shownLag = lag.isNegative() ? Duration.ZERO : lag;
-    effects.add(() -> metrics.recordStreamLag(shownLag));
+    effects.local(() -> metrics.recordStreamLag(shownLag));
 
     String dedupKey = DEDUP_ID_PREFIX + payload.scanEventId();
     if (dedupStore.get(dedupKey) != null) {
@@ -161,7 +166,7 @@ final class ScanProcessor implements Processor<String, String, String, String> {
     }
     long seenAtMs = now.toEpochMilli();
     String indexKey = DEDUP_INDEX_PREFIX + "%019d|%s".formatted(seenAtMs, payload.scanEventId());
-    effects.add(
+    effects.kafka(
         () -> {
           dedupStore.put(dedupKey, seenAtMs);
           dedupStore.put(indexKey, seenAtMs);
@@ -170,20 +175,29 @@ final class ScanProcessor implements Processor<String, String, String, String> {
     boolean late = streamTimeMs != Long.MIN_VALUE && atMs < streamTimeMs - graceMs();
     // A scan dated far in the future must not drag stream time with it.
     long advanceTo = Math.min(atMs, seenAtMs + props.maxClockSkew().toMillis());
-    effects.add(() -> streamTimeMs = Math.max(streamTimeMs, advanceTo));
+    effects.local(() -> streamTimeMs = Math.max(streamTimeMs, advanceTo));
     if (late) {
-      effects.add(metrics::lateRecordExcluded);
+      effects.local(metrics::lateRecordExcluded);
     }
 
-    if (payload.legId() == null || payload.departureAt() == null) {
+    if (payload.legId() == null) {
       // No leg: nothing to compare with and no leg state to update. In particular it cannot be a
       // rejected transition: a bag may legitimately go ARRIVED -> CHECK_IN on its next flight.
-      effects.add(metrics::scanWithoutLeg);
+      effects.local(metrics::scanWithoutLeg);
       return;
     }
     String legKey = payload.bagTag() + ":" + payload.legId();
     LegState old = legStore.get(legKey);
-    boolean departed = !payload.departureAt().isAfter(now);
+    // A scan of a known leg without departureAt is applied against the stored departure.
+    Instant departureAt = payload.departureAt();
+    if (departureAt == null && old != null) {
+      departureAt = old.departureAt();
+    }
+    if (departureAt == null) {
+      effects.local(metrics::scanWithoutLeg); // a leg that cannot be placed in time
+      return;
+    }
+    boolean departed = !departureAt.isAfter(now);
     if (old == null && departed) {
       return; // nothing to compare with, and nothing left to be at risk for
     }
@@ -201,7 +215,7 @@ final class ScanProcessor implements Processor<String, String, String, String> {
               payload.airport(),
               scan.checkpoint(),
               at,
-              payload.departureAt(),
+              departureAt,
               false,
               RiskLevel.LOW,
               null);
@@ -224,7 +238,7 @@ final class ScanProcessor implements Processor<String, String, String, String> {
       }
     }
     LegState finalState = state;
-    effects.add(() -> save(old, finalState));
+    effects.kafka(() -> save(old, finalState));
   }
 
   private long graceMs() {
@@ -267,7 +281,7 @@ final class ScanProcessor implements Processor<String, String, String, String> {
 
   // ---------------------------------------------------------------- anomaly (BR-03)
 
-  private void planRejection(Scan scan, Instant at, List<Runnable> effects) {
+  private void planRejection(Scan scan, Instant at, Effects effects) {
     long size = props.anomalyWindow().toMillis();
     long start = Math.floorDiv(at.toEpochMilli(), size) * size;
     String bagTag = scan.payload().bagTag();
@@ -284,7 +298,7 @@ final class ScanProcessor implements Processor<String, String, String, String> {
               count,
               Instant.ofEpochMilli(start),
               Instant.ofEpochMilli(start + size));
-      effects.add(
+      effects.kafka(
           forwardLater(
               ANOMALY_SINK,
               bagTag,
@@ -298,7 +312,7 @@ final class ScanProcessor implements Processor<String, String, String, String> {
               clock.millis()));
     }
     AnomalyWindow updated = new AnomalyWindow(count, emitted, clock.millis());
-    effects.add(() -> anomalyStore.put(key, updated));
+    effects.kafka(() -> anomalyStore.put(key, updated));
   }
 
   // ---------------------------------------------------------------- risk (BR-02)
@@ -309,7 +323,7 @@ final class ScanProcessor implements Processor<String, String, String, String> {
       String correlationId,
       String scanEventId,
       Instant now,
-      List<Runnable> effects) {
+      Effects effects) {
     RiskChangedPayload payload =
         new RiskChangedPayload(
             state.bagTag(), state.legId(), state.lastLevel(), level, state.departureAt());
@@ -317,7 +331,7 @@ final class ScanProcessor implements Processor<String, String, String, String> {
         scanEventId != null
             ? scanEventId + ":" + RiskStreamsTopology.EVENT_TYPE_RISK_CHANGED
             : "%s:%s:%s:%s".formatted(state.bagTag(), state.legId(), level, state.departureAt());
-    effects.add(
+    effects.kafka(
         forwardLater(
             RISK_SINK,
             state.bagTag() + ":" + state.legId(),
@@ -330,7 +344,7 @@ final class ScanProcessor implements Processor<String, String, String, String> {
                 payload),
             now.toEpochMilli()));
     RiskLevel previous = state.lastLevel();
-    effects.add(
+    effects.local(
         () -> {
           if (level == RiskLevel.HIGH && previous != RiskLevel.HIGH) {
             highLegs++;
@@ -363,9 +377,9 @@ final class ScanProcessor implements Processor<String, String, String, String> {
       } else if (state.hasRisk() && !state.loaded()) {
         RiskLevel level = levelAt(state, now);
         if (level != state.lastLevel()) {
-          List<Runnable> effects = new ArrayList<>();
+          Effects effects = new Effects();
           planRisk(state, level, null, null, now, effects);
-          effects.forEach(Runnable::run);
+          effects.run();
           legStore.put(entry.value, state.withLevel(level));
         }
       }
@@ -412,6 +426,25 @@ final class ScanProcessor implements Processor<String, String, String, String> {
     if (state.lastLevel() == RiskLevel.HIGH) {
       highLegs--;
       metrics.highRiskLegRemoved();
+    }
+  }
+
+  /** Writes of one record, applied after planning: Kafka-backed ones first, in-memory ones last. */
+  private static final class Effects {
+    private final List<Runnable> kafka = new ArrayList<>();
+    private final List<Runnable> local = new ArrayList<>();
+
+    void kafka(Runnable effect) {
+      kafka.add(effect);
+    }
+
+    void local(Runnable effect) {
+      local.add(effect);
+    }
+
+    void run() {
+      kafka.forEach(Runnable::run);
+      local.forEach(Runnable::run);
     }
   }
 
