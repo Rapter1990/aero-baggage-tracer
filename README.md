@@ -343,6 +343,7 @@ They are in the AeroTrace folder, provisioned from `observability/grafana`.
 | **AeroTrace - Logs** | Service logs from Loki |
 | **AeroTrace - Coverage** | JaCoCo coverage of every module |
 | **AeroTrace - Kafka Topics** | Messages, errors, send time per topic |
+| **AeroTrace - Kafka Streams** | Streams state, HIGH-risk bags, lag, risk/anomaly/dead-letter events, state stores |
 | **AeroTrace - Outbox** | Outbox backlog, delay, failures, relay runs |
 
 | Dashboard | How to use it |
@@ -359,6 +360,9 @@ They are in the AeroTrace folder, provisioned from `observability/grafana`.
 | Coverage | Lists classes below the 90 % line gate |
 | Kafka Topics | Pick topics, open a send trace |
 | Kafka Topics | Link opens Kafka UI for messages |
+| Kafka Streams | Pick the application; Running, lag and processing errors should stay green |
+| Kafka Streams | Dead letters or processing errors above 0 need a look |
+| Kafka Streams | Link opens the consumer group in Kafka UI |
 | Outbox | Waiting and oldest should stay near 0 |
 | Outbox | Parked above 0 needs a person |
 | Outbox | Open a relay run to see its sends |
