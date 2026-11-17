@@ -173,7 +173,7 @@ The scan event above is read by the Risk Streams Service (`risk-streams-service`
 | Publishes | `baggage.risk.changed.v1`, key = `bagTag:legId`, only when the level changes |
 | Publishes | `baggage.scan.anomaly.v1`, key = bag tag, once per 5-minute window |
 | Publishes | `baggage.dead-letter.v1` for records it cannot process |
-| Needs from the scan event | `legId` and `departureAt`; a scan with no leg is accepted but gives no risk |
+| Needs from the scan event | `legId` is required; `departureAt` is required only for the first scan of a leg. A scan with no `legId`, or for an unknown leg without `departureAt`, is accepted but gives no risk and counts as a scan without a leg |
 | Older events | Version 1 events are dead-lettered as `UNSUPPORTED_SCHEMA_VERSION` |
 
 ## Metrics and traces
