@@ -223,9 +223,9 @@ Kafka Streams topology that computes connection risk and scan anomalies.
 - Reproducible late / duplicate / out-of-order fixture datasets.
 
 **Acceptance criteria**
-- [ ] AT-06, AT-07, AT-08.
-- [ ] `TopologyTestDriver` tests incl. grace-boundary cases.
-- [ ] Metrics `stream_lag_seconds`, `baggage_risk_high`.
+- [ ] AT-06, AT-07, AT-08. (Implemented and tested as `AT-06`/`AT-07`/`AT-08` scenarios in `AcceptanceScenariosTest`, but from proposed defaults: the case-study wording is not in the repo, so they stay open until checked against it.)
+- [x] `TopologyTestDriver` tests incl. grace-boundary cases.
+- [x] Metrics `stream_lag_seconds`, `baggage_risk_high` (unit-tested; `baggage.risk.changed.v1` also seen end to end on a running Compose stack).
 
 ---
 

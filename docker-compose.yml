@@ -37,6 +37,30 @@ services:
     networks:
       - aerotrace
 
+  # One-shot job: creates the topics with their partition counts and retention before any service
+  # uses them (the broker would otherwise auto-create them with 1 partition and its defaults).
+  # Idempotent (--if-not-exists), so it is safe on every `up`. It does not change a topic that
+  # already exists, e.g. one auto-created earlier: delete that topic once to get the new settings.
+  kafka-init:
+    image: apache/kafka:latest
+    container_name: kafka-init
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        T=/opt/kafka/bin/kafka-topics.sh
+        B=kafka:9092
+        $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.scan.received.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
+        $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.risk.changed.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
+        $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.scan.anomaly.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
+        $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.dead-letter.v1 --partitions 3 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=2592000000
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - aerotrace
+
   # Web UI for Kafka: topics, messages, consumer groups. The outbox events of the journey-service
   # (topic baggage.scan.received.v1) show up here. Open http://localhost:8090.
   kafka-ui:
@@ -227,11 +251,56 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     # Clients reach it through the gateway (/api/v1/bags/**, /api/v1/scans/**); 1113 is its own port.
     ports:
       - "1113:1113"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:1113/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 40s
+    networks:
+      - aerotrace
+
+  # Kafka Streams app (risk, anomalies, dead letters). Internal only: it has no public API, so it
+  # is not routed by the gateway; 1114 is its own port (actuator).
+  risk-streams-service:
+    image: ${REGISTRY:-ghcr.io/rapter1990}/aerotrace-risk-streams-service:${TAG:-latest}
+    container_name: risk-streams-service
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+    environment:
+      EUREKA_URL: http://${EUREKA_USER:-eureka}:${EUREKA_PASSWORD:-eureka}@discovery-server:8761/eureka/
+      EUREKA_INSTANCE_HOSTNAME: risk-streams-service
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-1.0}
+    # RocksDB state of the topology: on a named volume it survives container recreation (without
+    # it a new container restores every store from the changelog topics before it can serve).
+    volumes:
+      - risk-streams-state:/app/state
+    # The app closes Kafka Streams within 30 s on shutdown; the default 10 s would SIGKILL it first.
+    stop_grace_period: 60s
+    depends_on:
+      config-server:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "1114:1114"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:1114/actuator/health"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -374,6 +443,7 @@ volumes:
   postgres-18-data:
   tempo-data:
   loki-data:
+  risk-streams-state:
 
 networks:
   aerotrace:

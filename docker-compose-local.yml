@@ -34,6 +34,32 @@ services:
     networks:
       - aerotrace
 
+  # One-shot job: creates the topics with their partition counts and retention before the services
+  # you run from the IDE use them (the broker would otherwise auto-create them with 1 partition).
+  # Same topics and settings as docker-compose.yml. Idempotent (--if-not-exists), so it is safe on
+  # every `up`. It does not change a topic that already exists, e.g. one auto-created earlier:
+  # delete that topic once (Kafka UI) to get the new settings. It reaches the broker on the
+  # INTERNAL listener (kafka:19092), because the one on 9092 is advertised as localhost.
+  kafka-init:
+    image: apache/kafka:latest
+    container_name: kafka-init
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        T=/opt/kafka/bin/kafka-topics.sh
+        B=kafka:19092
+        $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.scan.received.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
+        $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.risk.changed.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
+        $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.scan.anomaly.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
+        $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.dead-letter.v1 --partitions 3 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=2592000000
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - aerotrace
+
   # Web UI for Kafka: topics, messages, consumer groups. The outbox events of the journey-service
   # (topic baggage.scan.received.v1) show up here. Open http://localhost:8090.
   kafka-ui:

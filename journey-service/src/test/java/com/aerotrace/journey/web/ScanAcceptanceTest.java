@@ -1,6 +1,7 @@
 package com.aerotrace.journey.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -24,6 +25,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Scans: accepted with 202 QUEUED, published through the outbox as baggage.scan.received.v1 and
@@ -54,7 +56,7 @@ class ScanAcceptanceTest extends AbstractApiTest {
     String payload = outbox.findByMessageKeyOrderByCreatedAt(bagTag).getFirst().getPayload();
     EventEnvelope<ScanReceivedPayload> event = EventJson.read(payload, ScanReceivedPayload.class);
     assertThat(event.eventType()).isEqualTo("baggage.scan.received");
-    assertThat(event.schemaVersion()).isEqualTo(1);
+    assertThat(event.schemaVersion()).isEqualTo(2);
     assertThat(event.aggregateId()).isEqualTo(bagTag);
     assertThat(event.payload().bagTag()).isEqualTo(bagTag);
     assertThat(event.payload().checkpoint()).isEqualTo("CHECK_IN");
@@ -68,6 +70,91 @@ class ScanAcceptanceTest extends AbstractApiTest {
                 bagTag,
                 Topics.SCAN_RECEIVED))
         .isEqualTo(1);
+  }
+
+  @Test
+  void theScanEventCarriesTheLegTheScanBelongsTo() throws Exception {
+    String bagTag = registeredBag(newPassengerRef());
+
+    scan(barcodeScan(bagTag, ISTANBUL, "CHECK_IN", 1, minutesAgo(5)), newKey(), as(SCANNER))
+        .andExpect(status().isAccepted());
+    scan(barcodeScan(bagTag, FRANKFURT, "ARRIVED", 2, minutesAgo(4)), newKey(), as(SCANNER))
+        .andExpect(status().isAccepted());
+    scan(barcodeScan(bagTag, FRANKFURT, "TRANSFER", 3, minutesAgo(3)), newKey(), as(SCANNER))
+        .andExpect(status().isAccepted());
+    scan(barcodeScan(bagTag, LONDON, "CLAIM", 4, minutesAgo(2)), newKey(), as(SCANNER))
+        .andExpect(status().isAccepted());
+
+    List<ScanReceivedPayload> events =
+        outbox.findByMessageKeyOrderByCreatedAt(bagTag).stream()
+            .map(e -> EventJson.read(e.getPayload(), ScanReceivedPayload.class).payload())
+            .toList();
+    assertThat(events)
+        .extracting(
+            ScanReceivedPayload::checkpoint,
+            ScanReceivedPayload::legId,
+            ScanReceivedPayload::flightNumber,
+            ScanReceivedPayload::departureAt)
+        .containsExactly(
+            tuple("CHECK_IN", legId(bagTag, 1), "TK1234", departure(bagTag, 1)),
+            tuple("ARRIVED", legId(bagTag, 1), "TK1234", departure(bagTag, 1)),
+            tuple("TRANSFER", legId(bagTag, 2), "LH902", departure(bagTag, 2)),
+            tuple("CLAIM", legId(bagTag, 2), "LH902", departure(bagTag, 2)));
+  }
+
+  @Test
+  void aScanThatFitsNoLegIsStillAcceptedWithoutLegContext() throws Exception {
+    String bagTag = registeredBag(newPassengerRef());
+
+    // AMS is not on the itinerary; IST is an origin only, so nothing arrives there.
+    scan(barcodeScan(bagTag, "AMS", "SORTING", 1, minutesAgo(3)), newKey(), as(SCANNER))
+        .andExpect(status().isAccepted());
+    scan(barcodeScan(bagTag, ISTANBUL, "ARRIVED", 2, minutesAgo(2)), newKey(), as(SCANNER))
+        .andExpect(status().isAccepted());
+
+    assertThat(outbox.findByMessageKeyOrderByCreatedAt(bagTag))
+        .hasSize(2)
+        .allSatisfy(
+            e -> {
+              ScanReceivedPayload p =
+                  EventJson.read(e.getPayload(), ScanReceivedPayload.class).payload();
+              assertThat(p.legId()).isNull();
+              assertThat(p.flightNumber()).isNull();
+              assertThat(p.departureAt()).isNull();
+            });
+    journey(bagTag, as(Role.AGENT))
+        .andExpect(jsonPath("$.data.history.length()").value(2))
+        .andExpect(jsonPath("$.data.latestState.airport").value(ISTANBUL));
+  }
+
+  private String legId(String bagTag, int legNo) {
+    return legColumn(bagTag, legNo, "l.id").toString();
+  }
+
+  private Instant departure(String bagTag, int legNo) {
+    Object value = legColumn(bagTag, legNo, "l.departure_at");
+    return value instanceof Instant instant
+        ? instant
+        : value instanceof java.time.OffsetDateTime odt
+            ? odt.toInstant()
+            : ((java.sql.Timestamp) value).toInstant();
+  }
+
+  private Object legColumn(String bagTag, int legNo, String column) {
+    return new TransactionTemplate(transactionManager)
+        .execute(
+            status ->
+                entityManager
+                    .createNativeQuery(
+                        "SELECT "
+                            + column
+                            + " FROM journey.itinerary_leg l"
+                            + " JOIN journey.itinerary i ON i.id = l.itinerary_id"
+                            + " JOIN journey.baggage b ON b.id = i.baggage_id"
+                            + " WHERE b.bag_tag = ?1 AND l.leg_no = ?2")
+                    .setParameter(1, bagTag)
+                    .setParameter(2, legNo)
+                    .getSingleResult());
   }
 
   @Test

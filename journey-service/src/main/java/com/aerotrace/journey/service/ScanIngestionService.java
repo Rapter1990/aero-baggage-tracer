@@ -14,18 +14,24 @@ import com.aerotrace.journey.constant.MetricNames;
 import com.aerotrace.journey.model.dto.request.ScanRequest;
 import com.aerotrace.journey.model.dto.response.ScanAcceptedResponse;
 import com.aerotrace.journey.model.entity.BaggageEntity;
+import com.aerotrace.journey.model.entity.ItineraryEntity;
+import com.aerotrace.journey.model.entity.ItineraryLegEntity;
 import com.aerotrace.journey.model.entity.OutboxEventEntity;
 import com.aerotrace.journey.model.entity.ScanAuditEntity;
 import com.aerotrace.journey.repository.BaggageRepository;
+import com.aerotrace.journey.repository.ItineraryRepository;
 import com.aerotrace.journey.repository.OutboxEventRepository;
 import com.aerotrace.journey.repository.ProcessedEventRepository;
 import com.aerotrace.journey.repository.ScanAuditRepository;
 import com.aerotrace.journey.scan.NormalizedScan;
 import com.aerotrace.journey.scan.ScanHandlerFactory;
+import com.aerotrace.journey.scan.ScanLegResolver;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Optional;
 import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,13 +40,15 @@ import org.springframework.transaction.annotation.Transactional;
  * Accepts a scan: reads it with the handler of its protocol, records it in the immutable audit,
  * moves the authoritative state of the bag forward and stores the event in the outbox, all in one
  * transaction. The Idempotency-Key is recorded in the same transaction, so a retry (or a second
- * replica) gets the original answer and produces no second scan or event.
+ * replica) gets the original answer and produces no second scan or event. The event names the leg
+ * of the bag's itinerary the scan belongs to (see {@link ScanLegResolver}).
  */
 @Service
 public class ScanIngestionService {
 
   private final ScanHandlerFactory handlers;
   private final BaggageRepository baggage;
+  private final ItineraryRepository itineraries;
   private final ScanAuditRepository audit;
   private final ProcessedEventRepository processed;
   private final OutboxEventRepository outbox;
@@ -51,6 +59,7 @@ public class ScanIngestionService {
   public ScanIngestionService(
       ScanHandlerFactory handlers,
       BaggageRepository baggage,
+      ItineraryRepository itineraries,
       ScanAuditRepository audit,
       ProcessedEventRepository processed,
       OutboxEventRepository outbox,
@@ -59,6 +68,7 @@ public class ScanIngestionService {
       MeterRegistry meters) {
     this.handlers = handlers;
     this.baggage = baggage;
+    this.itineraries = itineraries;
     this.audit = audit;
     this.processed = processed;
     this.outbox = outbox;
@@ -116,12 +126,18 @@ public class ScanIngestionService {
           scan.occurredAt(),
           scan.deviceSequence());
     }
-    queueEvent(saved, now);
+    Optional<ItineraryLegEntity> leg =
+        ScanLegResolver.resolve(legsOf(bag), scan.airport(), scan.checkpoint(), scan.occurredAt());
+    queueEvent(saved, leg, now);
     meters.counter(MetricNames.SCANS_INGESTED, "late", String.valueOf(late)).increment();
     return response(saved, false);
   }
 
-  private void queueEvent(ScanAuditEntity scan, Instant now) {
+  private List<ItineraryLegEntity> legsOf(BaggageEntity bag) {
+    return itineraries.findByBaggageId(bag.getId()).map(ItineraryEntity::getLegs).orElse(List.of());
+  }
+
+  private void queueEvent(ScanAuditEntity scan, Optional<ItineraryLegEntity> leg, Instant now) {
     ScanReceivedPayload payload =
         new ScanReceivedPayload(
             scan.getId().toString(),
@@ -133,7 +149,10 @@ public class ScanIngestionService {
             scan.getDeviceTimestamp(),
             scan.getSourceTimezone(),
             scan.getIngestedAt(),
-            scan.isLateEvent());
+            scan.isLateEvent(),
+            leg.map(l -> l.getId().toString()).orElse(null),
+            leg.map(ItineraryLegEntity::getFlightNumber).orElse(null),
+            leg.map(ItineraryLegEntity::getDepartureAt).orElse(null));
     EventEnvelope<ScanReceivedPayload> envelope =
         EventEnvelope.create(
             JourneyRules.EVENT_TYPE_SCAN_RECEIVED,

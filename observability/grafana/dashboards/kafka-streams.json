@@ -1,0 +1,1188 @@
+{
+  "uid": "aerotrace-kafka-streams",
+  "title": "AeroTrace - Kafka Streams",
+  "tags": [
+    "aerotrace",
+    "kafka"
+  ],
+  "timezone": "browser",
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "links": [
+    {
+      "title": "Other AeroTrace dashboards",
+      "type": "dashboards",
+      "tags": [
+        "aerotrace"
+      ],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "application",
+        "label": "Application",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(kafka_stream_client_state, application)",
+          "refId": "application"
+        },
+        "definition": "label_values(kafka_stream_client_state, application)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "How to read this page",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 10
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "This page is about **Kafka Streams applications**; today that is the `risk-streams-service`. Pick the application at the top. The numbers come from the Streams metrics the service exports plus its own counters. For the producers of the other services see the *Kafka Topics* dashboard.\n\n* **Streams state** - `Running` is healthy. `Rebalancing` is normal for a few seconds after a start; `Error` or `Not running` means the application stopped.\n* **Bags at HIGH risk now** (`baggage_risk_high`) - legs that leave soon and are not loaded yet.\n* **Stream lag** (`stream_lag_seconds`) - wall-clock time minus the event time of the last record processed.\n* **Risk changes, Anomalies, Dead letters** - events the topology wrote to `baggage.risk.changed.v1`, `baggage.scan.anomaly.v1` and `baggage.dead-letter.v1` in the selected time range.\n* **Late records** - scans older than the grace period; they still update risk but are left out of the anomaly window. **Scans without a leg** - accepted, but no risk can be computed for them.\n* **Processing errors / Failed stream threads** - anything above 0 needs a look (poison records go to the dead-letter topic).\n* **Stored keys per state store** - size of the four RocksDB stores (dedup, leg state, departure index, anomaly window).\n\nTo look inside the topics and the consumer group use [Open Kafka UI](http://localhost:8090/ui/clusters/local/consumer-groups/risk-streams-service)."
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Streams state",
+      "description": "State of the Kafka Streams client. Running is healthy.",
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "No data",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Created",
+                  "color": "blue",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Rebalancing",
+                  "color": "yellow",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Running",
+                  "color": "green",
+                  "index": 2
+                },
+                "3": {
+                  "text": "Pending shutdown",
+                  "color": "orange",
+                  "index": 3
+                },
+                "4": {
+                  "text": "Not running",
+                  "color": "red",
+                  "index": 4
+                },
+                "5": {
+                  "text": "Pending error",
+                  "color": "red",
+                  "index": 5
+                },
+                "6": {
+                  "text": "Error",
+                  "color": "red",
+                  "index": 6
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(kafka_stream_client_state{application=~\"$application\"})",
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Bags at HIGH risk now",
+      "description": "Legs that depart within the threshold and are not loaded yet (baggage_risk_high).",
+      "gridPos": {
+        "x": 6,
+        "y": 10,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(baggage_risk_high{application=~\"$application\"})",
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Stream lag",
+      "description": "Wall-clock time minus the event time of the last record processed (stream_lag_seconds).",
+      "gridPos": {
+        "x": 12,
+        "y": 10,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(stream_lag_seconds{application=~\"$application\"})",
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Processing errors",
+      "description": "Records that failed unexpectedly and were dead-lettered as PROCESSING_ERROR. Anything above 0 needs a look.",
+      "gridPos": {
+        "x": 18,
+        "y": 10,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "round(sum(increase(risk_streams_processing_errors_total{application=~\"$application\"}[$__range])))",
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Risk changes",
+      "description": "Events written to baggage.risk.changed.v1 (a level changed, for example LOW to HIGH).",
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "round(sum(increase(kafka_stream_topic_records_produced_total{application=~\"$application\", topic=\"baggage.risk.changed.v1\"}[$__range])))",
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Anomalies raised",
+      "description": "SCANNER_ANOMALY events written to baggage.scan.anomaly.v1.",
+      "gridPos": {
+        "x": 6,
+        "y": 14,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "round(sum(increase(kafka_stream_topic_records_produced_total{application=~\"$application\", topic=\"baggage.scan.anomaly.v1\"}[$__range])))",
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Dead letters",
+      "description": "Records written to baggage.dead-letter.v1 (malformed, old schema, invalid or failed processing).",
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "round(sum(increase(kafka_stream_topic_records_produced_total{application=~\"$application\", topic=\"baggage.dead-letter.v1\"}[$__range])))",
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Late records",
+      "description": "Scans older than the grace period. They still update risk but are left out of the anomaly window.",
+      "gridPos": {
+        "x": 18,
+        "y": 14,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "round(sum(increase(risk_streams_late_records_total{application=~\"$application\"}[$__range])))",
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Scans without a leg",
+      "description": "Accepted scans that carry no leg, so no risk can be computed for them.",
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "round(sum(increase(risk_streams_scans_without_leg_total{application=~\"$application\"}[$__range])))",
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Failed stream threads",
+      "description": "Stream threads that died and were replaced. Anything above 0 needs a look.",
+      "gridPos": {
+        "x": 8,
+        "y": 18,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(kafka_stream_failed_stream_threads_total{application=~\"$application\"})",
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Rebalances",
+      "description": "Consumer group rebalances in the selected range (normal on a start or a scale change).",
+      "gridPos": {
+        "x": 16,
+        "y": 18,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 3
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "round(max(increase(kafka_consumer_coordinator_rebalance_total{application=~\"$application\"}[$__range])))",
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Bags at HIGH risk",
+      "description": "Legs that are close to departure and not loaded yet, over time.",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (application) (baggage_risk_high{application=~\"$application\"})",
+          "legendFormat": "{{application}}",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Stream lag",
+      "description": "Wall-clock time minus the event time of the last record processed.",
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (application) (stream_lag_seconds{application=~\"$application\"})",
+          "legendFormat": "{{application}}",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Input: scans consumed per second",
+      "description": "Records read from baggage.scan.received.v1.",
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (topic) (rate(kafka_consumer_fetch_manager_records_consumed_total{application=~\"$application\", topic=\"baggage.scan.received.v1\"}[1m]))",
+          "legendFormat": "{{topic}}",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Output: events per second by topic",
+      "description": "Events the topology writes to its output topics (changelog traffic not included).",
+      "gridPos": {
+        "x": 12,
+        "y": 30,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (topic) (rate(kafka_stream_topic_records_produced_total{application=~\"$application\"}[1m]))",
+          "legendFormat": "{{topic}}",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Late, no-leg and failed records per second",
+      "description": "Scans left out of the anomaly window, scans without a leg, and unexpected failures.",
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(risk_streams_late_records_total{application=~\"$application\"}[1m]))",
+          "legendFormat": "late",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(risk_streams_scans_without_leg_total{application=~\"$application\"}[1m]))",
+          "legendFormat": "without a leg",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(risk_streams_processing_errors_total{application=~\"$application\"}[1m]))",
+          "legendFormat": "processing errors",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Consumer lag (records) per partition",
+      "description": "Records waiting in baggage.scan.received.v1 that the application has not read yet.",
+      "gridPos": {
+        "x": 12,
+        "y": 38,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (partition) (kafka_consumer_fetch_manager_records_lag{application=~\"$application\", topic=\"baggage.scan.received.v1\"})",
+          "legendFormat": "partition {{partition}}",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Stored keys per state store",
+      "description": "Estimated number of keys in each RocksDB state store.",
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (rocksdb_state_id) (kafka_stream_state_estimate_num_keys{application=~\"$application\"})",
+          "legendFormat": "{{rocksdb_state_id}}",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Alive stream threads",
+      "description": "Running stream threads of the application.",
+      "gridPos": {
+        "x": 12,
+        "y": 46,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (application) (kafka_stream_alive_stream_threads{application=~\"$application\"})",
+          "legendFormat": "{{application}}",
+          "range": true,
+          "instant": false
+        }
+      ]
+    }
+  ]
+}

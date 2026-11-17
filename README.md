@@ -53,7 +53,21 @@ Claude Code subagents are in [.claude/agents](.claude/agents). Reusable workflow
 
 ### Skills
 
-`analyze-case`, `architecture-review`, `implement-feature`, `run`, `verify-project`.
+`analyze-case`, `architecture-review`, `implement-feature`, `run`, `verify-project`, `create-issues`, `create-pr`.
+
+#### Implementation procedure
+
+Order in which the skills are used for one issue. `implement-feature` (step 0) is the driver: it runs the flow below on a `feature/<N>/<slug>` branch. Steps 1 to 4 can also be run on their own. `create-issues` opens the issue before and `create-pr` the pull request after.
+
+| Step | Skill | When | What it does | Done when |
+|---|---|---|---|---|
+| 0 | `/implement-feature <N>` | To build one issue end to end | Reads the issue and confirms its dependencies are done; branches `feature/<N>/<slug>` from `main`; plans the smallest vertical slice and delegates with the delegation map above (`principal-engineer`); writes the failing test first (`test-engineer`), then the code, in Conventional Commits; runs `verify-project`; reviews with `code-reviewer` (and `security-reviewer` when auth or PII is touched); ticks the acceptance criteria; opens the PR with `create-pr` | Verify passes, review findings are fixed, criteria are ticked, and the PR is open (previewed with `-DryRun` first) |
+| 1 | `/analyze-case <N>` | Before any code | Reads the case study (untracked PDF, never committed); extracts modules, topics, roles, business rules (BR-xx), acceptance tests (AT-xx); compares them with `docs/issues/GITHUB_ISSUES.md`; `product-owner` words the result | Coverage table (requirement → issue) and proposed new issues; anything not defined in the repo is marked unverified |
+| 2 | `/architecture-review` | After the design, before the build, and again on the finished diff | `architect` (boundaries), `api-contract-engineer` (contracts) and `database-reviewer` (persistence) review the modules touched; checks no JPA in `common-module`, no cross-service DB access, versioned events, idempotent consumers, correlation id propagated | Findings ranked blocker / should-fix / nit; an ADR in `docs/adr/` when a decision is needed |
+| 3 | `/verify-project` | After every meaningful change, and before each push | `mvn -q spotless:check`, then `mvn -q verify` (Surefire, Failsafe, JaCoCo thresholds), then `git status` (no secrets, no `target/`, no case-study PDF) | Every step actually run and passing; failures reported with their output, never assumed green |
+| 4 | `/run` | After verify passes, to see the change working | Builds (`mvn -q -DskipTests package`), starts the stack with Docker Compose, waits for `/actuator/health` and Eureka registration, smoke-tests through the gateway under `/api/v1` with a token per role | Report of which services are up, which are not, and the log lines of any that failed |
+
+Then fix what the reviews and the run found, repeat steps 3 and 4, tick the issue's acceptance criteria, and open the pull request with `create-pr`.
 
 ## Local configuration (`.env`)
 
@@ -103,7 +117,7 @@ Defaults marked "Compose" are for local use only.
 | `JOURNEY_OUTBOX_RELAY_DELAY` | journey-service | Pause between relay runs | `200ms` |
 | `JOURNEY_OUTBOX_BATCH_SIZE` | journey-service | Events sent per relay run | `200` |
 | `JOURNEY_OUTBOX_RETENTION` | journey-service | How long published events are kept | `7d` |
-| `KAFKA_BOOTSTRAP_SERVERS` | journey-service | Kafka address | `localhost:9092` (Compose: `kafka:9092`) |
+| `KAFKA_BOOTSTRAP_SERVERS` | journey, risk-streams | Kafka address | `localhost:9092` (Compose: `kafka:9092`) |
 | `TRUSTED_PROXIES` | api-gateway | Proxies whose `X-Forwarded-For` is trusted | empty = header ignored |
 | `AUTH_RATE_LIMIT_REPLENISH_RATE` | api-gateway | Auth tokens refilled per second | `0.2` (12 a minute) |
 | `AUTH_RATE_LIMIT_BURST_CAPACITY` | api-gateway | Auth burst size | `10` |
@@ -174,6 +188,18 @@ SELECT id, 'ADMIN' FROM identity.app_user WHERE username = 'your-username';
 | api-gateway (clients call this) | `http://localhost:8080` |
 | identity-service (direct) | `http://localhost:1112` |
 | journey-service (direct) | `http://localhost:1113` |
+| risk-streams-service (actuator only, no public API) | `http://localhost:1114` |
+
+In Compose, the one-shot `kafka-init` job creates the Kafka topics before journey-service and risk-streams-service start (idempotent, `--if-not-exists`):
+
+| Topic | Partitions | Retention |
+|---|---|---|
+| `baggage.scan.received.v1` | 6 | 7d |
+| `baggage.risk.changed.v1` | 6 | 7d |
+| `baggage.scan.anomaly.v1` | 6 | 7d |
+| `baggage.dead-letter.v1` | 3 | 30d |
+
+All use `cleanup.policy=delete` and replication factor 1. A topic that already exists (for example auto-created earlier with 1 partition) is not changed: delete it once in Kafka UI to get these settings. `docker-compose-local.yml` has the same `kafka-init` job, so the topics exist with these settings when you run the services from the IDE.
 
 Compose publishes the direct ports. Each service has `/actuator/health` and `/v3/api-docs`. The Postman collection `AeroTrace` is in `postman/`, see [Postman collection](docs/apis/API.md#postman-collection).
 
@@ -317,6 +343,7 @@ They are in the AeroTrace folder, provisioned from `observability/grafana`.
 | **AeroTrace - Logs** | Service logs from Loki |
 | **AeroTrace - Coverage** | JaCoCo coverage of every module |
 | **AeroTrace - Kafka Topics** | Messages, errors, send time per topic |
+| **AeroTrace - Kafka Streams** | Streams state, HIGH-risk bags, lag, risk/anomaly/dead-letter events, state stores |
 | **AeroTrace - Outbox** | Outbox backlog, delay, failures, relay runs |
 
 | Dashboard | How to use it |
@@ -333,6 +360,9 @@ They are in the AeroTrace folder, provisioned from `observability/grafana`.
 | Coverage | Lists classes below the 90 % line gate |
 | Kafka Topics | Pick topics, open a send trace |
 | Kafka Topics | Link opens Kafka UI for messages |
+| Kafka Streams | Pick the application; Running, lag and processing errors should stay green |
+| Kafka Streams | Dead letters or processing errors above 0 need a look |
+| Kafka Streams | Link opens the consumer group in Kafka UI |
 | Outbox | Waiting and oldest should stay near 0 |
 | Outbox | Parked above 0 needs a person |
 | Outbox | Open a relay run to see its sends |

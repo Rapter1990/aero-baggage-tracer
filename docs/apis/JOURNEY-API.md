@@ -14,6 +14,7 @@ Registers bags, takes in device scans, shows each bag's journey.
 | [Scan formats](#scan-formats) | Payload fields per protocol |
 | [Errors](#errors) | Status and code per case |
 | [How events are published](#how-events-are-published) | Outbox and Kafka relay |
+| [Risk Streams Service (Kafka Streams)](#risk-streams-service-kafka-streams) | Who reads the scan event, what it publishes |
 | [Metrics and traces](#metrics-and-traces) | What the dashboards read |
 | [Known limitations](#known-limitations) | What is not done yet |
 | [Postman flow by actor](#postman-flow-by-actor) | Agent, passenger, other passenger |
@@ -132,6 +133,48 @@ Defaults: `JOURNEY_MAX_CLOCK_SKEW` is `5m`, `JOURNEY_LATE_EVENT_GRACE` is `10m`.
 | Per bag | Events stay in order |
 | Kafka down | Run stops, retried later |
 | Refused for good | Parked, counted in `journey.outbox.parked` |
+
+**The scan event**
+
+Envelope `eventType` is `baggage.scan.received`, `schemaVersion` is `2`, `aggregateId` is the bag tag.
+
+| Payload field | Meaning |
+|---|---|
+| `scanEventId` | Id of the audited scan |
+| `bagTag`, `airport`, `checkpoint` | As scanned |
+| `deviceSequence` | Device counter |
+| `occurredAt`, `deviceTimestamp`, `ingestedAt` | UTC instants |
+| `sourceTimezone` | Zone or offset of the device |
+| `lateEvent` | Older than the grace on arrival |
+| `legId` | Id of the itinerary leg, or `null` (since 2) |
+| `flightNumber` | Flight of that leg, or `null` (since 2) |
+| `departureAt` | Departure of that leg, UTC, or `null` (since 2) |
+
+| Checkpoint | Leg |
+|---|---|
+| `CHECK_IN`, `SORTING`, `TRANSFER`, `LOADED` | Leg whose `origin` is the scan airport |
+| `ARRIVED`, `CLAIM` | Leg whose `destination` is the scan airport |
+| Airport used by two legs | By scan time: next leg to depart, last leg to have landed |
+| No such leg | Leg fields `null`, scan still accepted |
+
+| Compatibility | Rule |
+|---|---|
+| Version 1 events | No leg fields; read as `null` |
+| Readers | Ignore unknown fields |
+| Needs the leg | Require `schemaVersion` 2 or more |
+
+## Risk Streams Service (Kafka Streams)
+
+The scan event above is read by the Risk Streams Service (`risk-streams-service`, a Kafka Streams application). It has no REST API of its own; its actuator health is on port `1114`.
+
+| Topic | Value |
+|---|---|
+| Reads | `baggage.scan.received.v1`, key = bag tag, `schemaVersion` 2 or more |
+| Publishes | `baggage.risk.changed.v1`, key = `bagTag:legId`, only when the level changes |
+| Publishes | `baggage.scan.anomaly.v1`, key = bag tag, once per 5-minute window |
+| Publishes | `baggage.dead-letter.v1` for records it cannot process |
+| Needs from the scan event | `legId` is required; `departureAt` is required only for the first scan of a leg. A scan with no `legId`, or for an unknown leg without `departureAt`, is accepted but gives no risk and counts as a scan without a leg |
+| Older events | Version 1 events are dead-lettered as `UNSUPPORTED_SCHEMA_VERSION` |
 
 ## Metrics and traces
 
