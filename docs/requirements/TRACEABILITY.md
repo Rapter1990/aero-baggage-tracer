@@ -8,13 +8,13 @@ Sources of truth: [BUSINESS_RULES.md](BUSINESS_RULES.md) and [ACCEPTANCE_TESTS.m
 
 | Rule | Owning issue | Test |
 |------|--------------|------|
-| BR-01 | #11 Recovery Service | |
+| BR-01 | #11 Recovery Service | `RecoveryCaseApiTest` (AT-09 and the BR-01 cases) |
 | BR-02 | #10 Risk Streams | `LegRiskTest`, `AcceptanceScenariosTest` (AT-07) |
 | BR-03 | #10 Risk Streams | `ScanAnomalyTest`, `AcceptanceScenariosTest` (AT-06) |
 | BR-04 | #12 Capacity Service | |
-| BR-05 | #11 Recovery Service | |
+| BR-05 | #11 Recovery Service | `RecoveryStateMachineTest`, `RecoveryCaseApiTest` |
 | BR-06 | #9 Journey Service (also #10 for the stream grace) | `LateEventGraceTest` (stream side) |
-| BR-07 | #11 Recovery Service | |
+| BR-07 | #11 Recovery Service | `RecoveryStateMachineTest`, `RecoveryCaseApiTest` |
 | BR-08 | #14 Notification Service | |
 
 ## Acceptance tests
@@ -29,12 +29,12 @@ Sources of truth: [BUSINESS_RULES.md](BUSINESS_RULES.md) and [ACCEPTANCE_TESTS.m
 | AT-06 | #10 | `AcceptanceScenariosTest` |
 | AT-07 | #10 | `AcceptanceScenariosTest` |
 | AT-08 | #10 | `AcceptanceScenariosTest` |
-| AT-09 | #11 | |
-| AT-10 | #11 | |
+| AT-09 | #11 | `RecoveryCaseApiTest` |
+| AT-10 | #11 | `RecoveryStateMachineTest`, `RecoveryCaseApiTest` |
 | AT-11 | #12 | |
 | AT-12 | #11 | |
 | AT-13 | #14 | |
-| AT-14 | #11, #15 | |
+| AT-14 | #11, #15 | case level only: `RecoveryCaseApiTest` (a failed publish keeps the event, it goes out later); the Kafka-outage demonstration is #15 |
 | AT-15 | #9, #8 | not tagged with its id yet |
 | AT-16 | #7 | `GatewaySecurityTest` |
 | AT-17 | #16 | |
