@@ -252,7 +252,7 @@ Recovery case state machine, handler assignment and action orchestration.
 
 **Requirement coverage** (wording in `docs/requirements/`)
 - BR-01, BR-05, BR-07; AT-09, AT-10, AT-12 are proven in this issue.
-- AT-14 and AT-22 need infrastructure from #15 and #18: here the case-level behaviour is tested (case change and outbox row in one transaction, replay of an unpublished event is safe, state survives a restart of the service); the Kafka-outage and Minikube demonstrations are completed in #15 and #18.
+- AT-14 is proven here with a real Kafka broker (`KafkaOutageTest`). AT-22 is proven here at application level (`ApplicationRestartTest`); the same check with a real Minikube pod restart needs the manifests of #18.
 
 **Acceptance criteria**
 - [x] BR-01: at most one active case per bag + leg, also under parallel requests and with Redis down (AT-09; `RecoveryCaseApiTest`, `RedisDownTest`).
@@ -260,7 +260,8 @@ Recovery case state machine, handler assignment and action orchestration.
 - [x] BR-05: every move follows the state machine and records who/when/why; an illegal move is `409` (AT-10). Assignment of a case to a handler is recorded the same way (`PUT .../assignment`).
 - [x] BR-07: a RESOLVED case cannot be reopened; a new leg needs a new case key.
 - [x] AT-09, AT-10, AT-12 (`RecoveryCaseApiTest`, `RecoveryStateMachineTest`, `CapacitySagaTest`).
-- [ ] AT-14 and AT-22: case-level behaviour tested here; end-to-end demonstration completed in #15 / #18.
+- [x] AT-14: Kafka stopped during a move, the move commits, and the events are published in order, once, when the broker is back (`KafkaOutageTest`, a real broker).
+- [x] AT-22 at application level: a restarted instance keeps the committed case, history and events and carries on (`ApplicationRestartTest`). The restart of a real Minikube pod is demonstrated in #18.
 - [x] `GET /recovery-cases` pages and sorts deterministically; `Idempotency-Key` retries (create and move) have no second effect (`CaseOperationsApiTest`).
 - [x] Unit tests for strategies, guards, compensation.
 - [x] Every test of a BR/AT starts its `@DisplayName` with its id; `docs/requirements/TRACEABILITY.md` is updated.

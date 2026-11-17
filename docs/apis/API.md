@@ -74,11 +74,29 @@ Two files in `postman/`:
 | 3 Other passenger | Sign in, cannot read the bag |
 | 4 Service checks (port 1113) | Health and OpenAPI via `journeyUrl` |
 
+**Recovery Service folders** (run top to bottom)
+
+| Folder | What it does |
+|---|---|
+| 1 Sign in | Agent, dispatcher, admin and passenger tokens |
+| 2 Open a case (agent) | Opens a case; the same `Idempotency-Key` returns it again; a second open is refused; an invalid bag tag is refused |
+| 3 Move the case (dispatcher) | `ASSESSING`; a retry with the same key; an old version, a skipped state, no reason and an unknown case are refused |
+| 4 Assign a handler | Assigns the agent; assigning again changes nothing; a bad assignee and the admin are refused |
+| 5 Reserve capacity and finish | `RESERVED` (200, or 503 while the capacity-service is not running), cancel, a closed case is never reopened or assigned, a new case for the same leg is allowed |
+| 6 List cases | State filter and paging, size capped at 100, an unknown state refused |
+| 7 Recovery policy | Read, change as admin (an agent is refused, an old version is refused, an out-of-range value is refused), put it back |
+| 8 Refused calls | No token 401; passenger and admin 403 where the role is not allowed |
+| 9 Service checks (port 1115) | Health and OpenAPI via `recoveryUrl` |
+
 **Notes**
 
 | Topic | What to know |
 |---|---|
 | Tokens | Test scripts store them in the environment |
+| Recovery accounts | `recoveryAgentUsername`, `recoveryDispatcherUsername`, `recoveryAdminUsername`, `recoveryPassengerUsername` (the dev dummy accounts) and `recoveryPassword` |
+| Recovery variables | The scripts fill `recoveryBagTag`, `recoveryLegId`, `recoveryCaseId`, `recoveryCaseVersion`, `recoveryCreateKey`, `recoveryMoveKey`, `recoveryAgentSubject`, `recoveryPolicyMinutes` and `recoveryPolicyVersion` |
+| Recovery capacity | Request 5.1 needs the capacity-service (issue #12); until it runs it answers 503 and the folder still passes |
+| Recovery policy | Folder 7 puts the policy back to the value it read, so a run leaves it unchanged |
 | Identity 1.2 | Needs `adminUsername` and `adminPassword` |
 | Default admin | The dev dummy admin |
 | First admin | By hand, see [README](../../README.md#first-administrator-without-the-dev-context) |
@@ -95,7 +113,7 @@ Two files in `postman/`:
 newman run postman/AeroTrace.postman_collection.json -e postman/AeroTrace-local.postman_environment.json --delay-request 150 --folder "Identity Service"
 ```
 
-Use `--folder "Journey Service"` for the journey folder.
+Use `--folder "Journey Service"` for the journey folder and `--folder "Recovery Service"` for the recovery folder.
 
 **Run order of the collection**
 
@@ -107,6 +125,9 @@ flowchart LR
     subgraph Journey Service
         J1[1 Agent] --> J2[2 Passenger - owner] --> J3[3 Other passenger] --> J4[4 Service checks :1113]
     end
+    subgraph Recovery Service
+        R1[1 Sign in] --> R2[2 Open a case] --> R3[3 Move] --> R4[4 Assign] --> R5[5 Reserve and finish] --> R6[6 List] --> R7[7 Policy] --> R8[8 Refused] --> R9[9 Service checks :1115]
+    end
 ```
 
-The tables of every request are in [Identity Service API](IDENTITY-API.md#every-request-in-the-postman-collection) and [Journey Service API](JOURNEY-API.md#every-request-in-the-postman-collection).
+The tables of every request are in [Identity Service API](IDENTITY-API.md#every-request-in-the-postman-collection) and [Journey Service API](JOURNEY-API.md#every-request-in-the-postman-collection). The recovery requests are listed above and in [Recovery Service API](RECOVERY-API.md).

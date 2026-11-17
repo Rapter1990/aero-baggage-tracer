@@ -34,7 +34,7 @@ Sources of truth: [BUSINESS_RULES.md](BUSINESS_RULES.md) and [ACCEPTANCE_TESTS.m
 | AT-11 | #12 | |
 | AT-12 | #11 | `CapacitySagaTest` (against a stub capacity-service; the real service is #12) |
 | AT-13 | #14 | |
-| AT-14 | #11, #15 | case level only: `RecoveryCaseApiTest` (a failed publish keeps the event, it goes out later); the Kafka-outage demonstration is #15 |
+| AT-14 | #11, #15 | `KafkaOutageTest` (a real broker is paused during a move: it commits, the events stay pending, and are published in order once, after the broker is back); `RecoveryCaseApiTest` (case level). The journey-service's outbox is #15's |
 | AT-15 | #9, #8 | not tagged with its id yet |
 | AT-16 | #7 | `GatewaySecurityTest` |
 | AT-17 | #16 | |
@@ -42,7 +42,7 @@ Sources of truth: [BUSINESS_RULES.md](BUSINESS_RULES.md) and [ACCEPTANCE_TESTS.m
 | AT-19 | #12 | capacity side is #12; recovery side (no duplicate case with Redis down): `RedisDownTest` |
 | AT-20 | #19 | |
 | AT-21 | #19 | |
-| AT-22 | #11, #18 | |
+| AT-22 | #11, #18 | application level: `ApplicationRestartTest` (a second instance on the same database finds the committed case, history and events). The Minikube pod restart is #18 |
 | AT-23 | #20 | |
 | AT-24 | #20 | |
 

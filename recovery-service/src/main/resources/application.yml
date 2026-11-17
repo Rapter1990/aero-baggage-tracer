@@ -53,6 +53,16 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     template:
       observation-enabled: true
+    admin:
+      # With observation on, every traced send asks the cluster id through an admin client. With an
+      # unreachable broker that call waits for the admin client's 60 s API default, while the outbox
+      # relay holds its transaction and lock. These limits keep a send close to the producer's own
+      # timeouts, so an outage costs the relay seconds, not minutes (found by KafkaOutageTest).
+      close-timeout: 2s
+      operation-timeout: 2s
+      properties:
+        default.api.timeout.ms: 3000
+        request.timeout.ms: 2000
     consumer:
       group-id: ${KAFKA_CONSUMER_GROUP:recovery-service}
       # A new group reads the topic from the start, so no risk event is missed on first start.
