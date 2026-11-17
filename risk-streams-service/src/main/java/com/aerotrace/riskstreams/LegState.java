@@ -5,13 +5,13 @@ import com.aerotrace.common.model.RiskLevel;
 import java.time.Instant;
 
 /**
- * Per-leg state, keyed by {@code bagTag:legId}. A scan without a leg lives in a bag-level
- * pseudo-leg (legId and departureAt null) that only tracks checkpoints for the anomaly rule.
+ * Per-leg state, keyed by {@code bagTag:legId}. Scans without a leg create no state (an earlier
+ * version kept a bag-level pseudo-leg; such entries are no longer read and just expire).
  *
  * @param checkpoint latest legitimate checkpoint, by event time
  * @param latestAt event time of that checkpoint
  * @param airport airport of the latest legitimate scan; selects the threshold
- * @param departureAt scheduled departure; null for the pseudo-leg
+ * @param departureAt scheduled departure
  * @param loaded a non-rejected LOADED scan was seen: the leg cannot be HIGH any more
  * @param lastLevel last level emitted on risk.changed
  * @param expiresAt when the leg is evicted: departureAt, or latestAt + dedup retention

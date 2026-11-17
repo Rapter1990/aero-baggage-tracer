@@ -138,6 +138,8 @@ final class ScanProcessor implements Processor<String, String, String, String> {
     try {
       plan(scan, effects);
     } catch (KafkaException e) {
+      // Deliberately the only infrastructure exception class treated as non-poison: state store
+      // and client failures all derive from it.
       throw e; // store or client failure: infrastructure, not poison; the task fails and retries
     } catch (RuntimeException e) {
       metrics.processingError();
@@ -378,9 +380,10 @@ final class ScanProcessor implements Processor<String, String, String, String> {
         RiskLevel level = levelAt(state, now);
         if (level != state.lastLevel()) {
           Effects effects = new Effects();
+          // The leg write is Kafka-backed: it goes before the in-memory effects (HIGH gauge).
+          effects.kafka(() -> legStore.put(entry.value, state.withLevel(level)));
           planRisk(state, level, null, null, now, effects);
           effects.run();
-          legStore.put(entry.value, state.withLevel(level));
         }
       }
     }
