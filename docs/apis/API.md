@@ -8,6 +8,7 @@ What the platform offers, how requests flow, how to try them in Postman.
 |---|---|
 | [Identity Service API](IDENTITY-API.md) | Calls, tokens, flows, requests |
 | [Journey Service API](JOURNEY-API.md) | Calls, rules, scans, events, requests |
+| [Recovery Service API](RECOVERY-API.md) | Cases, moves, capacity, policy, events |
 | [README](../../README.md) | Setup, variables, limits, observability |
 
 ## At a glance
@@ -17,6 +18,7 @@ What the platform offers, how requests flow, how to try them in Postman.
 | api-gateway | `http://localhost:8080` | clients call this |
 | identity-service | `http://localhost:1112` | `/api/v1/auth/**` |
 | journey-service | `http://localhost:1113` | `/api/v1/bags/**`, `/api/v1/scans/**` |
+| recovery-service | `http://localhost:1115` | `/api/v1/recovery-cases/**`, `/api/v1/recovery-policy` |
 
 Success answers look like `{"success":true,"data":...,"timestamp":...}`. Errors use the shared shape, see [response format](../../README.md#api-response-format).
 

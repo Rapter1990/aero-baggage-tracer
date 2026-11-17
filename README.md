@@ -117,6 +117,12 @@ Defaults marked "Compose" are for local use only.
 | `JOURNEY_OUTBOX_RELAY_DELAY` | journey-service | Pause between relay runs | `200ms` |
 | `JOURNEY_OUTBOX_BATCH_SIZE` | journey-service | Events sent per relay run | `200` |
 | `JOURNEY_OUTBOX_RETENTION` | journey-service | How long published events are kept | `7d` |
+| `CAPACITY_SERVICE_URL` | recovery-service | Where the capacity-service answers | `http://localhost:1116` |
+| `CAPACITY_READ_TIMEOUT` | recovery-service | A slower capacity-service counts as unavailable (503) | `5s` |
+| `CAPACITY_HOLD_TIMEOUT` | recovery-service | A case RESERVED longer than this is cancelled and its hold released | `15m` |
+| `RECOVERY_POLICY_CACHE_TTL` | recovery-service | How long Redis may serve the cached recovery policy | `5m` |
+| `RECOVERY_DEDUPE_RETENTION` | recovery-service | How long processed event ids are remembered (keep above the topics' retention) | `14d` |
+| `REDIS_TIMEOUT` | recovery-service | Redis command timeout; after it the database answers | `500ms` |
 | `KAFKA_BOOTSTRAP_SERVERS` | journey, risk-streams | Kafka address | `localhost:9092` (Compose: `kafka:9092`) |
 | `TRUSTED_PROXIES` | api-gateway | Proxies whose `X-Forwarded-For` is trusted | empty = header ignored |
 | `AUTH_RATE_LIMIT_REPLENISH_RATE` | api-gateway | Auth tokens refilled per second | `0.2` (12 a minute) |
@@ -189,14 +195,17 @@ SELECT id, 'ADMIN' FROM identity.app_user WHERE username = 'your-username';
 | identity-service (direct) | `http://localhost:1112` |
 | journey-service (direct) | `http://localhost:1113` |
 | risk-streams-service (actuator only, no public API) | `http://localhost:1114` |
+| recovery-service (direct) | `http://localhost:1115` |
 
-In Compose, the one-shot `kafka-init` job creates the Kafka topics before journey-service and risk-streams-service start (idempotent, `--if-not-exists`):
+In Compose, the one-shot `kafka-init` job creates the Kafka topics before journey-service, risk-streams-service and recovery-service start (idempotent, `--if-not-exists`):
 
 | Topic | Partitions | Retention |
 |---|---|---|
 | `baggage.scan.received.v1` | 6 | 7d |
 | `baggage.risk.changed.v1` | 6 | 7d |
 | `baggage.scan.anomaly.v1` | 6 | 7d |
+| `recovery.case.changed.v1` | 6 | 7d |
+| `recovery.capacity.changed.v1` | 6 | 7d |
 | `baggage.dead-letter.v1` | 3 | 30d |
 
 All use `cleanup.policy=delete` and replication factor 1. A topic that already exists (for example auto-created earlier with 1 partition) is not changed: delete it once in Kafka UI to get these settings. `docker-compose-local.yml` has the same `kafka-init` job, so the topics exist with these settings when you run the services from the IDE.
@@ -417,6 +426,7 @@ The script runs `mvn verify` and pushes numbers only if it succeeds. `mvn verify
 | api-gateway | Starts a password-protected Redis |
 | identity, journey | Start a PostgreSQL container |
 | journey-service | Also starts Kafka for the relay |
+| recovery-service | Starts PostgreSQL, a password-protected Redis and Kafka, and a stand-in capacity-service on a real port; one class points Redis at a dead port |
 | No Docker | Tests are skipped, not failed |
 | No Docker with `CI` set | Identity and journey fail the build |
 | Coverage check | Includes integration tests |
