@@ -244,11 +244,25 @@ Recovery case state machine, handler assignment and action orchestration.
 - Consume `baggage.risk.changed.v1`, `baggage.scan.anomaly.v1`, `recovery.capacity.changed.v1`.
 - Transactional outbox → `recovery.case.changed.v1` (AT-14, AT-22).
 - RBAC: only AGENT/DISPATCHER may transition; ADMIN changes risk policy; Redis-cached policy with TTL + invalidation.
+- `GET /recovery-cases?state=OPEN&page=0&size=20` (spec §7): paged list with deterministic sorting.
+- `Idempotency-Key` on `POST /recovery-cases` and on transitions: a retry returns the original result and has no second effect.
+- Tables: `recovery_case`, `state_transition`, `outbox_event`, `processed_event` (durable dedup of the consumed events; business effects stay idempotent, Kafka EOS is not enough).
+- Handler assignment: a case can be assigned to an AGENT/DISPATCHER; the assignment is recorded in `state_transition` (who/when/why).
+- Metrics `recovery_resolution_seconds` and `outbox_pending_count`.
+
+**Requirement coverage** (wording in `docs/requirements/`)
+- BR-01, BR-05, BR-07; AT-09, AT-10, AT-12 are proven in this issue.
+- AT-14 and AT-22 need infrastructure from #15 and #18: here the case-level behaviour is tested (case change and outbox row in one transaction, replay of an unpublished event is safe, state survives a restart of the service); the Kafka-outage and Minikube demonstrations are completed in #15 and #18.
 
 **Acceptance criteria**
-- [ ] AT-09, AT-10, AT-12, AT-14, AT-22.
+- [ ] BR-01: at most one active case per bag + leg, also under parallel requests and with Redis down (AT-09).
+- [ ] BR-05: every move follows the state machine and records who/when/why; an illegal move is `409` (AT-10).
+- [ ] BR-07: a RESOLVED case cannot be reopened; a new leg needs a new case key.
+- [ ] AT-09, AT-10, AT-12.
+- [ ] AT-14 and AT-22: case-level behaviour tested here; end-to-end demonstration completed in #15 / #18.
+- [ ] `GET /recovery-cases` pages and sorts deterministically; `Idempotency-Key` retries have no second effect.
 - [ ] Unit tests for strategies, guards, compensation.
-- [ ] Redis outage does not allow duplicate cases.
+- [ ] Every test of a BR/AT starts its `@DisplayName` with its id; `docs/requirements/TRACEABILITY.md` is updated.
 
 ---
 
