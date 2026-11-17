@@ -35,6 +35,7 @@ Opens recovery cases for bags at risk of missing a connection, moves them along 
 |---|---|---|
 | `POST /api/v1/recovery-cases` | AGENT, DISPATCHER, ADMIN | Opens a case (201) |
 | `PATCH /api/v1/recovery-cases/{id}/transitions` | AGENT, DISPATCHER | Moves a case (200) |
+| `PUT /api/v1/recovery-cases/{id}/assignment` | AGENT, DISPATCHER | Hands a case to a handler (200) |
 | `GET /api/v1/recovery-cases?state=OPEN&page=0&size=20` | AGENT, DISPATCHER, ADMIN | Lists cases, oldest first |
 | `GET /api/v1/recovery-policy` | AGENT, DISPATCHER, ADMIN | Reads the policy |
 | `PUT /api/v1/recovery-policy` | ADMIN | Changes the policy |
@@ -42,7 +43,8 @@ Opens recovery cases for bags at risk of missing a connection, moves them along 
 | Call | Body |
 |---|---|
 | `POST /api/v1/recovery-cases` | `bagTag`, `legId`, `reason`; optional header `Idempotency-Key` |
-| `PATCH .../transitions` | `targetState`, `expectedVersion`, `reason` |
+| `PATCH .../transitions` | `targetState`, `expectedVersion`, `reason`; optional header `Idempotency-Key` |
+| `PUT .../assignment` | `assignee` (the handler's token subject), `expectedVersion` |
 | `PUT /api/v1/recovery-policy` | `minimumExpediteMinutes` (0 to 720), `expectedVersion` |
 
 ```json
@@ -73,6 +75,18 @@ Opens recovery cases for bags at risk of missing a connection, moves them along 
 | Final (BR-07) | `RESOLVED`, `CANCELLED` and `CLOSED_AS_UNRECOVERABLE` never move again: `409 ILLEGAL_TRANSITION` |
 | Version | `expectedVersion` must be the current version, else `409 VERSION_CONFLICT`; a new case starts at 1 |
 | History | Every move records who, when and why |
+| Retrying a move | Send an `Idempotency-Key`: a repeat gets the answer of the first move and nothing happens twice (also no second capacity hold). The key belongs to one case; the same key for a different move is `409 VERSION_CONFLICT`. Without a key a retry is `409 VERSION_CONFLICT` |
+
+**Handler assignment**
+
+| Topic | Rule |
+|---|---|
+| Who | Agents and dispatchers hand a case to an agent or dispatcher, named by their token subject |
+| Effect | The state does not change; the version rises (whoever works on the case must reload), a history row says who assigned whom, and an event is queued |
+| Same handler again | Changes nothing, so a retry is safe |
+| Another handler | Allowed; the history shows both |
+| Closed case | `409 ILLEGAL_TRANSITION` |
+| Shown | `assignedTo` in every case answer and in the list |
 
 **Capacity**
 
@@ -145,6 +159,5 @@ Redis only caches the policy. See [ADR 0001](../adr/0001-redis-policy-cache.md).
 |---|---|
 | Capacity-service | Not built yet (issue #12): moving to `RESERVED` answers 503 until it runs |
 | Hold release by the sweeper | Sends no token; the capacity-service must accept it, or the hold stays |
-| Idempotency-Key on moves | Not done; a retry of a move gets `409 VERSION_CONFLICT` |
-| Handler assignment | Not done |
+| Assignee check | The assignee is taken as given: the identity-service is not asked whether that person exists or is an agent |
 | Airline policy | One `DEFAULT` policy; the events carry no airline |

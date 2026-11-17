@@ -13,6 +13,7 @@ import com.aerotrace.recovery.capacity.CapacityGateway;
 import com.aerotrace.recovery.constant.MetricNames;
 import com.aerotrace.recovery.constant.RecoveryRules;
 import com.aerotrace.recovery.domain.RecoveryStateMachine;
+import com.aerotrace.recovery.model.dto.request.AssignRequest;
 import com.aerotrace.recovery.model.dto.request.CreateCaseRequest;
 import com.aerotrace.recovery.model.dto.request.TransitionRequest;
 import com.aerotrace.recovery.model.dto.response.CaseResponse;
@@ -259,9 +260,97 @@ public class RecoveryCaseService {
     return CaseResponse.of(existing);
   }
 
+  /** A move without an Idempotency-Key: a retry of it is a version conflict. */
   public CaseResponse transition(UUID caseId, TransitionRequest request) {
-    return move(
-        caseId, request.targetState(), request.expectedVersion(), request.reason(), actor());
+    return transition(caseId, request, null);
+  }
+
+  public CaseResponse transition(UUID caseId, TransitionRequest request, String idempotencyKey) {
+    if (idempotencyKey != null) {
+      var done = transitions.findByCaseIdAndIdempotencyKey(caseId, idempotencyKey);
+      if (done.isPresent()) {
+        // A retry: the move was made, so its answer is given again and nothing happens twice.
+        return replayMove(done.get(), request);
+      }
+    }
+    try {
+      return move(
+          caseId,
+          request.targetState(),
+          request.expectedVersion(),
+          request.reason(),
+          actor(),
+          idempotencyKey);
+    } catch (ApiException conflict) {
+      if (idempotencyKey != null && conflict.errorCode() == ErrorCode.VERSION_CONFLICT) {
+        // The same key arrived twice at once: the other request won, this one gets its answer.
+        var winner = transitions.findByCaseIdAndIdempotencyKey(caseId, idempotencyKey);
+        if (winner.isPresent()) {
+          return replayMove(winner.get(), request);
+        }
+      }
+      throw conflict;
+    }
+  }
+
+  /** The answer of a retried move, but only when it is the same request. */
+  private CaseResponse replayMove(StateTransitionEntity done, TransitionRequest request) {
+    boolean same =
+        done.getToState() == request.targetState()
+            && done.getVersionAfter() == request.expectedVersion() + 1;
+    if (!same) {
+      throw new ApiException(ErrorCode.VERSION_CONFLICT, RecoveryRules.IDEMPOTENCY_KEY_REUSED);
+    }
+    RecoveryCaseEntity current = cases.findById(done.getCaseId()).orElseThrow();
+    return CaseResponse.asOf(current, done);
+  }
+
+  /**
+   * Hands a case to a handler (an agent or dispatcher). The state does not change; the version
+   * rises, so whoever is working on the case is told to reload, and a history row and an event
+   * record who was assigned and by whom. Assigning the person who already has the case changes
+   * nothing, so a retry is safe. A final case cannot be assigned.
+   */
+  public CaseResponse assign(UUID caseId, AssignRequest request) {
+    CaseResponse assigned =
+        transaction.execute(
+            status -> {
+              RecoveryCaseEntity current =
+                  cases
+                      .findById(caseId)
+                      .orElseThrow(
+                          () ->
+                              new ApiException(ErrorCode.NOT_FOUND, RecoveryRules.CASE_NOT_FOUND));
+              if (current.getState().isTerminal()) {
+                throw new ApiException(ErrorCode.ILLEGAL_TRANSITION, RecoveryRules.CASE_IS_FINAL);
+              }
+              if (current.getVersion() != request.expectedVersion()) {
+                throw new ApiException(ErrorCode.VERSION_CONFLICT, RecoveryRules.VERSION_MISMATCH);
+              }
+              if (request.assignee().equals(current.getAssignedTo())) {
+                return CaseResponse.of(current);
+              }
+              Instant now = Instant.now(clock);
+              int updated =
+                  cases.assign(caseId, request.expectedVersion(), request.assignee(), now);
+              if (updated == 0) {
+                throw new ApiException(ErrorCode.VERSION_CONFLICT, RecoveryRules.VERSION_MISMATCH);
+              }
+              RecoveryCaseEntity fresh = cases.findById(caseId).orElseThrow();
+              transitions.save(
+                  new StateTransitionEntity(
+                      caseId,
+                      current.getState(),
+                      current.getState(),
+                      actor(),
+                      now,
+                      RecoveryRules.HANDLER_ASSIGNED + request.assignee(),
+                      fresh.getVersion()));
+              queueEvent(fresh, now);
+              meters.counter("recovery.case.assigned").increment();
+              return CaseResponse.of(fresh);
+            });
+    return assigned;
   }
 
   /**
@@ -284,6 +373,16 @@ public class RecoveryCaseService {
    */
   private CaseResponse move(
       UUID caseId, RecoveryState target, long expectedVersion, String reason, String actor) {
+    return move(caseId, target, expectedVersion, reason, actor, null);
+  }
+
+  private CaseResponse move(
+      UUID caseId,
+      RecoveryState target,
+      long expectedVersion,
+      String reason,
+      String actor,
+      String idempotencyKey) {
     RecoveryCaseEntity current =
         cases
             .findById(caseId)
@@ -301,7 +400,15 @@ public class RecoveryCaseService {
     try {
       moved =
           transaction.execute(
-              status -> apply(caseId, target, expectedVersion, reason, actor, reservationId));
+              status ->
+                  apply(
+                      caseId,
+                      target,
+                      expectedVersion,
+                      reason,
+                      actor,
+                      reservationId,
+                      idempotencyKey));
     } catch (RuntimeException failure) {
       if (reservationId != null) {
         // Compensation: the case did not move, so the hold must not stay.
@@ -322,7 +429,6 @@ public class RecoveryCaseService {
     return moved;
   }
 
-  /** The local transaction of a move: state, history and event together. */
   private CaseResponse apply(
       UUID caseId,
       RecoveryState target,
@@ -330,10 +436,27 @@ public class RecoveryCaseService {
       String reason,
       String actor,
       UUID reservationId) {
+    return apply(caseId, target, expectedVersion, reason, actor, reservationId, null);
+  }
+
+  /** The local transaction of a move: state, history and event together. */
+  private CaseResponse apply(
+      UUID caseId,
+      RecoveryState target,
+      long expectedVersion,
+      String reason,
+      String actor,
+      UUID reservationId,
+      String idempotencyKey) {
     RecoveryCaseEntity current =
         cases
             .findById(caseId)
             .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, RecoveryRules.CASE_NOT_FOUND));
+    // A caller who is behind sees a version conflict, not a state error: the state they reason
+    // about is not the one the case is in any more.
+    if (current.getVersion() != expectedVersion) {
+      throw new ApiException(ErrorCode.VERSION_CONFLICT, RecoveryRules.VERSION_MISMATCH);
+    }
     RecoveryState from = current.getState();
     RecoveryStateMachine.requireAllowed(from, target, reason);
 
@@ -348,7 +471,8 @@ public class RecoveryCaseService {
     }
     RecoveryCaseEntity updated = cases.findById(caseId).orElseThrow();
     transitions.save(
-        new StateTransitionEntity(caseId, from, target, actor, now, reason, updated.getVersion()));
+        new StateTransitionEntity(
+            caseId, from, target, actor, now, reason, updated.getVersion(), idempotencyKey));
     queueEvent(updated, now);
     if (target == RecoveryState.RESOLVED) {
       Timer.builder(MetricNames.RECOVERY_RESOLUTION)

@@ -78,6 +78,20 @@ public interface RecoveryCaseRepository extends JpaRepository<RecoveryCaseEntity
       @Param("now") Instant now,
       @Param("action") RecoveryAction action);
 
+  /**
+   * Assigns a case to a handler without changing its state: the version rises, so a person working
+   * on the case is told to reload. Returns 0 when the case was changed by someone else first.
+   */
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query(
+      "update RecoveryCaseEntity c set c.assignedTo = :assignee, c.version = c.version + 1,"
+          + " c.updatedAt = :now where c.id = :id and c.version = :expectedVersion")
+  int assign(
+      @Param("id") UUID id,
+      @Param("expectedVersion") long expectedVersion,
+      @Param("assignee") String assignee,
+      @Param("now") Instant now);
+
   /** Like {@link #flagAnomaly} but leaves the plan of the case as it is. */
   @Modifying(flushAutomatically = true, clearAutomatically = true)
   @Query(

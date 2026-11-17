@@ -33,6 +33,16 @@ public final class RecoveryRules {
   public static final String IDEMPOTENCY_KEY_INVALID =
       "Idempotency-Key must be 1-128 visible ASCII characters";
   public static final String ILLEGAL_MOVE = "This move is not allowed from the current state";
+
+  /** A token subject: letters, digits and the separators identity ids use, at most 100. */
+  public static final String ASSIGNEE_PATTERN = "^[A-Za-z0-9._@:-]{1,100}$";
+
+  public static final String ASSIGNEE_RULE =
+      "assignee must be 1-100 letters, digits or one of . _ @ : -";
+
+  /** Reason recorded in the history when a case is assigned; the assignee follows it. */
+  public static final String HANDLER_ASSIGNED = "HANDLER_ASSIGNED: ";
+
   public static final String POLICY_VERSION_MISMATCH =
       "The policy was changed by someone else; reload it and try again";
   public static final String HIGH_CONNECTION_RISK = "HIGH_CONNECTION_RISK";

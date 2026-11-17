@@ -13,3 +13,5 @@ databaseChangeLog:
       file: db/changelog/changes/006-risk-event-clock.sql
   - include:
       file: db/changelog/changes/007-recovery-policy.sql
+  - include:
+      file: db/changelog/changes/008-assignment-and-move-keys.sql

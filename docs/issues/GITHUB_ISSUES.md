@@ -257,13 +257,13 @@ Recovery case state machine, handler assignment and action orchestration.
 **Acceptance criteria**
 - [x] BR-01: at most one active case per bag + leg, also under parallel requests and with Redis down (AT-09; `RecoveryCaseApiTest`, `RedisDownTest`).
 - [x] Redis caches the recovery policy (`GET/PUT /api/v1/recovery-policy`, PUT admin only) with an explicit TTL and eviction on change; PostgreSQL is authoritative and degraded mode is documented in `docs/adr/0001-redis-policy-cache.md`.
-- [ ] BR-05: every move follows the state machine and records who/when/why; an illegal move is `409` (AT-10).
-- [ ] BR-07: a RESOLVED case cannot be reopened; a new leg needs a new case key.
-- [ ] AT-09, AT-10, AT-12.
+- [x] BR-05: every move follows the state machine and records who/when/why; an illegal move is `409` (AT-10). Assignment of a case to a handler is recorded the same way (`PUT .../assignment`).
+- [x] BR-07: a RESOLVED case cannot be reopened; a new leg needs a new case key.
+- [x] AT-09, AT-10, AT-12 (`RecoveryCaseApiTest`, `RecoveryStateMachineTest`, `CapacitySagaTest`).
 - [ ] AT-14 and AT-22: case-level behaviour tested here; end-to-end demonstration completed in #15 / #18.
-- [ ] `GET /recovery-cases` pages and sorts deterministically; `Idempotency-Key` retries have no second effect.
-- [ ] Unit tests for strategies, guards, compensation.
-- [ ] Every test of a BR/AT starts its `@DisplayName` with its id; `docs/requirements/TRACEABILITY.md` is updated.
+- [x] `GET /recovery-cases` pages and sorts deterministically; `Idempotency-Key` retries (create and move) have no second effect (`CaseOperationsApiTest`).
+- [x] Unit tests for strategies, guards, compensation.
+- [x] Every test of a BR/AT starts its `@DisplayName` with its id; `docs/requirements/TRACEABILITY.md` is updated.
 
 ---
 

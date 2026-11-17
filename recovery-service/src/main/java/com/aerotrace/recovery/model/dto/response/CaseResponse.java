@@ -2,6 +2,7 @@ package com.aerotrace.recovery.model.dto.response;
 
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.recovery.model.entity.RecoveryCaseEntity;
+import com.aerotrace.recovery.model.entity.StateTransitionEntity;
 import com.aerotrace.recovery.strategy.RecoveryAction;
 import java.time.Instant;
 import java.util.UUID;
@@ -15,6 +16,7 @@ public record CaseResponse(
     long version,
     String reason,
     RecoveryAction plannedAction,
+    String assignedTo,
     Instant scannerAnomalyAt,
     Instant createdAt,
     Instant updatedAt) {
@@ -28,8 +30,29 @@ public record CaseResponse(
         c.getVersion(),
         c.getReason(),
         c.getPlannedAction(),
+        c.getAssignedTo(),
         c.getScannerAnomalyAt(),
         c.getCreatedAt(),
         c.getUpdatedAt());
+  }
+
+  /**
+   * The case as the move {@code t} left it: the answer to a retried move. State, version, reason
+   * and time are those of the move, so a retry sees what the original request saw even when the
+   * case has moved on since; the rest is the case now.
+   */
+  public static CaseResponse asOf(RecoveryCaseEntity c, StateTransitionEntity t) {
+    return new CaseResponse(
+        c.getId(),
+        c.getBagTag(),
+        c.getLegId(),
+        t.getToState(),
+        t.getVersionAfter(),
+        t.getReason(),
+        c.getPlannedAction(),
+        c.getAssignedTo(),
+        c.getScannerAnomalyAt(),
+        c.getCreatedAt(),
+        t.getOccurredAt());
   }
 }

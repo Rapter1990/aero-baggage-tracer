@@ -88,6 +88,9 @@ class SecurityConfig {
                   .hasRole(Role.ADMIN.name())
                   // Only agents and dispatchers move a case.
                   .requestMatchers(HttpMethod.PATCH, ApiPaths.TRANSITIONS_ALL)
+                  .hasAnyRole(Role.AGENT.name(), Role.DISPATCHER.name())
+                  // The same two roles hand a case to a handler.
+                  .requestMatchers(HttpMethod.PUT, ApiPaths.ASSIGNMENT_ALL)
                   .hasAnyRole(Role.AGENT.name(), Role.DISPATCHER.name());
               if (docsEnabled) {
                 requests

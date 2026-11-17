@@ -56,6 +56,21 @@ class OpenApiDocsTest extends AbstractRecoveryTest {
   }
 
   @Test
+  @DisplayName("BR-05 the assignment documents its answers and 401 and 403")
+  void assignmentDocumentsItsAnswers() throws Exception {
+    String assignment = "$.paths['/api/v1/recovery-cases/{id}/assignment'].put.responses";
+
+    mockMvc
+        .perform(get("/v3/api-docs"))
+        .andExpect(jsonPath(assignment + "['200']").exists())
+        .andExpect(jsonPath(assignment + "['400']").exists())
+        .andExpect(jsonPath(assignment + "['401']").exists())
+        .andExpect(jsonPath(assignment + "['403']").exists())
+        .andExpect(jsonPath(assignment + "['404']").exists())
+        .andExpect(jsonPath(assignment + "['409']").exists());
+  }
+
+  @Test
   @DisplayName("BR-01 opening a case documents the duplicate answer with its example")
   void createDocumentsTheDuplicateAnswer() throws Exception {
     String create = "$.paths['/api/v1/recovery-cases'].post.responses";

@@ -52,6 +52,10 @@ public class StateTransitionEntity {
   @Column(name = "version_after", nullable = false)
   private long versionAfter;
 
+  /** The Idempotency-Key of the move, unique per case; null for moves made without one. */
+  @Column(name = "idempotency_key", length = 128)
+  private String idempotencyKey;
+
   public StateTransitionEntity(
       UUID caseId,
       RecoveryState fromState,
@@ -60,6 +64,19 @@ public class StateTransitionEntity {
       Instant occurredAt,
       String reason,
       long versionAfter) {
+    this(caseId, fromState, toState, actor, occurredAt, reason, versionAfter, null);
+  }
+
+  public StateTransitionEntity(
+      UUID caseId,
+      RecoveryState fromState,
+      RecoveryState toState,
+      String actor,
+      Instant occurredAt,
+      String reason,
+      long versionAfter,
+      String idempotencyKey) {
+    this.idempotencyKey = idempotencyKey;
     this.caseId = caseId;
     this.fromState = fromState;
     this.toState = toState;

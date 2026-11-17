@@ -50,6 +50,10 @@ public class RecoveryCaseEntity {
   @Column(name = "planned_action", length = 30)
   private RecoveryAction plannedAction;
 
+  /** The agent or dispatcher handling the case (their token subject); null while unassigned. */
+  @Column(name = "assigned_to", length = 100)
+  private String assignedTo;
+
   /** When a scanner anomaly was recorded on the bag of this case; null when none was. */
   @Column(name = "scanner_anomaly_at")
   private Instant scannerAnomalyAt;

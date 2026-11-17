@@ -10,6 +10,8 @@ public final class ApiPaths {
   public static final String CASES = "/api/v1/recovery-cases";
   public static final String TRANSITIONS = CASES + "/{id}/transitions";
   public static final String TRANSITIONS_ALL = CASES + "/*/transitions";
+  public static final String ASSIGNMENT = CASES + "/{id}/assignment";
+  public static final String ASSIGNMENT_ALL = CASES + "/*/assignment";
 
   public static final String POLICY = "/api/v1/recovery-policy";
 

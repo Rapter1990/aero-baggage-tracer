@@ -8,6 +8,7 @@ import com.aerotrace.recovery.constant.ApiPaths;
 import com.aerotrace.recovery.constant.DocsConstants;
 import com.aerotrace.recovery.constant.RecoveryRules;
 import com.aerotrace.recovery.docs.ApiExamples;
+import com.aerotrace.recovery.model.dto.request.AssignRequest;
 import com.aerotrace.recovery.model.dto.request.CreateCaseRequest;
 import com.aerotrace.recovery.model.dto.request.TransitionRequest;
 import com.aerotrace.recovery.model.dto.response.CaseResponse;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -81,9 +83,7 @@ public class RecoveryCaseController {
   public ApiResponse<CaseResponse> create(
       @Valid @RequestBody CreateCaseRequest body,
       @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
-    if (idempotencyKey != null && !IDEMPOTENCY_KEY.matcher(idempotencyKey).matches()) {
-      throw new ApiException(ErrorCode.VALIDATION_ERROR, RecoveryRules.IDEMPOTENCY_KEY_INVALID);
-    }
+    requireValidKey(idempotencyKey);
     return ApiResponse.success(service.create(body, idempotencyKey));
   }
 
@@ -138,8 +138,62 @@ public class RecoveryCaseController {
   })
   @PatchMapping(ApiPaths.TRANSITIONS)
   public ApiResponse<CaseResponse> transition(
-      @PathVariable("id") UUID id, @Valid @RequestBody TransitionRequest body) {
-    return ApiResponse.success(service.transition(id, body));
+      @PathVariable("id") UUID id,
+      @Valid @RequestBody TransitionRequest body,
+      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+    requireValidKey(idempotencyKey);
+    return ApiResponse.success(service.transition(id, body, idempotencyKey));
+  }
+
+  @Operation(
+      summary = "Assign a case to a handler",
+      description =
+          "Agents and dispatchers only. Gives the case to an agent or dispatcher (the subject of"
+              + " their token). The state does not change; the version rises, so whoever is working"
+              + " on the case must reload. Assigning the person who already has the case changes"
+              + " nothing. A closed case cannot be assigned (409 ILLEGAL_TRANSITION).")
+  @ApiResponses({
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+        responseCode = "200",
+        description = "Assigned: the case with its new version"),
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+        responseCode = "400",
+        description = "The assignee or the version is missing or invalid",
+        content =
+            @Content(
+                schema = @Schema(ref = DocsConstants.API_ERROR_REF),
+                examples = @ExampleObject(value = ApiExamples.VALIDATION_ERROR))),
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+        responseCode = "404",
+        description = "No such case",
+        content =
+            @Content(
+                schema = @Schema(ref = DocsConstants.API_ERROR_REF),
+                examples = @ExampleObject(value = ApiExamples.CASE_NOT_FOUND))),
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+        responseCode = "409",
+        description =
+            "The case is closed (ILLEGAL_TRANSITION) or the version is stale (VERSION_CONFLICT)",
+        content =
+            @Content(
+                schema = @Schema(ref = DocsConstants.API_ERROR_REF),
+                examples = {
+                  @ExampleObject(
+                      name = "illegalTransition",
+                      value = ApiExamples.ILLEGAL_TRANSITION),
+                  @ExampleObject(name = "versionConflict", value = ApiExamples.VERSION_CONFLICT)
+                }))
+  })
+  @PutMapping(ApiPaths.ASSIGNMENT)
+  public ApiResponse<CaseResponse> assign(
+      @PathVariable("id") UUID id, @Valid @RequestBody AssignRequest body) {
+    return ApiResponse.success(service.assign(id, body));
+  }
+
+  private static void requireValidKey(String idempotencyKey) {
+    if (idempotencyKey != null && !IDEMPOTENCY_KEY.matcher(idempotencyKey).matches()) {
+      throw new ApiException(ErrorCode.VALIDATION_ERROR, RecoveryRules.IDEMPOTENCY_KEY_INVALID);
+    }
   }
 
   @Operation(
