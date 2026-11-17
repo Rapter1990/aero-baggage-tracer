@@ -11,13 +11,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-// UNVERIFIED against case study: AT-06, AT-07 and AT-08 are reconstructed from BR-02/BR-03.
+// AT-06 (BR-03 anomaly), AT-07 (BR-02 HIGH risk), AT-08 (risk cleared): see
+// docs/requirements/ACCEPTANCE_TESTS.md. The numeric defaults are still proposed.
 @Tag("unverified-spec")
 class AcceptanceScenariosTest {
 
   @Test
-  @DisplayName("AT-06 HIGH risk near departure")
-  void at06HighRiskNearDeparture() {
+  @DisplayName("AT-07 HIGH risk near departure")
+  void at07HighRiskNearDeparture() {
     // UNVERIFIED against case study
     try (TopologyHarness h = new TopologyHarness()) {
       // 15 minutes to departure, no loading confirmation yet: below the 20 minute threshold.
@@ -40,8 +41,8 @@ class AcceptanceScenariosTest {
   }
 
   @Test
-  @DisplayName("AT-07 scanner anomaly after 3 rejections in 5 min")
-  void at07ScannerAnomalyAfterThreeRejections() {
+  @DisplayName("AT-06 scanner anomaly after 3 rejections in 5 min")
+  void at06ScannerAnomalyAfterThreeRejections() {
     // UNVERIFIED against case study
     try (TopologyHarness h = new TopologyHarness()) {
       h.pipe(h.scan(Checkpoint.LOADED, at("10:00:00")));

@@ -1,7 +1,7 @@
 # AeroTrace – GitHub Issues Backlog
 
 Derived from `AeroTrace_Senior_Java_Microservices_Case_Study.pdf`. Each `##` section is one issue (title = heading).
-Suggested labels in `[brackets]`. Section numbers (§), BR-xx and AT-xx refer to the case study.
+Suggested labels in `[brackets]`. Section numbers (§), BR-xx and AT-xx refer to the case study; their exact wording and the owning issue of each are in `docs/requirements/`.
 
 **Suggested build order:** #1 → #2 → #3 → #4 → #5 → #6 → #8 → #7 → #9/#10/#11 (parallel) → #12/#13 → #14–#20 (cross-cutting, start early) → #21–#22.
 
@@ -223,7 +223,7 @@ Kafka Streams topology that computes connection risk and scan anomalies.
 - Reproducible late / duplicate / out-of-order fixture datasets.
 
 **Acceptance criteria**
-- [ ] AT-06, AT-07, AT-08. (Implemented and tested as `AT-06`/`AT-07`/`AT-08` scenarios in `AcceptanceScenariosTest`, but from proposed defaults: the case-study wording is not in the repo, so they stay open until checked against it.)
+- [x] AT-06, AT-07, AT-08 (wording checked against `docs/requirements/ACCEPTANCE_TESTS.md`; covered by `AcceptanceScenariosTest`). The numeric defaults (20 min threshold, 5 min window, grace) are still proposed values.
 - [x] `TopologyTestDriver` tests incl. grace-boundary cases.
 - [x] Metrics `stream_lag_seconds`, `baggage_risk_high` (unit-tested; `baggage.risk.changed.v1` also seen end to end on a running Compose stack).
 
