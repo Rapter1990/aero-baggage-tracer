@@ -15,6 +15,7 @@ public record CaseResponse(
     long version,
     String reason,
     RecoveryAction plannedAction,
+    Instant scannerAnomalyAt,
     Instant createdAt,
     Instant updatedAt) {
 
@@ -27,6 +28,7 @@ public record CaseResponse(
         c.getVersion(),
         c.getReason(),
         c.getPlannedAction(),
+        c.getScannerAnomalyAt(),
         c.getCreatedAt(),
         c.getUpdatedAt());
   }

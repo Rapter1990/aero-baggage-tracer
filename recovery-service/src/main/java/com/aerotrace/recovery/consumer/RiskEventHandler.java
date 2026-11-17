@@ -1,11 +1,11 @@
 package com.aerotrace.recovery.consumer;
 
 import com.aerotrace.common.event.EventEnvelope;
-import com.aerotrace.common.event.EventJson;
 import com.aerotrace.common.event.RiskChangedPayload;
 import com.aerotrace.common.model.RiskLevel;
 import com.aerotrace.recovery.constant.RecoveryRules;
 import com.aerotrace.recovery.repository.ProcessedEventRepository;
+import com.aerotrace.recovery.service.CapacityView;
 import com.aerotrace.recovery.service.RecoveryCaseService;
 import com.aerotrace.recovery.strategy.ActionContext;
 import com.aerotrace.recovery.strategy.RecoveryAction;
@@ -51,6 +51,7 @@ public class RiskEventHandler {
   private final RecoveryCaseService cases;
   private final ProcessedEventRepository processed;
   private final RecoveryActionSelector selector;
+  private final CapacityView capacity;
   private final Clock clock;
   private final MeterRegistry meters;
   private final TransactionTemplate transaction;
@@ -59,9 +60,11 @@ public class RiskEventHandler {
       RecoveryCaseService cases,
       ProcessedEventRepository processed,
       RecoveryActionSelector selector,
+      CapacityView capacity,
       Clock clock,
       MeterRegistry meters,
       PlatformTransactionManager transactionManager) {
+    this.capacity = capacity;
     this.cases = cases;
     this.processed = processed;
     this.selector = selector;
@@ -98,42 +101,28 @@ public class RiskEventHandler {
   }
 
   /**
-   * The action for a bag at risk. Capacity is assumed available here: the capacity-service is asked
-   * only when the case is reserved, and a refusal there is answered with 409. Without a departure
-   * time nothing can be judged, so the bag is held at the service desk.
+   * The action for a bag at risk. Capacity comes from the snapshots of the capacity events (a hint:
+   * the capacity-service is asked only when the case is reserved, and a refusal there is answered
+   * with 409). Without a departure time nothing can be judged, so the bag is held at the service
+   * desk.
    */
   private RecoveryAction plan(RiskChangedPayload risk, Instant now) {
     if (risk.departureAt() == null) {
       return RecoveryAction.HOLD_AT_SERVICE_DESK;
     }
-    return selector.choose(new ActionContext(Duration.between(now, risk.departureAt()), true));
+    return selector.choose(
+        new ActionContext(Duration.between(now, risk.departureAt()), capacity.available()));
   }
 
   private static EventEnvelope<RiskChangedPayload> read(String json) {
-    if (json == null || json.isBlank()) {
-      throw new PoisonEventException("empty event");
-    }
-    EventEnvelope<RiskChangedPayload> event;
-    try {
-      EventJson.Header header = EventJson.readHeader(json);
-      if (!RecoveryRules.EVENT_TYPE_RISK_CHANGED.equals(header.eventType())) {
-        throw new PoisonEventException("unexpected event type");
-      }
-      event = EventJson.read(json, RiskChangedPayload.class);
-    } catch (PoisonEventException e) {
-      throw e;
-    } catch (RuntimeException unreadable) {
-      throw new PoisonEventException("event is not readable", unreadable);
-    }
+    EventEnvelope<RiskChangedPayload> event =
+        EventReader.read(json, RecoveryRules.EVENT_TYPE_RISK_CHANGED, RiskChangedPayload.class);
     validate(event);
     return event;
   }
 
   private static void validate(EventEnvelope<RiskChangedPayload> event) {
     RiskChangedPayload risk = event.payload();
-    if (event.eventId() == null || event.eventId().isBlank() || event.eventId().length() > 128) {
-      throw new PoisonEventException("eventId is missing or too long");
-    }
     if (risk.bagTag() == null || !BAG_TAG.matcher(risk.bagTag()).matches()) {
       throw new PoisonEventException("bagTag is not a bag tag");
     }

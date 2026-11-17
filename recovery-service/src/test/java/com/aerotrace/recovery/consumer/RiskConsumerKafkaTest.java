@@ -3,15 +3,19 @@ package com.aerotrace.recovery.consumer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.aerotrace.common.event.CapacityChangedPayload;
 import com.aerotrace.common.event.DeadLetterPayload;
 import com.aerotrace.common.event.EventEnvelope;
 import com.aerotrace.common.event.EventJson;
 import com.aerotrace.common.event.RiskChangedPayload;
+import com.aerotrace.common.event.ScanAnomalyPayload;
 import com.aerotrace.common.event.Topics;
+import com.aerotrace.common.model.AnomalyType;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.common.model.RiskLevel;
 import com.aerotrace.recovery.base.AbstractRecoveryTest;
 import com.aerotrace.recovery.model.entity.RecoveryCaseEntity;
+import com.aerotrace.recovery.repository.CapacitySnapshotRepository;
 import com.aerotrace.recovery.repository.RecoveryCaseRepository;
 import java.time.Duration;
 import java.time.Instant;
@@ -64,6 +68,8 @@ class RiskConsumerKafkaTest extends AbstractRecoveryTest {
               .createTopics(
                   List.of(
                       new NewTopic(Topics.RISK_CHANGED, 1, (short) 1),
+                      new NewTopic(Topics.SCAN_ANOMALY, 1, (short) 1),
+                      new NewTopic(Topics.CAPACITY_CHANGED, 1, (short) 1),
                       new NewTopic(Topics.DEAD_LETTER, 1, (short) 1)))
               .all()
               .get();
@@ -92,6 +98,13 @@ class RiskConsumerKafkaTest extends AbstractRecoveryTest {
   }
 
   @Autowired RecoveryCaseRepository cases;
+  @Autowired CapacitySnapshotRepository snapshots;
+
+  /** Capacity snapshots are global: leave none behind for the tests that plan actions. */
+  @org.junit.jupiter.api.AfterEach
+  void clearSnapshots() {
+    snapshots.deleteAll();
+  }
 
   // ------------------------------------------------------------------ helpers
 
@@ -114,12 +127,16 @@ class RiskConsumerKafkaTest extends AbstractRecoveryTest {
   }
 
   private static void publish(String key, String value) throws Exception {
+    publishTo(Topics.RISK_CHANGED, key, value);
+  }
+
+  private static void publishTo(String topic, String key, String value) throws Exception {
     Properties config = new Properties();
     config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
     config.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
     config.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
     try (KafkaProducer<String, String> producer = new KafkaProducer<>(config)) {
-      producer.send(new ProducerRecord<>(Topics.RISK_CHANGED, key, value)).get();
+      producer.send(new ProducerRecord<>(topic, key, value)).get();
     }
   }
 
@@ -161,6 +178,61 @@ class RiskConsumerKafkaTest extends AbstractRecoveryTest {
     Thread.sleep(2_000);
     assertThat(casesOf(bag)).hasSize(1);
     assertThat(casesOf(bag).getFirst().getState()).isEqualTo(RecoveryState.OPEN);
+  }
+
+  @Test
+  @DisplayName("AT-06 a scanner anomaly on Kafka flags the case opened by a risk event")
+  void anomalyEventFlagsTheCase() throws Exception {
+    String bag = bagTag();
+    publish(bag + ":LEG-2", highRisk("EV-" + UUID.randomUUID(), bag, "LEG-2"));
+    await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertThat(casesOf(bag)).hasSize(1));
+
+    Instant start = Instant.now().minusSeconds(300);
+    publishTo(
+        Topics.SCAN_ANOMALY,
+        bag,
+        EventJson.write(
+            new EventEnvelope<>(
+                "EV-" + UUID.randomUUID(),
+                "baggage.scan.anomaly",
+                1,
+                bag,
+                Instant.now(),
+                Instant.now(),
+                "corr-kafka",
+                new ScanAnomalyPayload(
+                    bag, AnomalyType.SCANNER_ANOMALY, 3, start, start.plusSeconds(300)))));
+
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .untilAsserted(() -> assertThat(casesOf(bag).getFirst().getScannerAnomalyAt()).isNotNull());
+  }
+
+  @Test
+  @DisplayName("BR-04 a capacity event on Kafka is stored as a snapshot")
+  void capacityEventIsStored() throws Exception {
+    String resource = "CART-" + UUID.randomUUID();
+
+    publishTo(
+        Topics.CAPACITY_CHANGED,
+        resource,
+        EventJson.write(
+            new EventEnvelope<>(
+                "EV-" + UUID.randomUUID(),
+                "recovery.capacity.changed",
+                1,
+                resource,
+                Instant.now(),
+                Instant.now(),
+                "corr-kafka",
+                new CapacityChangedPayload(resource, 10, 4))));
+
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .untilAsserted(
+            () ->
+                assertThat(snapshots.findById(resource).orElseThrow().getRemainingSlots())
+                    .isEqualTo(4));
   }
 
   @Test

@@ -2,6 +2,7 @@ package com.aerotrace.recovery.repository;
 
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.recovery.model.entity.RecoveryCaseEntity;
+import com.aerotrace.recovery.strategy.RecoveryAction;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -56,6 +57,26 @@ public interface RecoveryCaseRepository extends JpaRepository<RecoveryCaseEntity
       @Param("reason") String reason,
       @Param("now") Instant now,
       @Param("reservationId") UUID reservationId);
+
+  /** Every case of a bag whose state is not in the given final states. */
+  List<RecoveryCaseEntity> findByBagTagAndStateNotIn(
+      String bagTag, Collection<RecoveryState> finalStates);
+
+  /**
+   * Records a scanner anomaly on a case without changing its state: the version rises (so a person
+   * working on the case is told to reload) and the plan becomes the given action. Returns 0 when
+   * the case was changed by someone else first.
+   */
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query(
+      "update RecoveryCaseEntity c set c.version = c.version + 1, c.scannerAnomalyAt = :now,"
+          + " c.plannedAction = :action, c.updatedAt = :now"
+          + " where c.id = :id and c.version = :expectedVersion")
+  int flagAnomaly(
+      @Param("id") UUID id,
+      @Param("expectedVersion") long expectedVersion,
+      @Param("now") Instant now,
+      @Param("action") RecoveryAction action);
 
   /** Forgets a hold after it was released; does nothing when the case holds another one. */
   @Modifying(flushAutomatically = true, clearAutomatically = true)

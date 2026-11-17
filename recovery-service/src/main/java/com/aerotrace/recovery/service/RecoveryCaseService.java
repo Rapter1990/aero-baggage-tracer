@@ -52,6 +52,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class RecoveryCaseService {
 
+  /** The states a case never leaves: it is not "active" once it reached one of them. */
+  private static final List<RecoveryState> FINAL_STATES =
+      List.of(
+          RecoveryState.RESOLVED, RecoveryState.CLOSED_AS_UNRECOVERABLE, RecoveryState.CANCELLED);
+
   private final RecoveryCaseRepository cases;
   private final StateTransitionRepository transitions;
   private final OutboxEventRepository outbox;
@@ -142,14 +147,42 @@ public class RecoveryCaseService {
         .orElse(false);
   }
 
+  /**
+   * Records a scanner anomaly (BR-03) on every active case of the bag that does not have one yet:
+   * the scan data is unreliable, so each case is planned for the service desk, where an agent
+   * checks the bag. The state does not change; the version rises and a history row and an event
+   * record the flag. Returns how many cases were flagged. Must run inside the caller's transaction.
+   */
+  public int flagScannerAnomaly(String bagTag) {
+    int flagged = 0;
+    for (RecoveryCaseEntity c : cases.findByBagTagAndStateNotIn(bagTag, FINAL_STATES)) {
+      if (c.getScannerAnomalyAt() != null) {
+        continue;
+      }
+      Instant now = Instant.now(clock);
+      int updated =
+          cases.flagAnomaly(c.getId(), c.getVersion(), now, RecoveryAction.HOLD_AT_SERVICE_DESK);
+      if (updated == 0) {
+        throw new ApiException(ErrorCode.VERSION_CONFLICT, RecoveryRules.VERSION_MISMATCH);
+      }
+      RecoveryCaseEntity fresh = cases.findById(c.getId()).orElseThrow();
+      transitions.save(
+          new StateTransitionEntity(
+              c.getId(),
+              c.getState(),
+              c.getState(),
+              RecoveryRules.SYSTEM_ACTOR,
+              now,
+              RecoveryRules.SCANNER_ANOMALY,
+              fresh.getVersion()));
+      queueEvent(fresh, now);
+      flagged++;
+    }
+    return flagged;
+  }
+
   private Optional<RecoveryCaseEntity> activeCase(String bagTag, String legId) {
-    return cases.findFirstByBagTagAndLegIdAndStateNotIn(
-        bagTag,
-        legId,
-        List.of(
-            RecoveryState.RESOLVED,
-            RecoveryState.CLOSED_AS_UNRECOVERABLE,
-            RecoveryState.CANCELLED));
+    return cases.findFirstByBagTagAndLegIdAndStateNotIn(bagTag, legId, FINAL_STATES);
   }
 
   private RecoveryCaseEntity open(

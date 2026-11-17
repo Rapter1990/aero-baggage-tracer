@@ -47,8 +47,12 @@ public class RecoveryCaseEntity {
 
   /** The action the recovery strategy chose when the case was opened from a risk event. */
   @Enumerated(EnumType.STRING)
-  @Column(name = "planned_action", updatable = false, length = 30)
+  @Column(name = "planned_action", length = 30)
   private RecoveryAction plannedAction;
+
+  /** When a scanner anomaly was recorded on the bag of this case; null when none was. */
+  @Column(name = "scanner_anomaly_at")
+  private Instant scannerAnomalyAt;
 
   /** The capacity hold of this case in the capacity-service; null when there is none. */
   @Column(name = "reservation_id")

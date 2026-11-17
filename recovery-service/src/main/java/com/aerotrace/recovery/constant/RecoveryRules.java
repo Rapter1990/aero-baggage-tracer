@@ -39,6 +39,13 @@ public final class RecoveryRules {
   public static final String RISK_CLEARED =
       "RISK_CLEARED: the connection risk dropped before the case was worked on";
 
+  /** Reason recorded when a scanner anomaly was flagged on the bag of an active case (BR-03). */
+  public static final String SCANNER_ANOMALY =
+      "SCANNER_ANOMALY: repeated rejected scans, an agent must check the bag";
+
+  public static final String EVENT_TYPE_SCAN_ANOMALY = "baggage.scan.anomaly";
+  public static final String EVENT_TYPE_CAPACITY_CHANGED = "recovery.capacity.changed";
+  public static final int MAX_RESOURCE_ID_LENGTH = 64;
   public static final String EVENT_TYPE_RISK_CHANGED = "baggage.risk.changed";
   public static final String EVENT_TYPE_DEAD_LETTER = "baggage.dead-letter";
   public static final int DEAD_LETTER_SCHEMA_VERSION = 1;
