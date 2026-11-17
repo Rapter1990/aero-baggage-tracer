@@ -1,6 +1,7 @@
 package com.aerotrace.recovery.model.entity;
 
 import com.aerotrace.common.model.RecoveryState;
+import com.aerotrace.recovery.strategy.RecoveryAction;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -44,6 +45,11 @@ public class RecoveryCaseEntity {
   @Column(nullable = false, length = 500)
   private String reason;
 
+  /** The action the recovery strategy chose when the case was opened from a risk event. */
+  @Enumerated(EnumType.STRING)
+  @Column(name = "planned_action", updatable = false, length = 30)
+  private RecoveryAction plannedAction;
+
   /** The capacity hold of this case in the capacity-service; null when there is none. */
   @Column(name = "reservation_id")
   private UUID reservationId;
@@ -70,7 +76,9 @@ public class RecoveryCaseEntity {
       String reason,
       String idempotencyKey,
       String createdBy,
-      Instant createdAt) {
+      Instant createdAt,
+      RecoveryAction plannedAction) {
+    this.plannedAction = plannedAction;
     this.bagTag = bagTag;
     this.legId = legId;
     this.reason = reason;

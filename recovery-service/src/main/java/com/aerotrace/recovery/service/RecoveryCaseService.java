@@ -23,12 +23,14 @@ import com.aerotrace.recovery.model.entity.StateTransitionEntity;
 import com.aerotrace.recovery.repository.OutboxEventRepository;
 import com.aerotrace.recovery.repository.RecoveryCaseRepository;
 import com.aerotrace.recovery.repository.StateTransitionRepository;
+import com.aerotrace.recovery.strategy.RecoveryAction;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -87,7 +89,8 @@ public class RecoveryCaseService {
       }
     }
     try {
-      RecoveryCaseEntity created = transaction.execute(status -> open(request, idempotencyKey));
+      RecoveryCaseEntity created =
+          transaction.execute(status -> open(request, idempotencyKey, null));
       return CaseResponse.of(created);
     } catch (DataIntegrityViolationException conflict) {
       if (idempotencyKey != null) {
@@ -101,13 +104,68 @@ public class RecoveryCaseService {
     }
   }
 
-  private RecoveryCaseEntity open(CreateCaseRequest request, String idempotencyKey) {
+  /**
+   * Opens a case for a bag at risk, from a risk event. Must run inside the caller's transaction
+   * (the consumer's, together with its dedupe row). Returns false when the bag and leg already have
+   * an active case: the event changes nothing then (BR-01).
+   */
+  public boolean openFromRisk(String bagTag, String legId, RecoveryAction plannedAction) {
+    if (activeCase(bagTag, legId).isPresent()) {
+      return false;
+    }
+    open(
+        new CreateCaseRequest(bagTag, legId, RecoveryRules.HIGH_CONNECTION_RISK),
+        null,
+        plannedAction);
+    return true;
+  }
+
+  /**
+   * Cancels the active case of a bag and leg when the risk has cleared, but only while nobody has
+   * started on it (state OPEN): a case being assessed or reserved is a person's work and stays.
+   * Must run inside the caller's transaction.
+   */
+  public boolean cancelOpenCase(String bagTag, String legId, String reason) {
+    return activeCase(bagTag, legId)
+        .filter(c -> c.getState() == RecoveryState.OPEN)
+        .map(
+            c -> {
+              apply(
+                  c.getId(),
+                  RecoveryState.CANCELLED,
+                  c.getVersion(),
+                  reason,
+                  RecoveryRules.SYSTEM_ACTOR,
+                  null);
+              return true;
+            })
+        .orElse(false);
+  }
+
+  private Optional<RecoveryCaseEntity> activeCase(String bagTag, String legId) {
+    return cases.findFirstByBagTagAndLegIdAndStateNotIn(
+        bagTag,
+        legId,
+        List.of(
+            RecoveryState.RESOLVED,
+            RecoveryState.CLOSED_AS_UNRECOVERABLE,
+            RecoveryState.CANCELLED));
+  }
+
+  private RecoveryCaseEntity open(
+      CreateCaseRequest request, String idempotencyKey, RecoveryAction plannedAction) {
     Instant now = Instant.now(clock);
     String actor = actor();
     RecoveryCaseEntity created =
         cases.saveAndFlush(
             new RecoveryCaseEntity(
-                request.bagTag(), request.legId(), request.reason(), idempotencyKey, actor, now));
+                request.bagTag(),
+                request.legId(),
+                request.reason(),
+                idempotencyKey,
+                actor,
+                now,
+                plannedAction));
     transitions.save(
         new StateTransitionEntity(
             created.getId(), null, RecoveryState.OPEN, actor, now, request.reason(), 1));

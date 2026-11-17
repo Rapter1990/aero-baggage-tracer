@@ -8,7 +8,7 @@ Sources of truth: [BUSINESS_RULES.md](BUSINESS_RULES.md) and [ACCEPTANCE_TESTS.m
 
 | Rule | Owning issue | Test |
 |------|--------------|------|
-| BR-01 | #11 Recovery Service | `RecoveryCaseApiTest` (AT-09 and the BR-01 cases) |
+| BR-01 | #11 Recovery Service | `RecoveryCaseApiTest` (AT-09 and the BR-01 cases), `RiskEventHandlerTest` (events never open a second case) |
 | BR-02 | #10 Risk Streams | `LegRiskTest`, `AcceptanceScenariosTest` (AT-07) |
 | BR-03 | #10 Risk Streams | `ScanAnomalyTest`, `AcceptanceScenariosTest` (AT-06) |
 | BR-04 | #12 Capacity Service | |

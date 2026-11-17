@@ -13,7 +13,30 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  */
 @ConfigurationProperties("aerotrace.recovery")
 public record RecoveryProperties(
-    @DefaultValue Outbox outbox, @DefaultValue Capacity capacity, @DefaultValue Jwt jwt) {
+    @DefaultValue Outbox outbox,
+    @DefaultValue Capacity capacity,
+    @DefaultValue Strategy strategy,
+    @DefaultValue Consumers consumers,
+    @DefaultValue Jwt jwt) {
+
+  /**
+   * Recovery action choice.
+   *
+   * @param minimumExpediteTime the least time a transfer needs; with less left the bag is rerouted
+   */
+  public record Strategy(@DefaultValue("5m") Duration minimumExpediteTime) {}
+
+  /**
+   * Kafka consumers.
+   *
+   * @param enabled whether the listeners start
+   * @param retryAttempts how often a failing event is retried before it is dead-lettered
+   * @param retryBackoff the first wait between retries; it doubles each time
+   */
+  public record Consumers(
+      @DefaultValue("true") boolean enabled,
+      @DefaultValue("3") int retryAttempts,
+      @DefaultValue("200ms") Duration retryBackoff) {}
 
   /**
    * The capacity-service client.

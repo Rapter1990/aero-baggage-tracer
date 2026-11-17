@@ -18,6 +18,10 @@ public interface RecoveryCaseRepository extends JpaRepository<RecoveryCaseEntity
 
   Optional<RecoveryCaseEntity> findByIdempotencyKey(String idempotencyKey);
 
+  /** The active case of a bag and leg: the one whose state is not in the given final states. */
+  Optional<RecoveryCaseEntity> findFirstByBagTagAndLegIdAndStateNotIn(
+      String bagTag, String legId, Collection<RecoveryState> finalStates);
+
   /** Filters by state when given; the caller supplies a deterministic sort. */
   @Query("select c from RecoveryCaseEntity c where (:state is null or c.state = :state)")
   Page<RecoveryCaseEntity> search(@Param("state") RecoveryState state, Pageable pageable);

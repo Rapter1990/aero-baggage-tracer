@@ -33,6 +33,16 @@ public final class RecoveryRules {
   public static final String IDEMPOTENCY_KEY_INVALID =
       "Idempotency-Key must be 1-128 visible ASCII characters";
   public static final String ILLEGAL_MOVE = "This move is not allowed from the current state";
+  public static final String HIGH_CONNECTION_RISK = "HIGH_CONNECTION_RISK";
+
+  /** Reason recorded when a risk cleared before anyone started on the case. */
+  public static final String RISK_CLEARED =
+      "RISK_CLEARED: the connection risk dropped before the case was worked on";
+
+  public static final String EVENT_TYPE_RISK_CHANGED = "baggage.risk.changed";
+  public static final String EVENT_TYPE_DEAD_LETTER = "baggage.dead-letter";
+  public static final int DEAD_LETTER_SCHEMA_VERSION = 1;
+
   public static final String CAPACITY_EXCEEDED = "No recovery capacity is left";
   public static final String CAPACITY_UNAVAILABLE =
       "Recovery capacity could not be checked right now; try again shortly";

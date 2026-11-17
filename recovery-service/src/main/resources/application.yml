@@ -43,6 +43,14 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     template:
       observation-enabled: true
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP:recovery-service}
+      # A new group reads the topic from the start, so no risk event is missed on first start.
+      auto-offset-reset: earliest
+      # Offsets are committed by the listener container after a record was handled (or dead-lettered).
+      enable-auto-commit: false
+      properties:
+        max.poll.interval.ms: 300000
     producer:
       # The outbox relay retries, so the producer must not reorder or duplicate on its own retries.
       acks: all
@@ -61,6 +69,14 @@ aerotrace:
       batch-size: ${RECOVERY_OUTBOX_BATCH_SIZE:200}
       # Published rows older than this are removed.
       retention: ${RECOVERY_OUTBOX_RETENTION:7d}
+    strategy:
+      # The least time a transfer needs; with less left the bag is rerouted to the next flight.
+      minimum-expedite-time: ${RECOVERY_MIN_EXPEDITE_TIME:5m}
+    consumers:
+      enabled: ${RECOVERY_CONSUMERS_ENABLED:true}
+      # Transient failures are retried this many times (doubling wait) before the event is dead-lettered.
+      retry-attempts: ${RECOVERY_CONSUMER_RETRY_ATTEMPTS:3}
+      retry-backoff: ${RECOVERY_CONSUMER_RETRY_BACKOFF:200ms}
     capacity:
       # Where the capacity-service answers (the Compose / Kubernetes service name).
       base-url: ${CAPACITY_SERVICE_URL:http://localhost:1116}

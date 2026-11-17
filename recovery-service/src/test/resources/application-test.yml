@@ -36,6 +36,10 @@ aerotrace:
     outbox:
       # Tests drive the relay by hand; the scheduler only fires once an hour.
       relay-delay: 1h
+    consumers:
+      # Only the Kafka test starts the listeners; the others call the handler directly.
+      enabled: false
+      retry-backoff: 50ms
     capacity:
       # A slow capacity-service is cut off quickly; the sweeper only fires when a test calls it.
       read-timeout: 500ms

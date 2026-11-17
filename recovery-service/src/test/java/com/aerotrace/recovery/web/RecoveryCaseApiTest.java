@@ -531,10 +531,16 @@ class RecoveryCaseApiTest extends AbstractRecoveryTest {
     // Kafka is back: the committed events go out, in order.
     when(kafka.send(anyString(), anyString(), anyString()))
         .thenReturn(CompletableFuture.completedFuture(org.mockito.Mockito.mock(SendResult.class)));
-    // The database is shared with other tests, so drain every batch.
-    while (relay.publishPending() > 0) {
-      // keep going until nothing is left
-    }
+    // The database is shared with other tests, and another application context's relay may hold the
+    // relay lock for a moment: keep relaying until this case's events are out.
+    org.awaitility.Awaitility.await()
+        .atMost(java.time.Duration.ofSeconds(30))
+        .untilAsserted(
+            () -> {
+              relay.publishPending();
+              assertThat(outbox.findByMessageKeyOrderByCreatedAt(caseId))
+                  .allSatisfy(e -> assertThat(e.getPublishedAt()).isNotNull());
+            });
     var published = outbox.findByMessageKeyOrderByCreatedAt(caseId);
 
     assertThat(published).allSatisfy(e -> assertThat(e.getPublishedAt()).isNotNull());
@@ -553,9 +559,18 @@ class RecoveryCaseApiTest extends AbstractRecoveryTest {
     JsonNode current = openedCase();
     when(kafka.send(anyString(), anyString(), anyString()))
         .thenReturn(CompletableFuture.completedFuture(org.mockito.Mockito.mock(SendResult.class)));
-    while (relay.publishPending() > 0) {
-      // drain every batch
-    }
+    org.awaitility.Awaitility.await()
+        .atMost(java.time.Duration.ofSeconds(30))
+        .untilAsserted(
+            () -> {
+              relay.publishPending();
+              assertThat(
+                      outbox
+                          .findByMessageKeyOrderByCreatedAt(current.get("caseId").asString())
+                          .stream()
+                          .filter(e -> e.getPublishedAt() == null))
+                  .isEmpty();
+            });
     long publishedBefore =
         outbox.findByMessageKeyOrderByCreatedAt(current.get("caseId").asString()).stream()
             .filter(e -> e.getPublishedAt() != null)

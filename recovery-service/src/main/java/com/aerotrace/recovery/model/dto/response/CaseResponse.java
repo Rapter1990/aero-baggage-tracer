@@ -2,6 +2,7 @@ package com.aerotrace.recovery.model.dto.response;
 
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.recovery.model.entity.RecoveryCaseEntity;
+import com.aerotrace.recovery.strategy.RecoveryAction;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -13,6 +14,7 @@ public record CaseResponse(
     RecoveryState state,
     long version,
     String reason,
+    RecoveryAction plannedAction,
     Instant createdAt,
     Instant updatedAt) {
 
@@ -24,6 +26,7 @@ public record CaseResponse(
         c.getState(),
         c.getVersion(),
         c.getReason(),
+        c.getPlannedAction(),
         c.getCreatedAt(),
         c.getUpdatedAt());
   }
