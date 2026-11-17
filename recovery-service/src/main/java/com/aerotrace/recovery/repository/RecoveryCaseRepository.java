@@ -3,6 +3,8 @@ package com.aerotrace.recovery.repository;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.recovery.model.entity.RecoveryCaseEntity;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -35,4 +37,32 @@ public interface RecoveryCaseRepository extends JpaRepository<RecoveryCaseEntity
       @Param("to") RecoveryState to,
       @Param("reason") String reason,
       @Param("now") Instant now);
+
+  /** Like {@link #advance} and records the capacity hold that was taken for the move. */
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query(
+      "update RecoveryCaseEntity c set c.state = :to, c.version = c.version + 1,"
+          + " c.reason = :reason, c.updatedAt = :now, c.reservationId = :reservationId,"
+          + " c.reservedAt = :now"
+          + " where c.id = :id and c.version = :expectedVersion")
+  int advanceAndHold(
+      @Param("id") UUID id,
+      @Param("expectedVersion") long expectedVersion,
+      @Param("to") RecoveryState to,
+      @Param("reason") String reason,
+      @Param("now") Instant now,
+      @Param("reservationId") UUID reservationId);
+
+  /** Forgets a hold after it was released; does nothing when the case holds another one. */
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query(
+      "update RecoveryCaseEntity c set c.reservationId = null"
+          + " where c.id = :id and c.reservationId = :reservationId")
+  int clearHold(@Param("id") UUID id, @Param("reservationId") UUID reservationId);
+
+  /** Cases in a state whose hold was taken before the given time. */
+  List<RecoveryCaseEntity> findByStateAndReservedAtBefore(RecoveryState state, Instant before);
+
+  /** Final cases that still record a hold: their release failed and must be retried. */
+  List<RecoveryCaseEntity> findByStateInAndReservationIdIsNotNull(Collection<RecoveryState> states);
 }

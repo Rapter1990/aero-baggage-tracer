@@ -274,6 +274,7 @@ Finite recovery cart / flight / bag-slot capacity with atomic reservations.
 
 **Scope**
 - `POST /capacity/reservations`, `DELETE /capacity/reservations/{id}` (release/compensation), admin-only resource management.
+- Contract the recovery-service (#11) already calls: the caller chooses `reservationId` in the `POST` body (`{reservationId, caseId, bagTag, legId, slots}`), answers `201` with `ApiResponse{reservationId, status}` or `409 CAPACITY_EXCEEDED`; `DELETE /{id}` answers `204`, or `404` when there is no such hold (treated as released). Releases made by the recovery-service sweeper carry no user token, so release must be allowed for service callers (or the identity-service must issue service tokens).
 - Atomic reservation in PostgreSQL (conditional `UPDATE … WHERE remaining > 0` or row lock); **DB is authoritative**, Redis only an optional cache/hint.
 - Reservation TTL / provisional hold expiry job.
 - Tables: `capacity_resource`, `capacity_reservation`, outbox; publish `recovery.capacity.changed.v1` (key `resourceId`).

@@ -44,6 +44,14 @@ public class RecoveryCaseEntity {
   @Column(nullable = false, length = 500)
   private String reason;
 
+  /** The capacity hold of this case in the capacity-service; null when there is none. */
+  @Column(name = "reservation_id")
+  private UUID reservationId;
+
+  /** When the hold was made; the hold expires a configured time after this. */
+  @Column(name = "reserved_at")
+  private Instant reservedAt;
+
   @Column(name = "idempotency_key", updatable = false, length = 128)
   private String idempotencyKey;
 

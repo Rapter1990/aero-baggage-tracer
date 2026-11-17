@@ -33,5 +33,13 @@ public final class RecoveryRules {
   public static final String IDEMPOTENCY_KEY_INVALID =
       "Idempotency-Key must be 1-128 visible ASCII characters";
   public static final String ILLEGAL_MOVE = "This move is not allowed from the current state";
+  public static final String CAPACITY_EXCEEDED = "No recovery capacity is left";
+  public static final String CAPACITY_UNAVAILABLE =
+      "Recovery capacity could not be checked right now; try again shortly";
+
+  /** Reason recorded when a hold ran out and the case was cancelled (AT-12). */
+  public static final String RESERVATION_TIMEOUT =
+      "RESERVATION_TIMEOUT: the capacity hold expired and was released";
+
   public static final String CASE_IS_FINAL = "The case is closed; a closed case cannot be reopened";
 }

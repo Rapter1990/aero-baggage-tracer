@@ -32,7 +32,7 @@ Sources of truth: [BUSINESS_RULES.md](BUSINESS_RULES.md) and [ACCEPTANCE_TESTS.m
 | AT-09 | #11 | `RecoveryCaseApiTest` |
 | AT-10 | #11 | `RecoveryStateMachineTest`, `RecoveryCaseApiTest` |
 | AT-11 | #12 | |
-| AT-12 | #11 | |
+| AT-12 | #11 | `CapacitySagaTest` (against a stub capacity-service; the real service is #12) |
 | AT-13 | #14 | |
 | AT-14 | #11, #15 | case level only: `RecoveryCaseApiTest` (a failed publish keeps the event, it goes out later); the Kafka-outage demonstration is #15 |
 | AT-15 | #9, #8 | not tagged with its id yet |

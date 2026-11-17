@@ -15,6 +15,8 @@ public enum ErrorCode {
   VERSION_CONFLICT(HttpStatus.CONFLICT),
   DUPLICATE_RECOVERY_CASE(HttpStatus.CONFLICT),
   CAPACITY_EXCEEDED(HttpStatus.CONFLICT),
+  /** A dependency (for example the capacity-service) did not answer in time; retry later. */
+  CAPACITY_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE),
   RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS),
   INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR);
 

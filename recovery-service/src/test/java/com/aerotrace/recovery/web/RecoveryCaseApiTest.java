@@ -14,7 +14,7 @@ import com.aerotrace.common.event.EventJson;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.common.security.JwtClaims;
 import com.aerotrace.common.security.Role;
-import com.aerotrace.recovery.base.AbstractTestContainerConfiguration;
+import com.aerotrace.recovery.base.AbstractRecoveryTest;
 import com.aerotrace.recovery.outbox.OutboxRelay;
 import com.aerotrace.recovery.repository.OutboxEventRepository;
 import com.aerotrace.recovery.repository.StateTransitionRepository;
@@ -53,7 +53,7 @@ import tools.jackson.databind.ObjectMapper;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-class RecoveryCaseApiTest extends AbstractTestContainerConfiguration {
+class RecoveryCaseApiTest extends AbstractRecoveryTest {
 
   private static final String CASES = "/api/v1/recovery-cases";
 

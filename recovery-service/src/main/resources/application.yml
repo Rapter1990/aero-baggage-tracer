@@ -61,6 +61,15 @@ aerotrace:
       batch-size: ${RECOVERY_OUTBOX_BATCH_SIZE:200}
       # Published rows older than this are removed.
       retention: ${RECOVERY_OUTBOX_RETENTION:7d}
+    capacity:
+      # Where the capacity-service answers (the Compose / Kubernetes service name).
+      base-url: ${CAPACITY_SERVICE_URL:http://localhost:1116}
+      # A slower capacity-service counts as unavailable: the move is refused with 503, nothing stays held.
+      connect-timeout: ${CAPACITY_CONNECT_TIMEOUT:2s}
+      read-timeout: ${CAPACITY_READ_TIMEOUT:5s}
+      # A case that stays RESERVED longer than this is cancelled and its hold released.
+      hold-timeout: ${CAPACITY_HOLD_TIMEOUT:15m}
+      sweep-delay: ${CAPACITY_SWEEP_DELAY:30s}
     docs:
       enabled: ${DOCS_ENABLED:true}
     jwt:

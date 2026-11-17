@@ -36,5 +36,10 @@ aerotrace:
     outbox:
       # Tests drive the relay by hand; the scheduler only fires once an hour.
       relay-delay: 1h
+    capacity:
+      # A slow capacity-service is cut off quickly; the sweeper only fires when a test calls it.
+      read-timeout: 500ms
+      connect-timeout: 1s
+      sweep-delay: 1h
     jwt:
       public-key-location: classpath:keys/public.pem

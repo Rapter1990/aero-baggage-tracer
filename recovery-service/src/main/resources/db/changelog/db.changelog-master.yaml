@@ -3,3 +3,5 @@ databaseChangeLog:
       file: db/changelog/changes/001-recovery-case.sql
   - include:
       file: db/changelog/changes/002-outbox-and-dedupe.sql
+  - include:
+      file: db/changelog/changes/003-capacity-hold.sql

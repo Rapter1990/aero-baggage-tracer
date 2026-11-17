@@ -9,6 +9,7 @@ import com.aerotrace.common.event.EventJson;
 import com.aerotrace.common.event.Topics;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.common.security.SecurityContextHelper;
+import com.aerotrace.recovery.capacity.CapacityGateway;
 import com.aerotrace.recovery.constant.MetricNames;
 import com.aerotrace.recovery.constant.RecoveryRules;
 import com.aerotrace.recovery.domain.RecoveryStateMachine;
@@ -27,6 +28,7 @@ import io.micrometer.core.instrument.Timer;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -53,6 +55,7 @@ public class RecoveryCaseService {
   private final OutboxEventRepository outbox;
   private final Clock clock;
   private final MeterRegistry meters;
+  private final CapacityGateway capacity;
   private final TransactionTemplate transaction;
 
   public RecoveryCaseService(
@@ -61,7 +64,9 @@ public class RecoveryCaseService {
       OutboxEventRepository outbox,
       Clock clock,
       MeterRegistry meters,
+      CapacityGateway capacity,
       PlatformTransactionManager transactionManager) {
+    this.capacity = capacity;
     this.cases = cases;
     this.transitions = transitions;
     this.outbox = outbox;
@@ -121,38 +126,91 @@ public class RecoveryCaseService {
     return CaseResponse.of(existing);
   }
 
-  @Transactional
   public CaseResponse transition(UUID caseId, TransitionRequest request) {
+    return move(
+        caseId, request.targetState(), request.expectedVersion(), request.reason(), actor());
+  }
+
+  /**
+   * Moves a case. Moving to RESERVED is a saga over two systems that cannot share a transaction:
+   *
+   * <ol>
+   *   <li>check the move is legal and the version current (nothing is held for a move that would be
+   *       refused);
+   *   <li>hold a slot in the capacity-service (its failure leaves the case untouched: 409 when
+   *       full, 503 when it does not answer, after releasing a hold that may have been made);
+   *   <li>in one local transaction: move the case, record the reservation id, write the history row
+   *       and the outbox event;
+   *   <li>if step 3 fails (a concurrent move won, the database failed), release the hold
+   *       (compensation) and report the failure.
+   * </ol>
+   *
+   * <p>A crash between steps 2 and 3 leaves a hold the case does not know. That window is closed by
+   * the capacity-service expiring provisional holds. Cancelling a case releases its hold after the
+   * commit; a release that fails keeps the reservation id on the case for the sweeper.
+   */
+  private CaseResponse move(
+      UUID caseId, RecoveryState target, long expectedVersion, String reason, String actor) {
     RecoveryCaseEntity current =
         cases
             .findById(caseId)
             .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, RecoveryRules.CASE_NOT_FOUND));
-    if (current.getVersion() != request.expectedVersion()) {
+    if (current.getVersion() != expectedVersion) {
       throw new ApiException(ErrorCode.VERSION_CONFLICT, RecoveryRules.VERSION_MISMATCH);
     }
+    RecoveryStateMachine.requireAllowed(current.getState(), target, reason);
+
+    UUID reservationId =
+        target == RecoveryState.RESERVED
+            ? capacity.reserve(caseId, current.getBagTag(), current.getLegId())
+            : null;
+    CaseResponse moved;
+    try {
+      moved =
+          transaction.execute(
+              status -> apply(caseId, target, expectedVersion, reason, actor, reservationId));
+    } catch (RuntimeException failure) {
+      if (reservationId != null) {
+        // Compensation: the case did not move, so the hold must not stay.
+        capacity.release(reservationId);
+      }
+      throw failure;
+    }
+    if (target == RecoveryState.CANCELLED || target == RecoveryState.CLOSED_AS_UNRECOVERABLE) {
+      releaseHold(caseId);
+    }
+    return moved;
+  }
+
+  /** The local transaction of a move: state, history and event together. */
+  private CaseResponse apply(
+      UUID caseId,
+      RecoveryState target,
+      long expectedVersion,
+      String reason,
+      String actor,
+      UUID reservationId) {
+    RecoveryCaseEntity current =
+        cases
+            .findById(caseId)
+            .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, RecoveryRules.CASE_NOT_FOUND));
     RecoveryState from = current.getState();
-    RecoveryStateMachine.requireAllowed(from, request.targetState(), request.reason());
+    RecoveryStateMachine.requireAllowed(from, target, reason);
 
     Instant now = Instant.now(clock);
     int moved =
-        cases.advance(
-            caseId, request.expectedVersion(), request.targetState(), request.reason(), now);
+        reservationId == null
+            ? cases.advance(caseId, expectedVersion, target, reason, now)
+            : cases.advanceAndHold(caseId, expectedVersion, target, reason, now, reservationId);
     if (moved == 0) {
       // Somebody moved the case between the read and the update.
       throw new ApiException(ErrorCode.VERSION_CONFLICT, RecoveryRules.VERSION_MISMATCH);
     }
     RecoveryCaseEntity updated = cases.findById(caseId).orElseThrow();
     transitions.save(
-        new StateTransitionEntity(
-            caseId,
-            from,
-            request.targetState(),
-            actor(),
-            now,
-            request.reason(),
-            updated.getVersion()));
+        new StateTransitionEntity(caseId, from, target, actor, now, reason, updated.getVersion()));
     queueEvent(updated, now);
-    if (request.targetState() == RecoveryState.RESOLVED) {
+    if (target == RecoveryState.RESOLVED) {
       Timer.builder(MetricNames.RECOVERY_RESOLUTION)
           .description("Time from opening a case to resolving it")
           .publishPercentileHistogram()
@@ -170,6 +228,58 @@ public class RecoveryCaseService {
         PageRequest.of(
             Math.max(page, 0), boundedSize, Sort.by("createdAt").ascending().and(Sort.by("id")));
     return PageResponse.of(cases.search(state, pageable), CaseResponse::of);
+  }
+
+  /**
+   * Releases the hold of a case in the capacity-service and forgets it on success. A failed release
+   * keeps the reservation id on the case, so {@link #retryReleases()} tries again.
+   */
+  public void releaseHold(UUID caseId) {
+    cases
+        .findById(caseId)
+        .map(RecoveryCaseEntity::getReservationId)
+        .ifPresent(
+            reservationId -> {
+              if (capacity.release(reservationId)) {
+                transaction.executeWithoutResult(status -> cases.clearHold(caseId, reservationId));
+              }
+            });
+  }
+
+  /**
+   * Compensation for a hold that ran out (AT-12): every case still RESERVED after {@code
+   * expiredBefore} is cancelled with a clear reason and its hold released. A case that someone
+   * moved in the meantime is left alone.
+   */
+  public int expireHolds(Instant expiredBefore) {
+    int expired = 0;
+    for (RecoveryCaseEntity c :
+        cases.findByStateAndReservedAtBefore(RecoveryState.RESERVED, expiredBefore)) {
+      try {
+        move(
+            c.getId(),
+            RecoveryState.CANCELLED,
+            c.getVersion(),
+            RecoveryRules.RESERVATION_TIMEOUT,
+            RecoveryRules.SYSTEM_ACTOR);
+        expired++;
+      } catch (ApiException movedByOthers) {
+        // Moved or changed since it was listed: nothing to expire any more.
+      }
+    }
+    return expired;
+  }
+
+  /** Tries again to release holds of cases that are already final. */
+  public int retryReleases() {
+    int retried = 0;
+    for (RecoveryCaseEntity c :
+        cases.findByStateInAndReservationIdIsNotNull(
+            List.of(RecoveryState.CANCELLED, RecoveryState.CLOSED_AS_UNRECOVERABLE))) {
+      releaseHold(c.getId());
+      retried++;
+    }
+    return retried;
   }
 
   private void queueEvent(RecoveryCaseEntity c, Instant now) {
