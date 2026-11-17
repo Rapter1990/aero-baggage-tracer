@@ -77,6 +77,8 @@ aerotrace:
       # Transient failures are retried this many times (doubling wait) before the event is dead-lettered.
       retry-attempts: ${RECOVERY_CONSUMER_RETRY_ATTEMPTS:3}
       retry-backoff: ${RECOVERY_CONSUMER_RETRY_BACKOFF:200ms}
+      # Processed event ids are forgotten after this; keep it longer than the topics' retention (7d).
+      dedupe-retention: ${RECOVERY_DEDUPE_RETENTION:14d}
     capacity:
       # Where the capacity-service answers (the Compose / Kubernetes service name).
       base-url: ${CAPACITY_SERVICE_URL:http://localhost:1116}

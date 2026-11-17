@@ -22,6 +22,11 @@ public interface ProcessedEventRepository extends JpaRepository<ProcessedEventEn
       nativeQuery = true)
   int insertIfAbsent(@Param("id") String eventId, @Param("at") Instant at);
 
+  /** Forgets event ids older than the cutoff: Kafka no longer holds those events to redeliver. */
+  @Modifying
+  @Query("delete from ProcessedEventEntity e where e.processedAt < :cutoff")
+  int deleteProcessedBefore(@Param("cutoff") Instant cutoff);
+
   default boolean markProcessed(String eventId, Instant at) {
     return insertIfAbsent(eventId, at) == 1;
   }

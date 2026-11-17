@@ -161,6 +161,27 @@ class RecoveryCaseApiTest extends AbstractRecoveryTest {
   }
 
   @Test
+  @DisplayName("BR-05 a very long token subject is cut for the audit trail, not a 409 or a 500")
+  void longSubjectIsCutToTheAuditColumn() throws Exception {
+    String subject = "s".repeat(150);
+    RequestPostProcessor longSubject =
+        SecurityMockMvcRequestPostProcessors.jwt()
+            .jwt(
+                token -> {
+                  token.subject(subject);
+                  token.claim(JwtClaims.ROLES, List.of(Role.AGENT.name()));
+                })
+            .authorities(new SimpleGrantedAuthority(Role.AGENT.authority()));
+
+    ResultActions created = open(newBagTag(), "LEG-2", null, longSubject);
+
+    created.andExpect(status().isCreated());
+    UUID caseId = UUID.fromString(data(created).get("caseId").asString());
+    assertThat(transitions.findByCaseIdOrderByVersionAfterAsc(caseId).getFirst().getActor())
+        .hasSize(100);
+  }
+
+  @Test
   @DisplayName("AT-09 two parallel attempts for the same bag and leg create exactly one case")
   void parallelAttemptsCreateOneCase() throws Exception {
     String bagTag = newBagTag();

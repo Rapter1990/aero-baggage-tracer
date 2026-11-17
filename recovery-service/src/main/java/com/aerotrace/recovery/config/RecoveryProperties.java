@@ -32,11 +32,14 @@ public record RecoveryProperties(
    * @param enabled whether the listeners start
    * @param retryAttempts how often a failing event is retried before it is dead-lettered
    * @param retryBackoff the first wait between retries; it doubles each time
+   * @param dedupeRetention how long a processed event id is remembered; keep it longer than the
+   *     retention of the topics, or a redelivered event could be applied twice
    */
   public record Consumers(
       @DefaultValue("true") boolean enabled,
       @DefaultValue("3") int retryAttempts,
-      @DefaultValue("200ms") Duration retryBackoff) {}
+      @DefaultValue("200ms") Duration retryBackoff,
+      @DefaultValue("14d") Duration dedupeRetention) {}
 
   /**
    * The capacity-service client.

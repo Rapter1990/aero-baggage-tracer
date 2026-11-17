@@ -311,8 +311,12 @@ class CapacitySagaTest extends AbstractRecoveryTest {
     assertThat(stored(reserved).getReservationId()).isNotNull();
     assertThat(CAPACITY.holds).hasSize(1);
 
+    // While the release keeps failing, nothing counts as released.
+    assertThat(service.retryReleases()).isZero();
+    assertThat(stored(reserved).getReservationId()).isNotNull();
+
     CAPACITY.releaseFails = false;
-    service.retryReleases();
+    assertThat(service.retryReleases()).isGreaterThanOrEqualTo(1);
 
     assertThat(stored(reserved).getReservationId()).isNull();
     assertThat(CAPACITY.holds).isEmpty();

@@ -78,6 +78,16 @@ public interface RecoveryCaseRepository extends JpaRepository<RecoveryCaseEntity
       @Param("now") Instant now,
       @Param("action") RecoveryAction action);
 
+  /** Like {@link #flagAnomaly} but leaves the plan of the case as it is. */
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query(
+      "update RecoveryCaseEntity c set c.version = c.version + 1, c.scannerAnomalyAt = :now,"
+          + " c.updatedAt = :now where c.id = :id and c.version = :expectedVersion")
+  int flagAnomalyKeepingPlan(
+      @Param("id") UUID id,
+      @Param("expectedVersion") long expectedVersion,
+      @Param("now") Instant now);
+
   /** Forgets a hold after it was released; does nothing when the case holds another one. */
   @Modifying(flushAutomatically = true, clearAutomatically = true)
   @Query(

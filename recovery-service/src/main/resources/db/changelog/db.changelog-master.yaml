@@ -9,3 +9,5 @@ databaseChangeLog:
       file: db/changelog/changes/004-planned-action.sql
   - include:
       file: db/changelog/changes/005-anomaly-and-capacity-snapshot.sql
+  - include:
+      file: db/changelog/changes/006-risk-event-clock.sql

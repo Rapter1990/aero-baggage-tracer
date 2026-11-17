@@ -10,9 +10,22 @@ import com.aerotrace.common.event.EventJson;
  */
 final class EventReader {
 
-  private static final int MAX_EVENT_ID_LENGTH = 128;
+  /**
+   * Short enough that "eventType:eventId" (the dedupe key, see {@link #dedupeKey}) fits the 128
+   * characters of processed_event.event_id: the longest event type of ours has 25.
+   */
+  private static final int MAX_EVENT_ID_LENGTH = 100;
 
   private EventReader() {}
+
+  /**
+   * The key under which an event is remembered as processed. It includes the event type, so an
+   * event id that is reused (by mistake or on purpose) on another topic cannot make a real event of
+   * that topic look like a duplicate.
+   */
+  static String dedupeKey(EventEnvelope<?> event) {
+    return event.eventType() + ":" + event.eventId();
+  }
 
   static <T> EventEnvelope<T> read(String json, String expectedEventType, Class<T> payloadType) {
     if (json == null || json.isBlank()) {

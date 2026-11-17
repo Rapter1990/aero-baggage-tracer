@@ -5,6 +5,7 @@ import com.aerotrace.common.event.RiskChangedPayload;
 import com.aerotrace.common.model.RiskLevel;
 import com.aerotrace.recovery.constant.RecoveryRules;
 import com.aerotrace.recovery.repository.ProcessedEventRepository;
+import com.aerotrace.recovery.repository.RiskEventClockRepository;
 import com.aerotrace.recovery.service.CapacityView;
 import com.aerotrace.recovery.service.RecoveryCaseService;
 import com.aerotrace.recovery.strategy.ActionContext;
@@ -42,6 +43,8 @@ public class RiskEventHandler {
     CASE_ALREADY_ACTIVE,
     CASE_CANCELLED,
     NOTHING_TO_CANCEL,
+    /** Older than a risk event already applied to the bag and leg: changes nothing. */
+    STALE_EVENT,
     DUPLICATE
   }
 
@@ -52,6 +55,7 @@ public class RiskEventHandler {
   private final ProcessedEventRepository processed;
   private final RecoveryActionSelector selector;
   private final CapacityView capacity;
+  private final RiskEventClockRepository riskClock;
   private final Clock clock;
   private final MeterRegistry meters;
   private final TransactionTemplate transaction;
@@ -61,9 +65,11 @@ public class RiskEventHandler {
       ProcessedEventRepository processed,
       RecoveryActionSelector selector,
       CapacityView capacity,
+      RiskEventClockRepository riskClock,
       Clock clock,
       MeterRegistry meters,
       PlatformTransactionManager transactionManager) {
+    this.riskClock = riskClock;
     this.capacity = capacity;
     this.cases = cases;
     this.processed = processed;
@@ -86,10 +92,15 @@ public class RiskEventHandler {
 
   private Outcome process(EventEnvelope<RiskChangedPayload> event) {
     Instant now = Instant.now(clock);
-    if (!processed.markProcessed(event.eventId(), now)) {
+    if (!processed.markProcessed(EventReader.dedupeKey(event), now)) {
       return Outcome.DUPLICATE;
     }
     RiskChangedPayload risk = event.payload();
+    // Events are applied by event time: one that is older than the newest already applied (a late
+    // or replayed HIGH after the LOW that cleared it) must not undo that.
+    if (riskClock.advance(risk.bagTag(), risk.legId(), event.occurredAt()) == 0) {
+      return Outcome.STALE_EVENT;
+    }
     if (risk.current() == RiskLevel.HIGH) {
       return cases.openFromRisk(risk.bagTag(), risk.legId(), plan(risk, now))
           ? Outcome.CASE_OPENED

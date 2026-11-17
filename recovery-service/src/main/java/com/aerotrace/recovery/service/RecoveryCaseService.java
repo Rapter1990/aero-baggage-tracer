@@ -32,6 +32,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
@@ -56,6 +58,13 @@ public class RecoveryCaseService {
   private static final List<RecoveryState> FINAL_STATES =
       List.of(
           RecoveryState.RESOLVED, RecoveryState.CLOSED_AS_UNRECOVERABLE, RecoveryState.CANCELLED);
+
+  private static final Logger LOG = LoggerFactory.getLogger(RecoveryCaseService.class);
+
+  /** Names of the unique rules in the migrations (see 001-recovery-case.sql). */
+  private static final String UNIQUE_ACTIVE_CASE = "uq_recovery_case_active";
+
+  private static final String UNIQUE_IDEMPOTENCY_KEY = "uq_recovery_case_idempotency_key";
 
   private final RecoveryCaseRepository cases;
   private final StateTransitionRepository transitions;
@@ -98,6 +107,10 @@ public class RecoveryCaseService {
           transaction.execute(status -> open(request, idempotencyKey, null));
       return CaseResponse.of(created);
     } catch (DataIntegrityViolationException conflict) {
+      if (!isUniqueViolationOfCase(conflict)) {
+        // Some other constraint (a length or CHECK rule): not a duplicate, so not a 409.
+        throw conflict;
+      }
       if (idempotencyKey != null) {
         // The same key arrived twice at once: the other request won, this one gets its answer.
         var winner = cases.findByIdempotencyKey(idempotencyKey);
@@ -107,6 +120,28 @@ public class RecoveryCaseService {
       }
       throw new ApiException(ErrorCode.DUPLICATE_RECOVERY_CASE, RecoveryRules.ACTIVE_CASE_EXISTS);
     }
+  }
+
+  /**
+   * True when the violation is one of the two unique rules of a case: one active case per bag and
+   * leg, or a reused idempotency key. The constraint is told by its name, not by the exception type
+   * alone, so an unrelated violation is never reported as a duplicate.
+   */
+  private static boolean isUniqueViolationOfCase(Throwable failure) {
+    for (Throwable t = failure; t != null; t = t.getCause()) {
+      if (t instanceof org.hibernate.exception.ConstraintViolationException violation) {
+        String name = violation.getConstraintName();
+        if (name != null) {
+          return name.endsWith(UNIQUE_ACTIVE_CASE) || name.endsWith(UNIQUE_IDEMPOTENCY_KEY);
+        }
+      }
+      String message = t.getMessage();
+      if (message != null
+          && (message.contains(UNIQUE_ACTIVE_CASE) || message.contains(UNIQUE_IDEMPOTENCY_KEY))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -160,8 +195,15 @@ public class RecoveryCaseService {
         continue;
       }
       Instant now = Instant.now(clock);
+      // A case that already has a vehicle (RESERVED, IN_TRANSIT) keeps its plan: only the flag and
+      // the history say the scans cannot be trusted; the person on the case decides what to do.
+      boolean replan =
+          c.getState() == RecoveryState.OPEN || c.getState() == RecoveryState.ASSESSING;
       int updated =
-          cases.flagAnomaly(c.getId(), c.getVersion(), now, RecoveryAction.HOLD_AT_SERVICE_DESK);
+          replan
+              ? cases.flagAnomaly(
+                  c.getId(), c.getVersion(), now, RecoveryAction.HOLD_AT_SERVICE_DESK)
+              : cases.flagAnomalyKeepingPlan(c.getId(), c.getVersion(), now);
       if (updated == 0) {
         throw new ApiException(ErrorCode.VERSION_CONFLICT, RecoveryRules.VERSION_MISMATCH);
       }
@@ -263,7 +305,14 @@ public class RecoveryCaseService {
     } catch (RuntimeException failure) {
       if (reservationId != null) {
         // Compensation: the case did not move, so the hold must not stay.
-        capacity.release(reservationId);
+        if (!capacity.release(reservationId)) {
+          // The id is the only handle on the hold: it is not stored anywhere else, so log it (it is
+          // an opaque id, no personal data) for an operator and rely on the hold expiring.
+          LOG.warn(
+              "Compensation failed: capacity hold {} of case {} could not be released",
+              reservationId,
+              caseId);
+        }
       }
       throw failure;
     }
@@ -325,16 +374,20 @@ public class RecoveryCaseService {
    * Releases the hold of a case in the capacity-service and forgets it on success. A failed release
    * keeps the reservation id on the case, so {@link #retryReleases()} tries again.
    */
-  public void releaseHold(UUID caseId) {
-    cases
+  public boolean releaseHold(UUID caseId) {
+    return cases
         .findById(caseId)
         .map(RecoveryCaseEntity::getReservationId)
-        .ifPresent(
+        .map(
             reservationId -> {
-              if (capacity.release(reservationId)) {
-                transaction.executeWithoutResult(status -> cases.clearHold(caseId, reservationId));
+              if (!capacity.release(reservationId)) {
+                return false;
               }
-            });
+              transaction.executeWithoutResult(status -> cases.clearHold(caseId, reservationId));
+              return true;
+            })
+        // No hold recorded: nothing to release.
+        .orElse(true);
   }
 
   /**
@@ -356,21 +409,29 @@ public class RecoveryCaseService {
         expired++;
       } catch (ApiException movedByOthers) {
         // Moved or changed since it was listed: nothing to expire any more.
+      } catch (RuntimeException failure) {
+        // One bad case must not starve the others; the next sweep tries it again.
+        LOG.warn("Could not expire a hold: {}", failure.getClass().getSimpleName());
       }
     }
     return expired;
   }
 
-  /** Tries again to release holds of cases that are already final. */
+  /** Tries again to release holds of cases that are already final; returns how many were freed. */
   public int retryReleases() {
-    int retried = 0;
+    int released = 0;
     for (RecoveryCaseEntity c :
         cases.findByStateInAndReservationIdIsNotNull(
             List.of(RecoveryState.CANCELLED, RecoveryState.CLOSED_AS_UNRECOVERABLE))) {
-      releaseHold(c.getId());
-      retried++;
+      try {
+        if (releaseHold(c.getId())) {
+          released++;
+        }
+      } catch (RuntimeException failure) {
+        LOG.warn("Could not retry a release: {}", failure.getClass().getSimpleName());
+      }
     }
-    return retried;
+    return released;
   }
 
   private void queueEvent(RecoveryCaseEntity c, Instant now) {
@@ -396,7 +457,11 @@ public class RecoveryCaseService {
             Topics.CASE_CHANGED, c.getId().toString(), EventJson.write(envelope), now));
   }
 
+  /** Who is acting: the token's subject, cut to the 100 characters of the audit columns. */
   private static String actor() {
-    return SecurityContextHelper.currentSubject().orElse(RecoveryRules.SYSTEM_ACTOR);
+    String subject = SecurityContextHelper.currentSubject().orElse(RecoveryRules.SYSTEM_ACTOR);
+    return subject.length() > RecoveryRules.MAX_ACTOR_LENGTH
+        ? subject.substring(0, RecoveryRules.MAX_ACTOR_LENGTH)
+        : subject;
   }
 }

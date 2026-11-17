@@ -172,10 +172,14 @@ class RiskConsumerKafkaTest extends AbstractRecoveryTest {
 
     publish(bag + ":LEG-2", message);
     publish(bag + ":LEG-2", message);
+    // A marker on the same partition, after the duplicate: once its case exists, the duplicate
+    // before it has certainly been handled too, so no sleep is needed to check it changed nothing.
+    String marker = bagTag();
+    publish("marker", highRisk("EV-" + UUID.randomUUID(), marker, "LEG-2"));
 
-    await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertThat(casesOf(bag)).hasSize(1));
-    // Give the second delivery time to be handled, then check it created nothing.
-    Thread.sleep(2_000);
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .untilAsserted(() -> assertThat(casesOf(marker)).hasSize(1));
     assertThat(casesOf(bag)).hasSize(1);
     assertThat(casesOf(bag).getFirst().getState()).isEqualTo(RecoveryState.OPEN);
   }

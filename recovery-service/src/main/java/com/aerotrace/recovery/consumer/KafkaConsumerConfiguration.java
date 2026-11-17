@@ -55,8 +55,11 @@ class KafkaConsumerConfiguration {
   private static ConsumerRecordRecoverer deadLetter(
       KafkaTemplate<String, String> kafka, Clock clock) {
     return (ConsumerRecord<?, ?> record, Exception failure) -> {
-      String raw = record.value() == null ? null : record.value().toString();
-      String eventId = eventIdOf(raw);
+      String original = record.value() == null ? null : record.value().toString();
+      // The envelope must stay sendable: escaping makes the raw text longer, so an event near the
+      // size limit would otherwise never fit and would block its partition.
+      String raw = truncate(original);
+      String eventId = capped(eventIdOf(original));
       String key =
           eventId != null
               ? eventId
@@ -95,6 +98,26 @@ class KafkaConsumerConfiguration {
         throw new IllegalStateException("could not write the dead letter", e);
       }
     };
+  }
+
+  /** How much of a bad event is kept on the dead-letter topic. */
+  static final int MAX_RAW_PAYLOAD_CHARS = 16_384;
+
+  /** The longest key a dead letter gets (the longest event id we accept is shorter). */
+  static final int MAX_KEY_CHARS = 128;
+
+  static String truncate(String raw) {
+    if (raw == null || raw.length() <= MAX_RAW_PAYLOAD_CHARS) {
+      return raw;
+    }
+    return raw.substring(0, MAX_RAW_PAYLOAD_CHARS);
+  }
+
+  static String capped(String eventId) {
+    if (eventId == null || eventId.length() <= MAX_KEY_CHARS) {
+      return eventId;
+    }
+    return eventId.substring(0, MAX_KEY_CHARS);
   }
 
   /** The event id of a raw event, or null when it cannot be read. */

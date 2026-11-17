@@ -110,14 +110,17 @@ public class OutboxRelay {
     return sent;
   }
 
-  /** True when the broker refused the event in a way that retrying cannot change. */
-  private static boolean refusedForGood(Throwable failure) {
+  /**
+   * True only for failures that belong to this one event and that retrying cannot change: it is too
+   * large for the broker, its topic name is invalid, or it cannot be serialized. Any other failure
+   * (authorization, configuration, a broker problem) says nothing about the event: it stays pending
+   * and the relay stops and tries again, so a misconfigured broker can never park the whole outbox.
+   */
+  static boolean refusedForGood(Throwable failure) {
     for (Throwable t = failure; t != null; t = t.getCause()) {
-      if (t instanceof org.apache.kafka.common.errors.RetriableException
-          || t instanceof java.util.concurrent.TimeoutException) {
-        return false;
-      }
-      if (t instanceof org.apache.kafka.common.KafkaException) {
+      if (t instanceof org.apache.kafka.common.errors.RecordTooLargeException
+          || t instanceof org.apache.kafka.common.errors.InvalidTopicException
+          || t instanceof org.apache.kafka.common.errors.SerializationException) {
         return true;
       }
     }

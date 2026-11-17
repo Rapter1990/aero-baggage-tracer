@@ -68,7 +68,7 @@ public class ScanAnomalyHandler {
   }
 
   private Outcome process(EventEnvelope<ScanAnomalyPayload> event) {
-    if (!processed.markProcessed(event.eventId(), Instant.now(clock))) {
+    if (!processed.markProcessed(EventReader.dedupeKey(event), Instant.now(clock))) {
       return Outcome.DUPLICATE;
     }
     ScanAnomalyPayload anomaly = event.payload();

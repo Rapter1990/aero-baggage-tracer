@@ -46,6 +46,10 @@ public final class RecoveryRules {
   public static final String EVENT_TYPE_SCAN_ANOMALY = "baggage.scan.anomaly";
   public static final String EVENT_TYPE_CAPACITY_CHANGED = "recovery.capacity.changed";
   public static final int MAX_RESOURCE_ID_LENGTH = 64;
+
+  /** Length of the actor / created_by columns. */
+  public static final int MAX_ACTOR_LENGTH = 100;
+
   public static final String EVENT_TYPE_RISK_CHANGED = "baggage.risk.changed";
   public static final String EVENT_TYPE_DEAD_LETTER = "baggage.dead-letter";
   public static final int DEAD_LETTER_SCHEMA_VERSION = 1;

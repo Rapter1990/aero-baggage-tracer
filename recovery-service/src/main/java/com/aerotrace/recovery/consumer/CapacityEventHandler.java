@@ -28,6 +28,9 @@ public class CapacityEventHandler {
     DUPLICATE
   }
 
+  /** How far past our own clock an event time may be before the event is refused. */
+  private static final java.time.Duration MAX_CLOCK_SKEW = java.time.Duration.ofMinutes(5);
+
   private final CapacitySnapshotRepository snapshots;
   private final ProcessedEventRepository processed;
   private final Clock clock;
@@ -52,6 +55,11 @@ public class CapacityEventHandler {
         EventReader.read(
             json, RecoveryRules.EVENT_TYPE_CAPACITY_CHANGED, CapacityChangedPayload.class);
     validate(event.payload());
+    // An event time far in the future would win every later comparison and freeze the snapshot of
+    // the resource, so a clock that is that wrong makes the event unusable.
+    if (event.occurredAt().isAfter(Instant.now(clock).plus(MAX_CLOCK_SKEW))) {
+      throw new PoisonEventException("occurredAt is in the future");
+    }
     Outcome outcome = transaction.execute(status -> process(event));
     meters.counter("recovery.capacity.events", "outcome", outcome.name()).increment();
     return outcome;
@@ -59,7 +67,7 @@ public class CapacityEventHandler {
 
   private Outcome process(EventEnvelope<CapacityChangedPayload> event) {
     Instant now = Instant.now(clock);
-    if (!processed.markProcessed(event.eventId(), now)) {
+    if (!processed.markProcessed(EventReader.dedupeKey(event), now)) {
       return Outcome.DUPLICATE;
     }
     CapacityChangedPayload capacity = event.payload();
