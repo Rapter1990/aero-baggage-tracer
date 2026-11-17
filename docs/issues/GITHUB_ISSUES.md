@@ -255,7 +255,8 @@ Recovery case state machine, handler assignment and action orchestration.
 - AT-14 and AT-22 need infrastructure from #15 and #18: here the case-level behaviour is tested (case change and outbox row in one transaction, replay of an unpublished event is safe, state survives a restart of the service); the Kafka-outage and Minikube demonstrations are completed in #15 and #18.
 
 **Acceptance criteria**
-- [ ] BR-01: at most one active case per bag + leg, also under parallel requests and with Redis down (AT-09).
+- [x] BR-01: at most one active case per bag + leg, also under parallel requests and with Redis down (AT-09; `RecoveryCaseApiTest`, `RedisDownTest`).
+- [x] Redis caches the recovery policy (`GET/PUT /api/v1/recovery-policy`, PUT admin only) with an explicit TTL and eviction on change; PostgreSQL is authoritative and degraded mode is documented in `docs/adr/0001-redis-policy-cache.md`.
 - [ ] BR-05: every move follows the state machine and records who/when/why; an illegal move is `409` (AT-10).
 - [ ] BR-07: a RESOLVED case cannot be reopened; a new leg needs a new case key.
 - [ ] AT-09, AT-10, AT-12.

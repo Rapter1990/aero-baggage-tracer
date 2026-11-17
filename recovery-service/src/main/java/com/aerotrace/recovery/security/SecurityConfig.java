@@ -81,6 +81,11 @@ class SecurityConfig {
                   .hasAnyRole(Role.AGENT.name(), Role.DISPATCHER.name(), Role.ADMIN.name())
                   .requestMatchers(HttpMethod.GET, ApiPaths.CASES)
                   .hasAnyRole(Role.AGENT.name(), Role.DISPATCHER.name(), Role.ADMIN.name())
+                  // Staff read the policy; only admins change it (spec section 11).
+                  .requestMatchers(HttpMethod.GET, ApiPaths.POLICY)
+                  .hasAnyRole(Role.AGENT.name(), Role.DISPATCHER.name(), Role.ADMIN.name())
+                  .requestMatchers(HttpMethod.PUT, ApiPaths.POLICY)
+                  .hasRole(Role.ADMIN.name())
                   // Only agents and dispatchers move a case.
                   .requestMatchers(HttpMethod.PATCH, ApiPaths.TRANSITIONS_ALL)
                   .hasAnyRole(Role.AGENT.name(), Role.DISPATCHER.name());

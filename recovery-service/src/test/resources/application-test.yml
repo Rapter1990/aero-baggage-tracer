@@ -15,6 +15,13 @@ spring:
         max.block.ms: 1000
         delivery.timeout.ms: 3000
         request.timeout.ms: 1000
+  data:
+    redis:
+      # The tests start Redis themselves and set host, port and password; these only keep a test
+      # that has no Redis (or a dead one on purpose) fast and well-formed.
+      password: test
+      timeout: 300ms
+      connect-timeout: 300ms
 eureka:
   client:
     enabled: false
@@ -36,6 +43,9 @@ aerotrace:
     outbox:
       # Tests drive the relay by hand; the scheduler only fires once an hour.
       relay-delay: 1h
+    policy:
+      # Short enough to watch an entry expire in a test.
+      cache-ttl: 4s
     consumers:
       # Only the Kafka test starts the listeners; the others call the handler directly.
       enabled: false

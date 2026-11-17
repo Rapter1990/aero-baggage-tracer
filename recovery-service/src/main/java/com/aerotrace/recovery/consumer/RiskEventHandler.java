@@ -4,6 +4,7 @@ import com.aerotrace.common.event.EventEnvelope;
 import com.aerotrace.common.event.RiskChangedPayload;
 import com.aerotrace.common.model.RiskLevel;
 import com.aerotrace.recovery.constant.RecoveryRules;
+import com.aerotrace.recovery.policy.PolicyService;
 import com.aerotrace.recovery.repository.ProcessedEventRepository;
 import com.aerotrace.recovery.repository.RiskEventClockRepository;
 import com.aerotrace.recovery.service.CapacityView;
@@ -53,7 +54,7 @@ public class RiskEventHandler {
 
   private final RecoveryCaseService cases;
   private final ProcessedEventRepository processed;
-  private final RecoveryActionSelector selector;
+  private final PolicyService policy;
   private final CapacityView capacity;
   private final RiskEventClockRepository riskClock;
   private final Clock clock;
@@ -63,7 +64,7 @@ public class RiskEventHandler {
   public RiskEventHandler(
       RecoveryCaseService cases,
       ProcessedEventRepository processed,
-      RecoveryActionSelector selector,
+      PolicyService policy,
       CapacityView capacity,
       RiskEventClockRepository riskClock,
       Clock clock,
@@ -73,7 +74,7 @@ public class RiskEventHandler {
     this.capacity = capacity;
     this.cases = cases;
     this.processed = processed;
-    this.selector = selector;
+    this.policy = policy;
     this.clock = clock;
     this.meters = meters;
     this.transaction = new TransactionTemplate(transactionManager);
@@ -121,6 +122,10 @@ public class RiskEventHandler {
     if (risk.departureAt() == null) {
       return RecoveryAction.HOLD_AT_SERVICE_DESK;
     }
+    // The minimum expedite time is the admin-managed policy (cached in Redis, read from the
+    // database when Redis is unavailable).
+    RecoveryActionSelector selector =
+        RecoveryActionSelector.withDefaults(policy.current().minimumExpediteTime());
     return selector.choose(
         new ActionContext(Duration.between(now, risk.departureAt()), capacity.available()));
   }

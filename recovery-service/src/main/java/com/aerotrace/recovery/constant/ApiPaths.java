@@ -11,6 +11,8 @@ public final class ApiPaths {
   public static final String TRANSITIONS = CASES + "/{id}/transitions";
   public static final String TRANSITIONS_ALL = CASES + "/*/transitions";
 
+  public static final String POLICY = "/api/v1/recovery-policy";
+
   public static final String API_DOCS = "/v3/api-docs";
   public static final String API_DOCS_ALL = "/v3/api-docs/**";
   public static final String API_DOCS_YAML = "/v3/api-docs.yaml";

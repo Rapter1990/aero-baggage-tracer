@@ -39,7 +39,7 @@ Sources of truth: [BUSINESS_RULES.md](BUSINESS_RULES.md) and [ACCEPTANCE_TESTS.m
 | AT-16 | #7 | `GatewaySecurityTest` |
 | AT-17 | #16 | |
 | AT-18 | #13 | |
-| AT-19 | #12 | |
+| AT-19 | #12 | capacity side is #12; recovery side (no duplicate case with Redis down): `RedisDownTest` |
 | AT-20 | #19 | |
 | AT-21 | #19 | |
 | AT-22 | #11, #18 | |

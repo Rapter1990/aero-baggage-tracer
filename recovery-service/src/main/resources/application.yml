@@ -39,6 +39,16 @@ spring:
     change-log: classpath:db/changelog/db.changelog-master.yaml
     default-schema: recovery
     liquibase-schema: recovery
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      # No default: Redis runs with requirepass, and the service refuses to start without it.
+      password: ${REDIS_PASSWORD}
+      # Short, so an unreachable Redis costs a request a fraction of a second, then the database
+      # answers instead (see docs/adr/0001-redis-policy-cache.md).
+      timeout: ${REDIS_TIMEOUT:500ms}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:500ms}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     template:
@@ -69,9 +79,10 @@ aerotrace:
       batch-size: ${RECOVERY_OUTBOX_BATCH_SIZE:200}
       # Published rows older than this are removed.
       retention: ${RECOVERY_OUTBOX_RETENTION:7d}
-    strategy:
-      # The least time a transfer needs; with less left the bag is rerouted to the next flight.
-      minimum-expedite-time: ${RECOVERY_MIN_EXPEDITE_TIME:5m}
+    policy:
+      # How long Redis may serve a cached recovery policy. A change by an admin evicts it at once;
+      # this is the longest a change can go unseen if Redis cannot be reached to evict it.
+      cache-ttl: ${RECOVERY_POLICY_CACHE_TTL:5m}
     consumers:
       enabled: ${RECOVERY_CONSUMERS_ENABLED:true}
       # Transient failures are retried this many times (doubling wait) before the event is dead-lettered.
@@ -114,6 +125,11 @@ management:
     web:
       exposure:
         include: health,info
+  health:
+    redis:
+      # Redis is an optimization here: the service works without it, so a Redis outage must not
+      # make the pod unready and take the service out of rotation.
+      enabled: false
   endpoint:
     health:
       probes:

@@ -15,16 +15,17 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 public record RecoveryProperties(
     @DefaultValue Outbox outbox,
     @DefaultValue Capacity capacity,
-    @DefaultValue Strategy strategy,
+    @DefaultValue Policy policy,
     @DefaultValue Consumers consumers,
     @DefaultValue Jwt jwt) {
 
   /**
-   * Recovery action choice.
+   * The recovery policy cache. The policy itself lives in PostgreSQL and is changed by an admin.
    *
-   * @param minimumExpediteTime the least time a transfer needs; with less left the bag is rerouted
+   * @param cacheTtl how long Redis may serve a cached policy; the longest a change can go unseen if
+   *     Redis cannot be told to forget the old value
    */
-  public record Strategy(@DefaultValue("5m") Duration minimumExpediteTime) {}
+  public record Policy(@DefaultValue("5m") Duration cacheTtl) {}
 
   /**
    * Kafka consumers.

@@ -33,6 +33,8 @@ public final class RecoveryRules {
   public static final String IDEMPOTENCY_KEY_INVALID =
       "Idempotency-Key must be 1-128 visible ASCII characters";
   public static final String ILLEGAL_MOVE = "This move is not allowed from the current state";
+  public static final String POLICY_VERSION_MISMATCH =
+      "The policy was changed by someone else; reload it and try again";
   public static final String HIGH_CONNECTION_RISK = "HIGH_CONNECTION_RISK";
 
   /** Reason recorded when a risk cleared before anyone started on the case. */
