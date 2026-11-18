@@ -62,9 +62,9 @@ Order in which the skills are used for one issue. `implement-feature` (step 0) i
 | Step | Skill | When | What it does | Done when |
 |---|---|---|---|---|
 | 0 | `/implement-feature <N>` | To build one issue end to end | Reads the issue and confirms its dependencies are done; branches `feature/<N>/<slug>` from `main`; plans the smallest vertical slice and delegates with the delegation map above (`principal-engineer`); writes the failing test first (`test-engineer`), then the code, in Conventional Commits; runs `verify-project`; reviews with `code-reviewer` (and `security-reviewer` when auth or PII is touched); ticks the acceptance criteria; opens the PR with `create-pr` | Verify passes, review findings are fixed, criteria are ticked, and the PR is open (previewed with `-DryRun` first) |
-| 1 | `/analyze-case <N>` | Before any code | Reads the case study (untracked PDF, never committed); extracts modules, topics, roles, business rules (BR-xx), acceptance tests (AT-xx); compares them with `docs/issues/GITHUB_ISSUES.md`; `product-owner` words the result | Coverage table (requirement → issue) and proposed new issues; anything not defined in the repo is marked unverified |
+| 1 | `/analyze-case <N>` | Before any code | Reads `docs/requirements/` (exact BR-xx and AT-xx wording, owning issue, tests); extracts modules, topics, roles, business rules (BR-xx), acceptance tests (AT-xx); compares them with `docs/issues/GITHUB_ISSUES.md`; `product-owner` words the result | Coverage table (requirement → issue) and proposed new issues; anything not defined in the repo is marked unverified |
 | 2 | `/architecture-review` | After the design, before the build, and again on the finished diff | `architect` (boundaries), `api-contract-engineer` (contracts) and `database-reviewer` (persistence) review the modules touched; checks no JPA in `common-module`, no cross-service DB access, versioned events, idempotent consumers, correlation id propagated | Findings ranked blocker / should-fix / nit; an ADR in `docs/adr/` when a decision is needed |
-| 3 | `/verify-project` | After every meaningful change, and before each push | `mvn -q spotless:check`, then `mvn -q verify` (Surefire, Failsafe, JaCoCo thresholds), then `git status` (no secrets, no `target/`, no case-study PDF) | Every step actually run and passing; failures reported with their output, never assumed green |
+| 3 | `/verify-project` | After every meaningful change, and before each push | `mvn -q spotless:check`, then `mvn -q verify` (Surefire, Failsafe, JaCoCo thresholds), then `git status` (no secrets, no `target/`) | Every step actually run and passing; failures reported with their output, never assumed green |
 | 4 | `/run` | After verify passes, to see the change working | Builds (`mvn -q -DskipTests package`), starts the stack with Docker Compose, waits for `/actuator/health` and Eureka registration, smoke-tests through the gateway under `/api/v1` with a token per role | Report of which services are up, which are not, and the log lines of any that failed |
 
 Then fix what the reviews and the run found, repeat steps 3 and 4, tick the issue's acceptance criteria, and open the pull request with `create-pr`.
@@ -92,7 +92,7 @@ Defaults marked "Compose" are for local use only.
 |---|---|---|---|
 | `EUREKA_USER` | discovery-server, all clients | Registry user | Compose: `eureka` |
 | `EUREKA_PASSWORD` | discovery-server, all clients | Registry password | Compose: `eureka` |
-| `REDIS_PASSWORD` | Redis, api-gateway | Redis password | Compose: `redis` |
+| `REDIS_PASSWORD` | Redis, api-gateway, recovery-service | Redis password (no default; set it for IDE runs too) | Compose: `redis` |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | PostgreSQL | Database account and name | Compose: `aerotrace` |
 | `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD` | Grafana | Optional admin login | `admin` / `grafana` |
 | `JWT_PUBLIC_KEY_LOCATION` or `JWT_PUBLIC_KEY` | api-gateway | Public key that verifies tokens | Dev key packaged at build |
@@ -117,6 +117,12 @@ Defaults marked "Compose" are for local use only.
 | `JOURNEY_OUTBOX_RELAY_DELAY` | journey-service | Pause between relay runs | `200ms` |
 | `JOURNEY_OUTBOX_BATCH_SIZE` | journey-service | Events sent per relay run | `200` |
 | `JOURNEY_OUTBOX_RETENTION` | journey-service | How long published events are kept | `7d` |
+| `CAPACITY_SERVICE_URL` | recovery-service | Where the capacity-service answers | `http://localhost:1116` |
+| `CAPACITY_READ_TIMEOUT` | recovery-service | A slower capacity-service counts as unavailable (503) | `5s` |
+| `CAPACITY_HOLD_TIMEOUT` | recovery-service | A case RESERVED longer than this is cancelled and its hold released | `15m` |
+| `RECOVERY_POLICY_CACHE_TTL` | recovery-service | How long Redis may serve the cached recovery policy | `5m` |
+| `RECOVERY_DEDUPE_RETENTION` | recovery-service | How long processed event ids are remembered (keep above the topics' retention) | `14d` |
+| `REDIS_TIMEOUT` | recovery-service | Redis command timeout; after it the database answers | `500ms` |
 | `KAFKA_BOOTSTRAP_SERVERS` | journey, risk-streams | Kafka address | `localhost:9092` (Compose: `kafka:9092`) |
 | `TRUSTED_PROXIES` | api-gateway | Proxies whose `X-Forwarded-For` is trusted | empty = header ignored |
 | `AUTH_RATE_LIMIT_REPLENISH_RATE` | api-gateway | Auth tokens refilled per second | `0.2` (12 a minute) |
@@ -189,14 +195,17 @@ SELECT id, 'ADMIN' FROM identity.app_user WHERE username = 'your-username';
 | identity-service (direct) | `http://localhost:1112` |
 | journey-service (direct) | `http://localhost:1113` |
 | risk-streams-service (actuator only, no public API) | `http://localhost:1114` |
+| recovery-service (direct) | `http://localhost:1115` |
 
-In Compose, the one-shot `kafka-init` job creates the Kafka topics before journey-service and risk-streams-service start (idempotent, `--if-not-exists`):
+In Compose, the one-shot `kafka-init` job creates the Kafka topics before journey-service, risk-streams-service and recovery-service start (idempotent, `--if-not-exists`):
 
 | Topic | Partitions | Retention |
 |---|---|---|
 | `baggage.scan.received.v1` | 6 | 7d |
 | `baggage.risk.changed.v1` | 6 | 7d |
 | `baggage.scan.anomaly.v1` | 6 | 7d |
+| `recovery.case.changed.v1` | 6 | 7d |
+| `recovery.capacity.changed.v1` | 6 | 7d |
 | `baggage.dead-letter.v1` | 3 | 30d |
 
 All use `cleanup.policy=delete` and replication factor 1. A topic that already exists (for example auto-created earlier with 1 partition) is not changed: delete it once in Kafka UI to get these settings. `docker-compose-local.yml` has the same `kafka-init` job, so the topics exist with these settings when you run the services from the IDE.
@@ -417,6 +426,7 @@ The script runs `mvn verify` and pushes numbers only if it succeeds. `mvn verify
 | api-gateway | Starts a password-protected Redis |
 | identity, journey | Start a PostgreSQL container |
 | journey-service | Also starts Kafka for the relay |
+| recovery-service | Starts PostgreSQL, a password-protected Redis and Kafka, and a stand-in capacity-service on a real port; one class points Redis at a dead port |
 | No Docker | Tests are skipped, not failed |
 | No Docker with `CI` set | Identity and journey fail the build |
 | Coverage check | Includes integration tests |

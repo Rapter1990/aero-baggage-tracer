@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/changes/001-recovery-case.sql
+  - include:
+      file: db/changelog/changes/002-outbox-and-dedupe.sql
+  - include:
+      file: db/changelog/changes/003-capacity-hold.sql
+  - include:
+      file: db/changelog/changes/004-planned-action.sql
+  - include:
+      file: db/changelog/changes/005-anomaly-and-capacity-snapshot.sql
+  - include:
+      file: db/changelog/changes/006-risk-event-clock.sql
+  - include:
+      file: db/changelog/changes/007-recovery-policy.sql
+  - include:
+      file: db/changelog/changes/008-assignment-and-move-keys.sql
+  - include:
+      file: db/changelog/changes/009-outbox-sequence.sql

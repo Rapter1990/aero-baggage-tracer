@@ -54,6 +54,8 @@ services:
         $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.scan.received.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
         $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.risk.changed.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
         $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.scan.anomaly.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
+        $$T --bootstrap-server $$B --create --if-not-exists --topic recovery.case.changed.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
+        $$T --bootstrap-server $$B --create --if-not-exists --topic recovery.capacity.changed.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
         $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.dead-letter.v1 --partitions 3 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=2592000000
     depends_on:
       kafka:
@@ -258,6 +260,58 @@ services:
       - "1113:1113"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:1113/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 40s
+    networks:
+      - aerotrace
+
+  # Recovery cases, the capacity saga, the recovery policy and the consumers of the risk, anomaly and
+  # capacity events. Redis only caches the policy: the service runs (slower on one read) without it.
+  recovery-service:
+    image: ${REGISTRY:-ghcr.io/rapter1990}/aerotrace-recovery-service:${TAG:-latest}
+    container_name: recovery-service
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+    environment:
+      EUREKA_URL: http://${EUREKA_USER:-eureka}:${EUREKA_PASSWORD:-eureka}@discovery-server:8761/eureka/
+      EUREKA_INSTANCE_HOSTNAME: recovery-service
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-aerotrace}
+      DB_USER: ${POSTGRES_USER:-aerotrace}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis}
+      # The capacity-service (issue #12); until it runs, moving a case to RESERVED answers 503.
+      CAPACITY_SERVICE_URL: ${CAPACITY_SERVICE_URL:-http://capacity-service:1116}
+      # Empty: the identity-service development public key bundled in the image is used.
+      IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-1.0}
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    # Clients reach it through the gateway (/api/v1/recovery-cases/**, /api/v1/recovery-policy);
+    # 1115 is its own port.
+    ports:
+      - "1115:1115"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:1115/actuator/health"]
       interval: 10s
       timeout: 3s
       retries: 5

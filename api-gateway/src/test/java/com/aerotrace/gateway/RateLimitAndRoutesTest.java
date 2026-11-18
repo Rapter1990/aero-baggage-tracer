@@ -68,6 +68,7 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
   void realServiceRoutesRequireATokenButTokenIssuanceDoesNot() {
     assertThat(get("/api/v1/bags/AB123456/journey", null).statusCode()).isEqualTo(401);
     assertThat(get("/api/v1/recovery-cases/1", null).statusCode()).isEqualTo(401);
+    assertThat(get("/api/v1/recovery-policy", null).statusCode()).isEqualTo(401);
 
     // No identity-service instance exists in this test, so these calls fail after security passed.
     for (String path :
@@ -112,6 +113,7 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
             "identity-service",
             "journey-service",
             "journey-service",
+            "recovery-service",
             "recovery-service",
             "capacity-service",
             "search-service",

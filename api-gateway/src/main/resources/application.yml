@@ -52,6 +52,10 @@ spring:
               uri: lb://recovery-service
               predicates:
                 - Path=/api/v1/recovery-cases/**
+            - id: recovery-policy
+              uri: lb://recovery-service
+              predicates:
+                - Path=/api/v1/recovery-policy/**
             - id: capacity
               uri: lb://capacity-service
               predicates:

@@ -1,7 +1,7 @@
 # AeroTrace – GitHub Issues Backlog
 
-Derived from `AeroTrace_Senior_Java_Microservices_Case_Study.pdf`. Each `##` section is one issue (title = heading).
-Suggested labels in `[brackets]`. Section numbers (§), BR-xx and AT-xx refer to the case study.
+Derived from the AeroTrace case study; its business rules and acceptance tests are in `docs/requirements/`. Each `##` section is one issue (title = heading).
+Suggested labels in `[brackets]`. Section numbers (§), BR-xx and AT-xx refer to the case study; their exact wording and the owning issue of each are in `docs/requirements/`.
 
 **Suggested build order:** #1 → #2 → #3 → #4 → #5 → #6 → #8 → #7 → #9/#10/#11 (parallel) → #12/#13 → #14–#20 (cross-cutting, start early) → #21–#22.
 
@@ -223,7 +223,7 @@ Kafka Streams topology that computes connection risk and scan anomalies.
 - Reproducible late / duplicate / out-of-order fixture datasets.
 
 **Acceptance criteria**
-- [ ] AT-06, AT-07, AT-08. (Implemented and tested as `AT-06`/`AT-07`/`AT-08` scenarios in `AcceptanceScenariosTest`, but from proposed defaults: the case-study wording is not in the repo, so they stay open until checked against it.)
+- [x] AT-06, AT-07, AT-08 (wording checked against `docs/requirements/ACCEPTANCE_TESTS.md`; covered by `AcceptanceScenariosTest`). The numeric defaults (20 min threshold, 5 min window, grace) are still proposed values.
 - [x] `TopologyTestDriver` tests incl. grace-boundary cases.
 - [x] Metrics `stream_lag_seconds`, `baggage_risk_high` (unit-tested; `baggage.risk.changed.v1` also seen end to end on a running Compose stack).
 
@@ -244,11 +244,27 @@ Recovery case state machine, handler assignment and action orchestration.
 - Consume `baggage.risk.changed.v1`, `baggage.scan.anomaly.v1`, `recovery.capacity.changed.v1`.
 - Transactional outbox → `recovery.case.changed.v1` (AT-14, AT-22).
 - RBAC: only AGENT/DISPATCHER may transition; ADMIN changes risk policy; Redis-cached policy with TTL + invalidation.
+- `GET /recovery-cases?state=OPEN&page=0&size=20` (spec §7): paged list with deterministic sorting.
+- `Idempotency-Key` on `POST /recovery-cases` and on transitions: a retry returns the original result and has no second effect.
+- Tables: `recovery_case`, `state_transition`, `outbox_event`, `processed_event` (durable dedup of the consumed events; business effects stay idempotent, Kafka EOS is not enough).
+- Handler assignment: a case can be assigned to an AGENT/DISPATCHER; the assignment is recorded in `state_transition` (who/when/why).
+- Metrics `recovery_resolution_seconds` and `outbox_pending_count`.
+
+**Requirement coverage** (wording in `docs/requirements/`)
+- BR-01, BR-05, BR-07; AT-09, AT-10, AT-12 are proven in this issue.
+- AT-14 is proven here with a real Kafka broker (`KafkaOutageTest`). AT-22 is proven here at application level (`ApplicationRestartTest`); the same check with a real Minikube pod restart needs the manifests of #18.
 
 **Acceptance criteria**
-- [ ] AT-09, AT-10, AT-12, AT-14, AT-22.
-- [ ] Unit tests for strategies, guards, compensation.
-- [ ] Redis outage does not allow duplicate cases.
+- [x] BR-01: at most one active case per bag + leg, also under parallel requests and with Redis down (AT-09; `RecoveryCaseApiTest`, `RedisDownTest`).
+- [x] Redis caches the recovery policy (`GET/PUT /api/v1/recovery-policy`, PUT admin only) with an explicit TTL and eviction on change; PostgreSQL is authoritative and degraded mode is documented in `docs/adr/0001-redis-policy-cache.md`.
+- [x] BR-05: every move follows the state machine and records who/when/why; an illegal move is `409` (AT-10). Assignment of a case to a handler is recorded the same way (`PUT .../assignment`).
+- [x] BR-07: a RESOLVED case cannot be reopened; a new leg needs a new case key.
+- [x] AT-09, AT-10, AT-12 (`RecoveryCaseApiTest`, `RecoveryStateMachineTest`, `CapacitySagaTest`).
+- [x] AT-14: Kafka stopped during a move, the move commits, and the events are published in order, once, when the broker is back (`KafkaOutageTest`, a real broker).
+- [x] AT-22 at application level: a restarted instance keeps the committed case, history and events and carries on (`ApplicationRestartTest`). The restart of a real Minikube pod is demonstrated in #18.
+- [x] `GET /recovery-cases` pages and sorts deterministically; `Idempotency-Key` retries (create and move) have no second effect (`CaseOperationsApiTest`).
+- [x] Unit tests for strategies, guards, compensation.
+- [x] Every test of a BR/AT starts its `@DisplayName` with its id; `docs/requirements/TRACEABILITY.md` is updated.
 
 ---
 
@@ -260,8 +276,9 @@ Finite recovery cart / flight / bag-slot capacity with atomic reservations.
 
 **Scope**
 - `POST /capacity/reservations`, `DELETE /capacity/reservations/{id}` (release/compensation), admin-only resource management.
+- Contract the recovery-service (#11) already calls: the caller chooses `reservationId` in the `POST` body (`{reservationId, caseId, bagTag, legId, slots}`), answers `201` with `ApiResponse{reservationId, status}` or `409 CAPACITY_EXCEEDED`; `DELETE /{id}` answers `204`, or `404` when there is no such hold (treated as released). Releases made by the recovery-service sweeper carry no user token, so release must be allowed for service callers (or the identity-service must issue service tokens).
 - Atomic reservation in PostgreSQL (conditional `UPDATE … WHERE remaining > 0` or row lock); **DB is authoritative**, Redis only an optional cache/hint.
-- Reservation TTL / provisional hold expiry job.
+- Reservation TTL / provisional hold expiry job. Contract with the recovery-service: a hold it made stays valid while its case is `RESERVED` or `IN_TRANSIT`; the recovery-service releases it (`DELETE`) when the case is `RESOLVED`, `CANCELLED` or `CLOSED_AS_UNRECOVERABLE`. An expiry job may remove only holds that were never confirmed by a case move, so it must not take the slot of a bag that is on its way.
 - Tables: `capacity_resource`, `capacity_reservation`, outbox; publish `recovery.capacity.changed.v1` (key `resourceId`).
 - Metric `capacity_reservation_conflicts_total`; idempotent reservations via `Idempotency-Key`.
 
