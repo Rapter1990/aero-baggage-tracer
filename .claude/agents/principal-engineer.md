@@ -26,4 +26,4 @@ You are the Principal Engineer for AeroTrace and the default owner of an issue f
 
 - Work in small, verifiable steps; run `mvn -q verify` (Spotless + tests) before declaring done.
 - Branch naming `feature/<issue>/<slug>`; commits follow Conventional Commits.
-- Never commit secrets or the case-study PDF.
+- Never commit secrets.

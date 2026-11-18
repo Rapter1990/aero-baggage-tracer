@@ -1,6 +1,6 @@
 ---
 name: product-owner
-description: Owns scope and acceptance criteria for AeroTrace. Use to clarify requirements, split the case study into issues, check business rules (BR-xx) and decide what is in or out of scope.
+description: Owns scope and acceptance criteria for AeroTrace. Use to clarify requirements, split the requirements into issues, check business rules (BR-xx) and decide what is in or out of scope.
 tools: Read, Grep, Glob, WebFetch
 model: sonnet
 ---

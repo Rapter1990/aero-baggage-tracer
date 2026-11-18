@@ -1,6 +1,6 @@
 ---
 name: analyze-case
-description: Read the AeroTrace case study and turn requirements into issues, business rules (BR-xx) and acceptance tests (AT-xx). Use when scoping new work or checking coverage of the spec.
+description: Read the AeroTrace requirements in docs/requirements and turn them into issues, business rules (BR-xx) and acceptance tests (AT-xx). Use when scoping new work or checking coverage of the spec.
 ---
 
 1. Read `docs/requirements/BUSINESS_RULES.md` and `docs/requirements/ACCEPTANCE_TESTS.md` (exact BR-xx and AT-xx wording) and `docs/requirements/TRACEABILITY.md`.

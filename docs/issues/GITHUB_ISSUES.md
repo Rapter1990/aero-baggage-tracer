@@ -1,6 +1,6 @@
 # AeroTrace – GitHub Issues Backlog
 
-Derived from `AeroTrace_Senior_Java_Microservices_Case_Study.pdf`. Each `##` section is one issue (title = heading).
+Derived from the AeroTrace case study; its business rules and acceptance tests are in `docs/requirements/`. Each `##` section is one issue (title = heading).
 Suggested labels in `[brackets]`. Section numbers (§), BR-xx and AT-xx refer to the case study; their exact wording and the owning issue of each are in `docs/requirements/`.
 
 **Suggested build order:** #1 → #2 → #3 → #4 → #5 → #6 → #8 → #7 → #9/#10/#11 (parallel) → #12/#13 → #14–#20 (cross-cutting, start early) → #21–#22.
