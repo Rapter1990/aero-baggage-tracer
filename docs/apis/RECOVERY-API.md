@@ -75,6 +75,7 @@ Opens recovery cases for bags at risk of missing a connection, moves them along 
 | Final (BR-07) | `RESOLVED`, `CANCELLED` and `CLOSED_AS_UNRECOVERABLE` never move again: `409 ILLEGAL_TRANSITION` |
 | Version | `expectedVersion` must be the current version, else `409 VERSION_CONFLICT`; a new case starts at 1 |
 | History | Every move records who, when and why |
+| Retrying a create | With an `Idempotency-Key` a repeat returns the first case. Only the bag and the leg are compared, not the `reason` |
 | Retrying a move | Send an `Idempotency-Key`: a repeat gets the answer of the first move and nothing happens twice (also no second capacity hold). The key belongs to one case; the same key with a different target state or version is `409 VERSION_CONFLICT` (the reason is not compared). Without a key a retry is `409 VERSION_CONFLICT` |
 
 **Handler assignment**
@@ -98,7 +99,7 @@ Opens recovery cases for bags at risk of missing a connection, moves them along 
 | Full | `409 CAPACITY_EXCEEDED`, the case stays where it was |
 | No answer in time | `503 CAPACITY_UNAVAILABLE`, nothing stays held, try again |
 | Move fails after the hold | The hold is released again |
-| Cancelling or closing | Releases the hold; a release that fails is retried every 30 s |
+| Cancelling, closing or resolving | Releases the hold; a release that fails is retried every 30 s. The hold stays while the case is `RESERVED` or `IN_TRANSIT`: the capacity-service must not expire it by itself while the case is active |
 | Timeout (AT-12) | A case `RESERVED` for more than 15 minutes is cancelled with reason `RESERVATION_TIMEOUT` and its hold released |
 
 **Policy**
@@ -107,7 +108,7 @@ Opens recovery cases for bags at risk of missing a connection, moves them along 
 |---|---|
 | `minimumExpediteMinutes` | The least time a transfer needs. With less time left a bag is rerouted instead of expedited |
 | Change | Admins only, against the version they read |
-| Seen | At once: the cached copy is dropped when the change is saved |
+| Seen | At once: the cached copy is dropped when the change is saved. If Redis cannot be reached at that moment, within the cache TTL (5 minutes) |
 
 ## Errors
 

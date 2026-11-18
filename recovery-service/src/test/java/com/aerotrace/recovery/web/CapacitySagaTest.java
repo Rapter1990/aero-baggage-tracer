@@ -266,6 +266,19 @@ class CapacitySagaTest extends AbstractRecoveryTest {
   }
 
   @Test
+  @DisplayName("Saga a hold stays while the bag is in transit and is released when it is resolved")
+  void resolvingReleasesTheHold() throws Exception {
+    JsonNode reserved = data(move(assessingCase(), RecoveryState.RESERVED, null));
+    JsonNode inTransit = data(move(reserved, RecoveryState.IN_TRANSIT, null));
+    assertThat(CAPACITY.holds).hasSize(1);
+
+    move(inTransit, RecoveryState.RESOLVED, null).andExpect(status().isOk());
+
+    assertThat(CAPACITY.holds).isEmpty();
+    assertThat(stored(inTransit).getReservationId()).isNull();
+  }
+
+  @Test
   @DisplayName("AT-12 a hold that ran out is released and its case cancelled with the reason")
   void expiredHoldIsReleasedAndTheCaseCancelled() throws Exception {
     JsonNode reserved = data(move(assessingCase(), RecoveryState.RESERVED, null));

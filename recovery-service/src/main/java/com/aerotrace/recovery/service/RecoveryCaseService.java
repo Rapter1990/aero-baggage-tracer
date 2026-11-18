@@ -292,6 +292,10 @@ public class RecoveryCaseService {
       }
       throw conflict;
     } catch (DataIntegrityViolationException keyTaken) {
+      if (idempotencyKey == null) {
+        // No key was sent, so this is not a reused key: some other rule failed. Not a 409.
+        throw keyTaken;
+      }
       // Two different moves with the same key reached the history table at once: the unique
       // (case, key) index let only one in. The key belongs to the other move.
       throw new ApiException(ErrorCode.VERSION_CONFLICT, RecoveryRules.IDEMPOTENCY_KEY_REUSED);
@@ -378,8 +382,11 @@ public class RecoveryCaseService {
    * </ol>
    *
    * <p>A crash between steps 2 and 3 leaves a hold the case does not know. That window is closed by
-   * the capacity-service expiring provisional holds. Cancelling a case releases its hold after the
-   * commit; a release that fails keeps the reservation id on the case for the sweeper.
+   * the capacity-service expiring provisional holds. The hold stays for as long as the case is
+   * active (RESERVED and IN_TRANSIT): the capacity-service must not expire a hold that was not
+   * released, or a bag that is on its way would lose its slot. A case that ends (RESOLVED,
+   * CANCELLED or CLOSED_AS_UNRECOVERABLE) releases its hold after the commit; a release that fails
+   * keeps the reservation id on the case for the sweeper.
    */
   private CaseResponse move(
       UUID caseId,
@@ -428,7 +435,9 @@ public class RecoveryCaseService {
       }
       throw failure;
     }
-    if (target == RecoveryState.CANCELLED || target == RecoveryState.CLOSED_AS_UNRECOVERABLE) {
+    if (target == RecoveryState.CANCELLED
+        || target == RecoveryState.CLOSED_AS_UNRECOVERABLE
+        || target == RecoveryState.RESOLVED) {
       releaseHold(caseId);
     }
     return moved;
@@ -542,7 +551,10 @@ public class RecoveryCaseService {
     int released = 0;
     for (RecoveryCaseEntity c :
         cases.findByStateInAndReservationIdIsNotNull(
-            List.of(RecoveryState.CANCELLED, RecoveryState.CLOSED_AS_UNRECOVERABLE))) {
+            List.of(
+                RecoveryState.CANCELLED,
+                RecoveryState.CLOSED_AS_UNRECOVERABLE,
+                RecoveryState.RESOLVED))) {
       try {
         if (releaseHold(c.getId())) {
           released++;

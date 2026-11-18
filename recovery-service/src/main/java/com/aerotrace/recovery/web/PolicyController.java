@@ -46,7 +46,8 @@ public class PolicyController {
       summary = "Change the recovery policy",
       description =
           "Admins only. expectedVersion must be the version last read (409 VERSION_CONFLICT"
-              + " otherwise). The cached copy is evicted, so the change is seen at once.")
+              + " otherwise). The cached copy is evicted, so the change is seen at once, or within the cache TTL"
+              + " when Redis cannot be reached.")
   @ApiResponses({
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
         responseCode = "200",

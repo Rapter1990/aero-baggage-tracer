@@ -19,11 +19,14 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEventEntity, 
   @Query(value = "SELECT pg_try_advisory_xact_lock(:key)", nativeQuery = true)
   boolean tryLockRelay(@Param("key") long key);
 
-  /** The oldest pending rows, locked until the transaction ends; locked rows are skipped. */
+  /**
+   * The oldest pending rows (by the database sequence, not a replica clock), locked until the
+   * transaction ends; locked rows are skipped.
+   */
   @Query(
       value =
           "SELECT * FROM recovery.outbox_event WHERE published_at IS NULL AND parked_at IS NULL"
-              + " ORDER BY created_at, id LIMIT :limit FOR UPDATE SKIP LOCKED",
+              + " ORDER BY seq LIMIT :limit FOR UPDATE SKIP LOCKED",
       nativeQuery = true)
   List<OutboxEventEntity> claimPending(@Param("limit") int limit);
 

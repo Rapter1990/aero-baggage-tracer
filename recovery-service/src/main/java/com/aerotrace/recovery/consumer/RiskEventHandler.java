@@ -57,6 +57,10 @@ public class RiskEventHandler {
   private final PolicyService policy;
   private final CapacityView capacity;
   private final RiskEventClockRepository riskClock;
+
+  /** How far ahead of this service's clock an event may be dated (clocks differ a little). */
+  private static final Duration MAX_CLOCK_SKEW = Duration.ofMinutes(5);
+
   private final Clock clock;
   private final MeterRegistry meters;
   private final TransactionTemplate transaction;
@@ -86,6 +90,12 @@ public class RiskEventHandler {
    */
   public Outcome handle(String json) {
     EventEnvelope<RiskChangedPayload> event = read(json);
+    // An event time far in the future would win every later comparison in the risk clock and freeze
+    // that bag and leg (a real LOW or HIGH after it would be ignored as stale), so a clock that
+    // wrong makes the event unusable: it is dead-lettered, which also raises the alarm.
+    if (event.occurredAt().isAfter(Instant.now(clock).plus(MAX_CLOCK_SKEW))) {
+      throw new PoisonEventException("occurredAt is in the future");
+    }
     Outcome outcome = transaction.execute(status -> process(event));
     meters.counter("recovery.risk.events", "outcome", outcome.name()).increment();
     return outcome;

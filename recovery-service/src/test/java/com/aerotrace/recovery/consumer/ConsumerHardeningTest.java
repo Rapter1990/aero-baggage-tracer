@@ -155,6 +155,22 @@ class ConsumerHardeningTest extends AbstractRecoveryTest {
 
   @Test
   @DisplayName(
+      "BR-07 a risk event dated far in the future is refused, so it cannot freeze a bag and leg")
+  void futureRiskEventIsPoison() {
+    String json =
+        riskEvent(
+            "EV-" + UUID.randomUUID(),
+            bagTag(),
+            RiskLevel.HIGH,
+            Instant.now().plus(2, ChronoUnit.DAYS));
+
+    assertThatThrownBy(() -> risk.handle(json))
+        .isInstanceOf(PoisonEventException.class)
+        .hasMessage("occurredAt is in the future");
+  }
+
+  @Test
+  @DisplayName(
       "BR-04 a capacity event dated far in the future is refused, so it cannot freeze a resource")
   void futureCapacityEventIsPoison() {
     String json =
