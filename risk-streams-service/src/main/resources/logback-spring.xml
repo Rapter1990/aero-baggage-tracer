@@ -3,6 +3,11 @@
   <!-- Spring Boot defaults (console output with the trace id in each line). -->
   <include resource="org/springframework/boot/logging/logback/base.xml"/>
 
+  <!-- Kafka Streams logs "Failed to change permissions for the directory" at ERROR on Windows,
+       where owner-only permissions cannot be applied; the directory works. Only that message, only
+       on a file system without POSIX permissions. See StateDirectoryPermissionNoiseFilter. -->
+  <turboFilter class="com.aerotrace.riskstreams.StateDirectoryPermissionNoiseFilter"/>
+
   <!-- Also hand every log line to OpenTelemetry (collector -> Loki), tagged with the current
        trace and span id. Installed with the OpenTelemetry bean: see OpenTelemetryLogsConfiguration. -->
   <appender name="OPENTELEMETRY"
