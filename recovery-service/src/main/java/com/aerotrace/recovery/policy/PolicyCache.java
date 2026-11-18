@@ -23,6 +23,9 @@ public class PolicyCache {
   private static final Logger LOG = LoggerFactory.getLogger(PolicyCache.class);
   static final String KEY_PREFIX = "recovery:policy:";
 
+  /** The most minutes a policy may name; the same bound as the request and the migration. */
+  static final int MAX_MINUTES = 720;
+
   private final StringRedisTemplate redis;
   private final Duration ttl;
   private final MeterRegistry meters;
@@ -92,7 +95,9 @@ public class PolicyCache {
     try {
       int minutes = Integer.parseInt(value.substring(0, colon));
       long version = Long.parseLong(value.substring(colon + 1));
-      return minutes < 0 || version < 1
+      // The range the database enforces (0 to 720 minutes): an entry outside it was not written by
+      // this service and must not steer the recovery action.
+      return minutes < 0 || minutes > MAX_MINUTES || version < 1
           ? Optional.empty()
           : Optional.of(new PolicyView(minutes, version));
     } catch (NumberFormatException notOurs) {

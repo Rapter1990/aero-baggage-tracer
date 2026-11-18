@@ -75,7 +75,7 @@ Opens recovery cases for bags at risk of missing a connection, moves them along 
 | Final (BR-07) | `RESOLVED`, `CANCELLED` and `CLOSED_AS_UNRECOVERABLE` never move again: `409 ILLEGAL_TRANSITION` |
 | Version | `expectedVersion` must be the current version, else `409 VERSION_CONFLICT`; a new case starts at 1 |
 | History | Every move records who, when and why |
-| Retrying a move | Send an `Idempotency-Key`: a repeat gets the answer of the first move and nothing happens twice (also no second capacity hold). The key belongs to one case; the same key for a different move is `409 VERSION_CONFLICT`. Without a key a retry is `409 VERSION_CONFLICT` |
+| Retrying a move | Send an `Idempotency-Key`: a repeat gets the answer of the first move and nothing happens twice (also no second capacity hold). The key belongs to one case; the same key with a different target state or version is `409 VERSION_CONFLICT` (the reason is not compared). Without a key a retry is `409 VERSION_CONFLICT` |
 
 **Handler assignment**
 
@@ -83,7 +83,9 @@ Opens recovery cases for bags at risk of missing a connection, moves them along 
 |---|---|
 | Who | Agents and dispatchers hand a case to an agent or dispatcher, named by their token subject |
 | Effect | The state does not change; the version rises (whoever works on the case must reload), a history row says who assigned whom, and an event is queued |
-| Same handler again | Changes nothing, so a retry is safe |
+| Same handler again | Changes nothing and answers with the case as it is, whatever version the request carries, so a retry after a lost answer is safe |
+| Order of the checks | Unknown case 404, then the same handler (200), then a stale version `409 VERSION_CONFLICT`, then a closed case `409 ILLEGAL_TRANSITION`, as on a move |
+| Assignee | An identity id: letters, digits and `. _ : -`, up to 100 characters. An e-mail address is refused |
 | Another handler | Allowed; the history shows both |
 | Closed case | `409 ILLEGAL_TRANSITION` |
 | Shown | `assignedTo` in every case answer and in the list |
@@ -159,5 +161,6 @@ Redis only caches the policy. See [ADR 0001](../adr/0001-redis-policy-cache.md).
 |---|---|
 | Capacity-service | Not built yet (issue #12): moving to `RESERVED` answers 503 until it runs |
 | Hold release by the sweeper | Sends no token; the capacity-service must accept it, or the hold stays |
-| Assignee check | The assignee is taken as given: the identity-service is not asked whether that person exists or is an agent |
+| Assignee check | The assignee is checked for shape only: the identity-service is not asked whether that person exists or is an agent, and any agent or dispatcher may assign any case to any id |
+| Redis policy entry | An entry outside 0 to 720 minutes is dropped; Redis is still trusted to hold only what this service wrote, so keep it private (ACL or own instance per service) |
 | Airline policy | One `DEFAULT` policy; the events carry no airline |

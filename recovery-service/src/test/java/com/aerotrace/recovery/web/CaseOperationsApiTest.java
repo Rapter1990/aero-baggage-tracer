@@ -286,6 +286,36 @@ class CaseOperationsApiTest extends AbstractRecoveryTest {
   }
 
   @Test
+  @DisplayName(
+      "Assignment a retry whose first answer was lost still carries the old version and succeeds")
+  void retryAfterALostAnswerSucceeds() throws Exception {
+    String caseId = openedCase().get("caseId").asString();
+    assign(caseId, "agent-42", 1L, as(Role.AGENT)).andExpect(status().isOk());
+
+    // The same request again, with the version the first answer would have replaced.
+    ResultActions retry = assign(caseId, "agent-42", 1L, as(Role.AGENT));
+
+    retry.andExpect(status().isOk());
+    assertThat(data(retry).get("assignedTo").asString()).isEqualTo("agent-42");
+    assertThat(data(retry).get("version").asLong()).isEqualTo(2);
+    assertThat(transitions.findByCaseIdOrderByVersionAfterAsc(UUID.fromString(caseId))).hasSize(2);
+    assertThat(outbox.findByMessageKeyOrderByCreatedAt(caseId)).hasSize(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Assignment a stale caller sees a version conflict even when the case has been closed")
+  void staleCallerOnAClosedCaseSeesAVersionConflict() throws Exception {
+    String caseId = openedCase().get("caseId").asString();
+    move(caseId, RecoveryState.CANCELLED, 1, null).andExpect(status().isOk());
+
+    ResultActions stale = assign(caseId, "agent-42", 1L, as(Role.AGENT));
+
+    stale.andExpect(status().isConflict());
+    assertThat(code(stale)).isEqualTo("VERSION_CONFLICT");
+  }
+
+  @Test
   @DisplayName("Assignment a case can be handed to another handler, and the history shows both")
   void reassignment() throws Exception {
     String caseId = openedCase().get("caseId").asString();
@@ -344,6 +374,8 @@ class CaseOperationsApiTest extends AbstractRecoveryTest {
         .andExpect(status().isNotFound());
     assign(caseId, "bad name!", 1L, as(Role.AGENT)).andExpect(status().isBadRequest());
     assign(caseId, "x".repeat(101), 1L, as(Role.AGENT)).andExpect(status().isBadRequest());
+    // An e-mail address is personal data and is not an identity id.
+    assign(caseId, "jane.doe@example.com", 1L, as(Role.AGENT)).andExpect(status().isBadRequest());
     assign(caseId, "agent-42", null, as(Role.AGENT)).andExpect(status().isBadRequest());
   }
 

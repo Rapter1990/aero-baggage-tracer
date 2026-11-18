@@ -177,6 +177,7 @@ public class RecoveryCaseService {
                   c.getVersion(),
                   reason,
                   RecoveryRules.SYSTEM_ACTOR,
+                  null,
                   null);
               return true;
             })
@@ -290,6 +291,10 @@ public class RecoveryCaseService {
         }
       }
       throw conflict;
+    } catch (DataIntegrityViolationException keyTaken) {
+      // Two different moves with the same key reached the history table at once: the unique
+      // (case, key) index let only one in. The key belongs to the other move.
+      throw new ApiException(ErrorCode.VERSION_CONFLICT, RecoveryRules.IDEMPOTENCY_KEY_REUSED);
     }
   }
 
@@ -309,7 +314,8 @@ public class RecoveryCaseService {
    * Hands a case to a handler (an agent or dispatcher). The state does not change; the version
    * rises, so whoever is working on the case is told to reload, and a history row and an event
    * record who was assigned and by whom. Assigning the person who already has the case changes
-   * nothing, so a retry is safe. A final case cannot be assigned.
+   * nothing, and answers with the case as it is, whatever version the request carries: a retry
+   * after a lost answer is therefore safe. A final case cannot be assigned.
    */
   public CaseResponse assign(UUID caseId, AssignRequest request) {
     CaseResponse assigned =
@@ -321,14 +327,18 @@ public class RecoveryCaseService {
                       .orElseThrow(
                           () ->
                               new ApiException(ErrorCode.NOT_FOUND, RecoveryRules.CASE_NOT_FOUND));
-              if (current.getState().isTerminal()) {
-                throw new ApiException(ErrorCode.ILLEGAL_TRANSITION, RecoveryRules.CASE_IS_FINAL);
+              // The handler the caller asked for already has the case: the request is already
+              // satisfied, whatever version it carries. This is what makes a retry whose first
+              // answer was lost (it still carries the old version) safe.
+              if (request.assignee().equals(current.getAssignedTo())) {
+                return CaseResponse.of(current);
               }
+              // A caller who is behind sees a version conflict before a state error, as on a move.
               if (current.getVersion() != request.expectedVersion()) {
                 throw new ApiException(ErrorCode.VERSION_CONFLICT, RecoveryRules.VERSION_MISMATCH);
               }
-              if (request.assignee().equals(current.getAssignedTo())) {
-                return CaseResponse.of(current);
+              if (current.getState().isTerminal()) {
+                throw new ApiException(ErrorCode.ILLEGAL_TRANSITION, RecoveryRules.CASE_IS_FINAL);
               }
               Instant now = Instant.now(clock);
               int updated =
@@ -371,11 +381,6 @@ public class RecoveryCaseService {
    * the capacity-service expiring provisional holds. Cancelling a case releases its hold after the
    * commit; a release that fails keeps the reservation id on the case for the sweeper.
    */
-  private CaseResponse move(
-      UUID caseId, RecoveryState target, long expectedVersion, String reason, String actor) {
-    return move(caseId, target, expectedVersion, reason, actor, null);
-  }
-
   private CaseResponse move(
       UUID caseId,
       RecoveryState target,
@@ -427,16 +432,6 @@ public class RecoveryCaseService {
       releaseHold(caseId);
     }
     return moved;
-  }
-
-  private CaseResponse apply(
-      UUID caseId,
-      RecoveryState target,
-      long expectedVersion,
-      String reason,
-      String actor,
-      UUID reservationId) {
-    return apply(caseId, target, expectedVersion, reason, actor, reservationId, null);
   }
 
   /** The local transaction of a move: state, history and event together. */
@@ -529,7 +524,8 @@ public class RecoveryCaseService {
             RecoveryState.CANCELLED,
             c.getVersion(),
             RecoveryRules.RESERVATION_TIMEOUT,
-            RecoveryRules.SYSTEM_ACTOR);
+            RecoveryRules.SYSTEM_ACTOR,
+            null);
         expired++;
       } catch (ApiException movedByOthers) {
         // Moved or changed since it was listed: nothing to expire any more.

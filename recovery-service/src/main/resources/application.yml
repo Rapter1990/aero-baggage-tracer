@@ -43,7 +43,9 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      # No default: Redis runs with requirepass, and the service refuses to start without it.
+      # No default: set REDIS_PASSWORD (Compose does). Redis runs with requirepass; without the
+      # right password it refuses the connection, the policy cache is unavailable and the policy
+      # is read from the database (see docs/adr/0001-redis-policy-cache.md).
       password: ${REDIS_PASSWORD}
       # Short, so an unreachable Redis costs a request a fraction of a second, then the database
       # answers instead (see docs/adr/0001-redis-policy-cache.md).

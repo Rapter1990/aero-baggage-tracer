@@ -159,6 +159,18 @@ class PolicyCacheTest extends AbstractRecoveryTest {
     assertThat(redis.opsForValue().get(KEY)).isEqualTo("5:1");
   }
 
+  @Test
+  @DisplayName("Redis an entry outside 0 to 720 minutes is dropped, so it cannot steer the plan")
+  void outOfRangeEntryIsIgnored() {
+    redis.opsForValue().set(KEY, "100000:9");
+
+    PolicyView policy = service.current();
+
+    assertThat(policy.minimumExpediteMinutes()).isEqualTo(5);
+    assertThat(policy.version()).isEqualTo(1);
+    assertThat(redis.opsForValue().get(KEY)).isEqualTo("5:1");
+  }
+
   // ------------------------------------------------------------------ changing the policy
 
   @Test

@@ -92,7 +92,7 @@ Defaults marked "Compose" are for local use only.
 |---|---|---|---|
 | `EUREKA_USER` | discovery-server, all clients | Registry user | Compose: `eureka` |
 | `EUREKA_PASSWORD` | discovery-server, all clients | Registry password | Compose: `eureka` |
-| `REDIS_PASSWORD` | Redis, api-gateway | Redis password | Compose: `redis` |
+| `REDIS_PASSWORD` | Redis, api-gateway, recovery-service | Redis password (no default; set it for IDE runs too) | Compose: `redis` |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | PostgreSQL | Database account and name | Compose: `aerotrace` |
 | `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD` | Grafana | Optional admin login | `admin` / `grafana` |
 | `JWT_PUBLIC_KEY_LOCATION` or `JWT_PUBLIC_KEY` | api-gateway | Public key that verifies tokens | Dev key packaged at build |

@@ -34,11 +34,14 @@ public final class RecoveryRules {
       "Idempotency-Key must be 1-128 visible ASCII characters";
   public static final String ILLEGAL_MOVE = "This move is not allowed from the current state";
 
-  /** A token subject: letters, digits and the separators identity ids use, at most 100. */
-  public static final String ASSIGNEE_PATTERN = "^[A-Za-z0-9._@:-]{1,100}$";
+  /**
+   * A token subject (an identity id): letters, digits and . _ : -, at most 100. No '@': an e-mail
+   * address would be personal data, and it would end up in the case, its history and the list.
+   */
+  public static final String ASSIGNEE_PATTERN = "^[A-Za-z0-9._:-]{1,100}$";
 
   public static final String ASSIGNEE_RULE =
-      "assignee must be 1-100 letters, digits or one of . _ @ : -";
+      "assignee must be 1-100 letters, digits or one of . _ : -";
 
   /** Reason recorded in the history when a case is assigned; the assignee follows it. */
   public static final String HANDLER_ASSIGNED = "HANDLER_ASSIGNED: ";
