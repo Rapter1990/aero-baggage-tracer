@@ -163,7 +163,7 @@ Redis only caches the policy. See [ADR 0001](../adr/0001-redis-policy-cache.md).
 | Topic | State |
 |---|---|
 | Capacity-service | See [Capacity Service API](CAPACITY-API.md). While it is down, moving to `RESERVED` answers 503 |
-| Hold release by the sweeper | Sends no user token; it sends the shared `CAPACITY_SERVICE_TOKEN` in `X-Service-Token`, which the capacity-service accepts for release only. Without the token the release fails and is retried |
+| Hold release by the sweeper | Sends no user token; it sends the shared `CAPACITY_SERVICE_TOKEN` in `X-Service-Token`, which the capacity-service accepts for release and confirmation only. Without the token the release fails and is retried |
 | Hold confirmation | After a move to `RESERVED` commits, this service confirms the hold (`PUT .../confirmation`); the sweeper repeats a failed confirmation every 30 s for `RESERVED` and `IN_TRANSIT` cases. The capacity-service expires holds nobody confirmed, see [ADR 0002](../adr/0002-capacity-hold-lifecycle.md) |
 | Assignee check | The assignee is checked for shape only: the identity-service is not asked whether that person exists or is an agent, and any agent or dispatcher may assign any case to any id |
 | Redis policy entry | An entry outside 0 to 720 minutes is dropped; Redis is still trusted to hold only what this service wrote, so keep it private (ACL or own instance per service) |

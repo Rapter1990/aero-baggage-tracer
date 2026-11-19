@@ -232,6 +232,9 @@ public class CapacityService {
         expired++;
       }
     }
+    // Tombstones of releases that never met a hold are only needed for a few seconds; the time to
+    // live is far longer than any caller waits for an answer.
+    transaction.executeWithoutResult(status -> reservations.purgeTombstones(cutoff));
     return expired;
   }
 

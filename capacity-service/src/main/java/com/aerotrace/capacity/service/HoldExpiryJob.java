@@ -24,7 +24,11 @@ public class HoldExpiryJob {
     this.capacity = capacity;
   }
 
-  @Scheduled(fixedDelayString = "${aerotrace.capacity.hold.sweep-delay:30s}")
+  // The first sweep waits one delay as well: it must not run in the middle of start-up (or of a
+  // test that has just made a hold).
+  @Scheduled(
+      fixedDelayString = "${aerotrace.capacity.hold.sweep-delay:30s}",
+      initialDelayString = "${aerotrace.capacity.hold.sweep-delay:30s}")
   public void sweep() {
     try {
       int expired = capacity.expireStale();

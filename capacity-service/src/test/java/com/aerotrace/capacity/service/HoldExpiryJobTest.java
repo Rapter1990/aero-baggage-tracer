@@ -50,6 +50,24 @@ class HoldExpiryJobTest extends AbstractCapacityTest {
         () -> service.reserve(request(unconfirmed, leg, 2), null));
   }
 
+  @Test
+  @DisplayName("a tombstone is removed once it is older than the time to live, a live hold stays")
+  void sweepPurgesOldTombstones() {
+    String leg = newLeg();
+    service.setTotal(leg, 2);
+    UUID neverHeld = UUID.randomUUID();
+    assertThat(service.release(neverHeld)).isFalse();
+    assertThat(reservationRows.findById(neverHeld)).isPresent();
+    UUID confirmed = UUID.randomUUID();
+    service.reserve(request(confirmed, leg, 1), null);
+    service.confirm(confirmed);
+
+    job.sweep();
+
+    assertThat(reservationRows.findById(neverHeld)).isEmpty();
+    assertThat(reservationRows.findById(confirmed)).isPresent();
+  }
+
   private static ReservationRequest request(UUID id, String leg, int slots) {
     return new ReservationRequest(id, UUID.randomUUID(), "0123456789", leg, slots);
   }

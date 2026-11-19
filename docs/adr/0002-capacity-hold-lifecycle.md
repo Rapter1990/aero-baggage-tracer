@@ -50,8 +50,10 @@ anything. That left (1) and (2) as permanent leaks (found in the architecture re
   the capacity-service are both down for longer than the TTL right after a move, the hold of that
   active case expires and its slot can be taken by another bag. This is the one remaining window; it
   is logged on the recovery side (`recovery.capacity.confirm` outcome `lost`) when it is found.
-- Tombstones are small rows that are never deleted yet. Anyone allowed to release can create one by
-  releasing a random id. A purge by age is a follow-up.
+- Tombstones are small rows. Anyone allowed to release can create one by releasing a random id, so
+  the expiry job also deletes tombstones older than the hold time to live (a late hold can only
+  arrive within the caller's request timeout, seconds). The rate of creating them is still bounded
+  only by the gateway's per-user limit.
 - Both services depend on the confirmation contract; `docs/apis/CAPACITY-API.md` describes it.
 
 ## Not decided here

@@ -61,7 +61,7 @@ public record RecoveryProperties(
       @DefaultValue("5s") Duration readTimeout,
       @DefaultValue("15m") Duration holdTimeout,
       @DefaultValue("30s") Duration sweepDelay,
-      String serviceToken) {}
+      @DefaultValue("") String serviceToken) {}
 
   /** Relay settings: how often it runs, rows per run and how long published rows are kept. */
   public record Outbox(

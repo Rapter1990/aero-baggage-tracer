@@ -133,7 +133,7 @@ The service does not use Redis. Nothing but PostgreSQL can grant a slot, so a Re
 | Topic | State |
 |---|---|
 | Confirmation window | The recovery-service confirms a hold right after the case move commits and repeats it every 30 s. If both services are down for longer than the TTL right after a move, the hold of that active case expires |
-| Tombstones | A release of an unknown id leaves a small row that is never deleted yet; a purge by age is a follow-up |
+| Tombstones | A release of an unknown id leaves a small row. The expiry job deletes tombstones older than the hold time to live (1 h); with expiry switched off they are kept |
 | Status code of a replay | A repeated hold answers `201` again, with the same body |
 | Service token | A secret shorter than 16 characters is ignored. The gateway removes `X-Service-Token`, so only direct service calls can use it. Do not use the Compose default outside local runs |
 | Resource lifecycle | Resources are created and resized, never deleted |

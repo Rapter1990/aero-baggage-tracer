@@ -10,6 +10,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -24,12 +26,25 @@ import org.springframework.web.filter.OncePerRequestFilter;
  */
 final class ServiceTokenFilter extends OncePerRequestFilter {
 
-  private final byte[] secret;
+  private static final Logger LOG = LoggerFactory.getLogger(ServiceTokenFilter.class);
 
   /** A shorter secret is treated as not set: it would be too easy to guess. */
   static final int MIN_SECRET_LENGTH = 16;
 
+  private final byte[] secret;
+
   ServiceTokenFilter(String token) {
+    boolean tooShort = token != null && !token.isBlank() && token.length() < MIN_SECRET_LENGTH;
+    if (tooShort) {
+      // Said once, at start-up: the recovery-service would keep sending its token, every release
+      // and
+      // confirmation would answer 401, and holds of active cases would expire. The value is not
+      // logged.
+      LOG.warn(
+          "CAPACITY_SERVICE_TOKEN is shorter than {} characters and is ignored: no service caller"
+              + " (the recovery-service sweeper) can release or confirm holds",
+          MIN_SECRET_LENGTH);
+    }
     this.secret =
         token == null || token.length() < MIN_SECRET_LENGTH
             ? new byte[0]

@@ -45,7 +45,7 @@ public record CapacityProperties(
    * Service-to-service calls. The recovery-service sweeper releases holds with no user token, so it
    * sends this shared secret in {@code X-Service-Token}. Empty means no service caller is accepted.
    */
-  public record Service(String token) {}
+  public record Service(@DefaultValue("") String token) {}
 
   /** Token verification: the identity-service public key (inline or location) and audience. */
   public record Jwt(

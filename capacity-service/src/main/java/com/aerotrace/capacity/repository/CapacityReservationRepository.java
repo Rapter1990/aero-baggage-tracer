@@ -51,6 +51,19 @@ public interface CapacityReservationRepository
   int insertTombstone(
       @Param("id") UUID id, @Param("now") Instant now, @Param("actor") String actor);
 
+  /**
+   * Removes tombstones released before the cutoff. A late hold can only arrive within the caller's
+   * request timeout (seconds), so a tombstone older than the hold time to live has done its work.
+   * Without this, releasing random ids would grow the table without limit.
+   */
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query(
+      value =
+          "DELETE FROM capacity.capacity_reservation WHERE resource_id IS NULL"
+              + " AND status = 'RELEASED' AND released_at < :cutoff",
+      nativeQuery = true)
+  int purgeTombstones(@Param("cutoff") Instant cutoff);
+
   /** HELD to RELEASED; 0 rows means it was already closed (or never existed). */
   @Modifying(flushAutomatically = true, clearAutomatically = true)
   @Query(
