@@ -132,6 +132,11 @@ Defaults marked "Compose" are for local use only.
 | `AUTH_RATE_LIMIT_REPLENISH_RATE` | api-gateway | Auth tokens refilled per second | `0.2` (12 a minute) |
 | `AUTH_RATE_LIMIT_BURST_CAPACITY` | api-gateway | Auth burst size | `10` |
 | `DOCS_ENABLED` | gateway, identity, journey | Serve OpenAPI and Swagger UI | `true` |
+| `ELASTIC_PASSWORD` | Elasticsearch, search-service | Password of the `elastic` user. No default: both compose files refuse to start without it, so put it in `.env` | none, required |
+| `ELASTICSEARCH_URIS` | search-service | Where Elasticsearch answers | `http://localhost:9200` (Compose: `http://elasticsearch:9200`) |
+| `SEARCH_CURSOR_SECRET` | search-service | HMAC key of the paging cursors, the same on every instance | empty = a random key per start |
+| `SEARCH_EXPORT_SERVICE_TOKEN` | search-service | Token sent to the export endpoints of #28 and #29 | empty = none sent |
+| `JOURNEY_SERVICE_URL`, `RECOVERY_SERVICE_URL` | search-service | Where the export endpoints answer | `http://localhost:1113`, `http://localhost:1115` |
 
 Notes on keys:
 
@@ -156,6 +161,7 @@ docker compose up -d
 | Staff accounts | Only an ADMIN token can create them |
 | API docs | On by default. `DOCS_ENABLED=false` turns them off |
 | Kafka UI | Port 8090, cluster `local` |
+| Elasticsearch | Set `ELASTIC_PASSWORD` in `.env` first: it has no default, so both compose files refuse to start without it. Port 9200 is not published (loopback only in `docker-compose-local.yml`) |
 
 ### Dev accounts
 
@@ -192,6 +198,9 @@ SELECT id, 'ADMIN' FROM identity.app_user WHERE username = 'your-username';
 | [docs/apis/API.md](docs/apis/API.md) | Overview and the Postman collection |
 | [docs/apis/IDENTITY-API.md](docs/apis/IDENTITY-API.md) | Identity calls, tokens, flows, requests |
 | [docs/apis/JOURNEY-API.md](docs/apis/JOURNEY-API.md) | Journey calls, scans, events, flows, requests |
+| [docs/apis/RECOVERY-API.md](docs/apis/RECOVERY-API.md) | Recovery cases, moves, capacity, policy, events |
+| [docs/apis/CAPACITY-API.md](docs/apis/CAPACITY-API.md) | Capacity reservations, release, resources |
+| [docs/apis/SEARCH-API.md](docs/apis/SEARCH-API.md) | Bag search, airport report, index status, rebuild |
 
 | Service | Address |
 |---|---|
@@ -201,6 +210,7 @@ SELECT id, 'ADMIN' FROM identity.app_user WHERE username = 'your-username';
 | risk-streams-service (actuator only, no public API) | `http://localhost:1114` |
 | recovery-service (direct) | `http://localhost:1115` |
 | capacity-service (direct) | `http://localhost:1116` |
+| search-service (direct) | `http://localhost:1117` |
 
 In Compose, the one-shot `kafka-init` job creates the Kafka topics before journey-service, risk-streams-service and recovery-service start (idempotent, `--if-not-exists`):
 
@@ -212,6 +222,7 @@ In Compose, the one-shot `kafka-init` job creates the Kafka topics before journe
 | `recovery.case.changed.v1` | 6 | 7d |
 | `recovery.capacity.changed.v1` | 6 | 7d |
 | `baggage.dead-letter.v1` | 3 | 30d |
+| `baggage.bag.registered.v1` | 6 | 7d (read by the search-service; published once #28 lands) |
 
 All use `cleanup.policy=delete` and replication factor 1. A topic that already exists (for example auto-created earlier with 1 partition) is not changed: delete it once in Kafka UI to get these settings. `docker-compose-local.yml` has the same `kafka-init` job, so the topics exist with these settings when you run the services from the IDE.
 
@@ -433,6 +444,7 @@ The script runs `mvn verify` and pushes numbers only if it succeeds. `mvn verify
 | journey-service | Also starts Kafka for the relay |
 | recovery-service | Starts PostgreSQL, a password-protected Redis and Kafka, and a stand-in capacity-service on a real port; one class points Redis at a dead port |
 | capacity-service | Starts PostgreSQL only; the Kafka producer is a mock, events are read from the outbox. The 50-for-10 race (AT-11) and the Redis-offline run (AT-19) run against the real database |
+| search-service | Starts Elasticsearch (`9.2.8`, the client's version, security on) and Kafka; the rebuild source is an in-memory stand-in for the export endpoints of #28 and #29; two tests pause Elasticsearch to show the 503 and that no offset is committed while it is down |
 | No Docker | Tests are skipped, not failed |
 | No Docker with `CI` set | Identity and journey fail the build |
 | Coverage check | Includes integration tests |

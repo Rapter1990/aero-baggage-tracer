@@ -57,9 +57,37 @@ services:
         $$T --bootstrap-server $$B --create --if-not-exists --topic recovery.case.changed.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
         $$T --bootstrap-server $$B --create --if-not-exists --topic recovery.capacity.changed.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
         $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.dead-letter.v1 --partitions 3 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=2592000000
+        # Read by the search-service; published by the journey-service once #28 lands (#15 owns its final settings).
+        $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.bag.registered.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
     depends_on:
       kafka:
         condition: service_healthy
+    networks:
+      - aerotrace
+
+  # The search read models (search-service only). Single node, security on, the image pinned to
+  # the Java client's version. ELASTIC_PASSWORD has no default: set it in .env. Port 9200 is not
+  # published; only containers on the network reach it. TLS is off on this internal network.
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.2.8
+    container_name: elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.security.transport.ssl.enabled: "false"
+      xpack.ml.enabled: "false"
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?set ELASTIC_PASSWORD in .env (see README)}
+      ES_JAVA_OPTS: ${ELASTICSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u \"elastic:$$ELASTIC_PASSWORD\" http://localhost:9200/_cluster/health > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
     networks:
       - aerotrace
 
@@ -368,6 +396,56 @@ services:
     networks:
       - aerotrace
 
+  # Bag search and the airport report from the Elasticsearch read models, fed by the case, scan,
+  # risk and bag events. Derived data: rebuilt from the owning services (POST /api/v1/admin/search/
+  # reindex), never written to them.
+  search-service:
+    image: ${REGISTRY:-ghcr.io/rapter1990}/aerotrace-search-service:${TAG:-latest}
+    container_name: search-service
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+    environment:
+      EUREKA_URL: http://${EUREKA_USER:-eureka}:${EUREKA_PASSWORD:-eureka}@discovery-server:8761/eureka/
+      EUREKA_INSTANCE_HOSTNAME: search-service
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      ELASTICSEARCH_URIS: http://elasticsearch:9200
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?set ELASTIC_PASSWORD in .env (see README)}
+      # HMAC key of the paging cursors, the same for every instance. Empty: a random key per start.
+      SEARCH_CURSOR_SECRET: ${SEARCH_CURSOR_SECRET:-}
+      # The internal export endpoints of the owners (#28, #29) and the token they accept.
+      JOURNEY_SERVICE_URL: ${JOURNEY_SERVICE_URL:-http://journey-service:1113}
+      RECOVERY_SERVICE_URL: ${RECOVERY_SERVICE_URL:-http://recovery-service:1115}
+      SEARCH_EXPORT_SERVICE_TOKEN: ${SEARCH_EXPORT_SERVICE_TOKEN:-}
+      # Empty: the identity-service development public key bundled in the image is used.
+      IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-1.0}
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    # Clients reach it through the gateway (/api/v1/search/**, /api/v1/reports/**,
+    # /api/v1/admin/search/**); 1117 is its own port.
+    ports:
+      - "1117:1117"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:1117/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 40s
+    networks:
+      - aerotrace
+
   # Kafka Streams app (risk, anomalies, dead letters). Internal only: it has no public API, so it
   # is not routed by the gateway; 1114 is its own port (actuator).
   risk-streams-service:
@@ -547,6 +625,7 @@ volumes:
   tempo-data:
   loki-data:
   risk-streams-state:
+  elasticsearch-data:
 
 networks:
   aerotrace:

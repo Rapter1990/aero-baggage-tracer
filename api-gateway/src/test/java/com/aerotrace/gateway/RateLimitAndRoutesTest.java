@@ -69,6 +69,10 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
     assertThat(get("/api/v1/bags/AB123456/journey", null).statusCode()).isEqualTo(401);
     assertThat(get("/api/v1/recovery-cases/1", null).statusCode()).isEqualTo(401);
     assertThat(get("/api/v1/recovery-policy", null).statusCode()).isEqualTo(401);
+    assertThat(get("/api/v1/search/bags", null).statusCode()).isEqualTo(401);
+    assertThat(get("/api/v1/search/index/status", null).statusCode()).isEqualTo(401);
+    assertThat(send("POST", "/api/v1/admin/search/reindex", null).statusCode()).isEqualTo(401);
+    assertThat(get("/api/v1/reports/airport/IST", null).statusCode()).isEqualTo(401);
 
     // No identity-service instance exists in this test, so these calls fail after security passed.
     for (String path :
@@ -116,6 +120,9 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
             "recovery-service",
             "recovery-service",
             "capacity-service",
+            // Reports, bag search and the index status, the rebuild.
+            "search-service",
+            "search-service",
             "search-service",
             // OpenAPI definition routes (one per service for the Swagger UI dropdown).
             "identity-service",

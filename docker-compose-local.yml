@@ -56,9 +56,38 @@ services:
         $$T --bootstrap-server $$B --create --if-not-exists --topic recovery.case.changed.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
         $$T --bootstrap-server $$B --create --if-not-exists --topic recovery.capacity.changed.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
         $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.dead-letter.v1 --partitions 3 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=2592000000
+        # Read by the search-service; published by the journey-service once #28 lands (#15 owns its final settings).
+        $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.bag.registered.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
     depends_on:
       kafka:
         condition: service_healthy
+    networks:
+      - aerotrace
+
+  # The search-service's read models. Same pinned image and security as docker-compose.yml;
+  # ELASTIC_PASSWORD has no default (set it in .env). Bound to loopback only, for the
+  # search-service run from the IDE (http://localhost:9200, user elastic).
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.2.8
+    container_name: elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.security.transport.ssl.enabled: "false"
+      xpack.ml.enabled: "false"
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?set ELASTIC_PASSWORD in .env (see README)}
+      ES_JAVA_OPTS: ${ELASTICSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u \"elastic:$$ELASTIC_PASSWORD\" http://localhost:9200/_cluster/health > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
     networks:
       - aerotrace
 
@@ -224,6 +253,7 @@ volumes:
   postgres-18-data:
   tempo-data:
   loki-data:
+  elasticsearch-data:
 
 networks:
   aerotrace:

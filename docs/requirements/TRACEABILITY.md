@@ -38,7 +38,7 @@ Sources of truth: [BUSINESS_RULES.md](BUSINESS_RULES.md) and [ACCEPTANCE_TESTS.m
 | AT-15 | #9, #8 | not tagged with its id yet |
 | AT-16 | #7 | `GatewaySecurityTest` |
 | AT-17 | #16 | |
-| AT-18 | #13 | |
+| AT-18 | #13 | search-service side only, not yet end to end: `RebuildFromSourceTest` (a real Elasticsearch; the source is an in-memory stand-in for the export endpoints, which #28 and #29 add: 150 cases over two export pages, `_count`, ids and versions equal the source, no id twice, `_alias/cases-read` names one index, a racing stale event loses, a second run gives the same result, the source only gets `GET`s and is unchanged). The proof against the real journey- and recovery-services waits for #28 and #29 |
 | AT-19 | #12 | capacity side: `RedisOfflineTest` (the service has no Redis; an unreachable Redis cannot change the 50-for-10 result); recovery side (no duplicate case with Redis down): `RedisDownTest` |
 | AT-20 | #19 | |
 | AT-21 | #19 | |

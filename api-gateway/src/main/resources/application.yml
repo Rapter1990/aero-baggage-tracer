@@ -68,6 +68,16 @@ spring:
               uri: lb://search-service
               predicates:
                 - Path=/api/v1/reports/**
+            # Bag search and the index status; the search-service checks the roles (staff only).
+            - id: search
+              uri: lb://search-service
+              predicates:
+                - Path=/api/v1/search/**
+            # Rebuild of the search indexes; the search-service lets only ADMIN through.
+            - id: search-admin
+              uri: lb://search-service
+              predicates:
+                - Path=/api/v1/admin/search/**
             # OpenAPI definitions of each service, fetched through the gateway for the Swagger UI.
             - id: docs-identity
               uri: lb://identity-service
