@@ -114,6 +114,21 @@ public abstract class AbstractSearchTest {
     }
   }
 
+  /** Freezes Elasticsearch (it stops answering, connections hang) until {@link #resume}. */
+  protected static void pauseElasticsearch() {
+    DockerClientFactory.instance()
+        .client()
+        .pauseContainerCmd(ELASTICSEARCH.getContainerId())
+        .exec();
+  }
+
+  protected static void resumeElasticsearch() {
+    DockerClientFactory.instance()
+        .client()
+        .unpauseContainerCmd(ELASTICSEARCH.getContainerId())
+        .exec();
+  }
+
   public static String kafkaBootstrapServers() {
     start();
     return KAFKA.getBootstrapServers();

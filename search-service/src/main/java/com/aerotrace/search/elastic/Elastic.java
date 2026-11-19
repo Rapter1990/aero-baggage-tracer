@@ -37,12 +37,20 @@ public final class Elastic {
     return status == 429 || status >= 500;
   }
 
-  /** Dates are written as ISO-8601 UTC text, so no JSON mapper has to know {@link Instant}. */
+  /** ISO-8601 UTC text, so no JSON mapper has to know {@link Instant}. */
   public static String iso(Instant instant) {
     return instant == null ? null : instant.toString();
   }
 
-  /** Reads a date written by {@link #iso}, or an epoch-millis number, or null. */
+  /**
+   * Dates in the documents are epoch milliseconds (the {@code date} mapping accepts them): the
+   * Painless guards compare them as numbers, which ISO text of varying precision would not allow.
+   */
+  public static Long millis(Instant instant) {
+    return instant == null ? null : instant.toEpochMilli();
+  }
+
+  /** Reads a date written by {@link #millis} or {@link #iso}, or null. */
   public static Instant instant(Object value) {
     if (value == null) {
       return null;
