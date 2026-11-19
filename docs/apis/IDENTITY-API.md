@@ -29,7 +29,7 @@ Registers users, signs them in, issues tokens.
 
 | Call | Token | Body | What it does |
 |---|---|---|---|
-| `POST /register` | none (staff role: ADMIN) | `username`, `email`, `password`, `fullName`, `role` (optional) | Creates an account (201) |
+| `POST /register` | none (staff role: ADMIN) | `username`, `email`, `password`, `fullName`, `role` (optional) | Creates an account (201). `createdBy` in the answer is the id of the admin who registered it, or `anonymous` for a self-registration |
 | `POST /login` | none | `usernameOrEmail`, `password` | Returns tokens, expiry times, roles |
 | `POST /refresh-token` | none | `refreshToken` | Returns a new token pair |
 | `POST /forgot-password` | none | `usernameOrEmail` | Starts a password reset |

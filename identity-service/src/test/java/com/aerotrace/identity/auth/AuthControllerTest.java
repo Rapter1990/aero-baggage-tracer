@@ -52,7 +52,8 @@ class AuthControllerTest extends AbstractRestControllerTest {
                 "Jane Doe",
                 List.of("PASSENGER"),
                 "ACTIVE",
-                NOW));
+                NOW,
+                "system"));
 
     submit("/api/v1/auth/register", VALID_REGISTER)
         .andExpect(status().isCreated())

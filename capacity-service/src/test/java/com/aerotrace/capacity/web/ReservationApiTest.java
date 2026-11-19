@@ -259,6 +259,13 @@ class ReservationApiTest extends AbstractCapacityTest {
     assertThat(created.getCreatedBy()).isEqualTo("user-admin");
     assertThat(created.getUpdatedBy()).isEqualTo("user-admin");
     assertThat(created.getUpdatedAt()).isEqualTo(created.getCreatedAt());
+    // The same values are in the answer.
+    mockMvc
+        .perform(get(RESOURCES + "/{id}", leg).with(as(Role.AGENT)))
+        .andExpect(jsonPath("$.data.createdBy").value("user-admin"))
+        .andExpect(jsonPath("$.data.updatedBy").value("user-admin"))
+        .andExpect(jsonPath("$.data.createdAt").exists())
+        .andExpect(jsonPath("$.data.updatedAt").exists());
 
     UUID id = UUID.randomUUID();
     mockMvc

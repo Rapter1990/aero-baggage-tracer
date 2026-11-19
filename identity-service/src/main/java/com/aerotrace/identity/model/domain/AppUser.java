@@ -19,7 +19,8 @@ public record AppUser(
     String passengerRef,
     boolean enabled,
     Set<Role> roles,
-    Instant createdAt) {
+    Instant createdAt,
+    String createdBy) {
 
   public AppUser {
     roles = Set.copyOf(roles);

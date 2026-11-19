@@ -54,6 +54,26 @@ Request to hold slots:
 
 Answer: `201` with `{"reservationId": "...", "status": "HELD"}`.
 
+Answer of a resource (`PUT` and `GET`), with who created and last changed it:
+
+```json
+{
+  "success": true,
+  "data": {
+    "resourceId": "LEG-2",
+    "totalSlots": 3,
+    "remainingSlots": 2,
+    "createdBy": "00000000-0000-4000-8000-000000000005",
+    "createdAt": "2026-11-19T10:25:50.123Z",
+    "updatedBy": "00000000-0000-4000-8000-000000000003",
+    "updatedAt": "2026-11-19T10:26:30.456Z"
+  },
+  "timestamp": "2026-11-19T10:26:30.863Z"
+}
+```
+
+`createdBy` and `updatedBy` are the ids of the users (the subject of their token), `service` for the recovery-service sweeper, `system` for a row from before auditing. See [ADR 0003](../adr/0003-spring-data-auditing.md).
+
 ## Rules
 
 | Topic | Rule |
@@ -118,3 +138,96 @@ The service does not use Redis. Nothing but PostgreSQL can grant a slot, so a Re
 | Service token | A secret shorter than 16 characters is ignored. The gateway removes `X-Service-Token`, so only direct service calls can use it. Do not use the Compose default outside local runs |
 | Resource lifecycle | Resources are created and resized, never deleted |
 | Redis hint | Not built (optional in the issue) |
+
+## Every request in the Postman collection
+
+Generated from `postman/AeroTrace.postman_collection.json`, folder "Capacity Service". Run it top to bottom; see [the Postman section of the API overview](API.md#postman-collection).
+
+| Column | Meaning |
+|---|---|
+| Step | Number before the request name |
+| Call | Path via gateway, unless marked direct (port 1116) |
+| Expect | Status the test script checks |
+
+#### 1 - Sign in
+
+| Step | Request | Call | Expect |
+|---|---|---|---|
+| 1.1 | Sign in as the admin | `POST /api/v1/auth/login` | 200 |
+| 1.2 | Sign in as the agent | `POST /api/v1/auth/login` | 200 |
+| 1.3 | Sign in as the dispatcher | `POST /api/v1/auth/login` | 200 |
+| 1.4 | Sign in as the passenger | `POST /api/v1/auth/login` | 200 |
+
+#### 2 - Resources (the admin sets capacity)
+
+| Step | Request | Call | Expect |
+|---|---|---|---|
+| 2.1 | Create the resource with 3 slots (admin) | `PUT /api/v1/capacity/resources/{leg}` | 200 |
+| 2.2 | Read the resource (agent) | `GET /api/v1/capacity/resources/{leg}` | 200 |
+| 2.3 | Set the same total again (nothing changes) | `PUT /api/v1/capacity/resources/{leg}` | 200 |
+| 2.4 | Set the total as the agent (refused) | `PUT /api/v1/capacity/resources/{leg}` | 403 |
+| 2.5 | An invalid resource id (refused) | `PUT /api/v1/capacity/resources/bad%20id!` | 400 |
+| 2.6 | A total out of range (refused) | `PUT /api/v1/capacity/resources/{leg}` | 400 |
+| 2.7 | Read a resource that does not exist | `GET /api/v1/capacity/resources/NO-SUCH-LEG-PM` | 404 |
+| 2.8 | List the resources, one per page (agent) | `GET /api/v1/capacity/resources?page=0&size=1` | 200 |
+
+#### 3 - Hold slots (agent)
+
+| Step | Request | Call | Expect |
+|---|---|---|---|
+| 3.1 | Hold one slot | `POST /api/v1/capacity/reservations` | 201 |
+| 3.2 | Repeat the same request (the same hold, nothing more is taken) | `POST /api/v1/capacity/reservations` | 201 |
+| 3.3 | Two slots are free, and the audit shows the agent as the last to change it | `GET /api/v1/capacity/resources/{leg}` | 200 |
+| 3.4 | The same reservation id for a different request (refused) | `POST /api/v1/capacity/reservations` | 409 |
+| 3.5 | Hold one more slot with an Idempotency-Key | `POST /api/v1/capacity/reservations` | 201 |
+| 3.6 | The same Idempotency-Key for another reservation (refused) | `POST /api/v1/capacity/reservations` | 409 |
+| 3.7 | Two slots when one is left (409 CAPACITY_EXCEEDED, nothing is taken) | `POST /api/v1/capacity/reservations` | 409 |
+| 3.8 | A leg without a resource (404, a set-up problem and not a full leg) | `POST /api/v1/capacity/reservations` | 404 |
+| 3.9 | Zero slots (refused) | `POST /api/v1/capacity/reservations` | 400 |
+| 3.10 | Hold a slot as the passenger (refused) | `POST /api/v1/capacity/reservations` | 403 |
+| 3.11 | Hold a slot without a token (refused) | `POST /api/v1/capacity/reservations` | 401 |
+
+#### 4 - Confirm and release (dispatcher)
+
+| Step | Request | Call | Expect |
+|---|---|---|---|
+| 4.1 | Confirm the first hold | `PUT /api/v1/capacity/reservations/{id}/confirmation` | 200 |
+| 4.2 | Confirm it again (nothing changes) | `PUT /api/v1/capacity/reservations/{id}/confirmation` | 200 |
+| 4.3 | Release the first hold | `DELETE /api/v1/capacity/reservations/{id}` | 204 |
+| 4.4 | Release it again (204, the slot is returned only once) | `DELETE /api/v1/capacity/reservations/{id}` | 204 |
+| 4.5 | Two slots are free again, and the audit shows the dispatcher | `GET /api/v1/capacity/resources/{leg}` | 200 |
+| 4.6 | A released hold does not hold again (refused) | `POST /api/v1/capacity/reservations` | 409 |
+| 4.7 | Confirm a released hold (refused) | `PUT /api/v1/capacity/reservations/{id}/confirmation` | 409 |
+| 4.8 | Release an id that was never held (404, and the id is remembered as released) | `DELETE /api/v1/capacity/reservations/{id}` | 404 |
+| 4.9 | A hold with that id arrives late (refused, it never takes a slot) | `POST /api/v1/capacity/reservations` | 409 |
+| 4.10 | Confirm a hold that does not exist | `PUT /api/v1/capacity/reservations/{id}/confirmation` | 404 |
+| 4.11 | Release the second hold | `DELETE /api/v1/capacity/reservations/{{capacityReservationId2}}` | 204 |
+| 4.12 | All 3 slots are free again | `GET /api/v1/capacity/resources/{leg}` | 200 |
+
+#### 5 - Refused calls
+
+| Step | Request | Call | Expect |
+|---|---|---|---|
+| 5.1 | List the resources as the passenger (403) | `GET /api/v1/capacity/resources` | 403 |
+| 5.2 | Create a resource as the dispatcher (403: only admins) | `PUT /api/v1/capacity/resources/{leg}` | 403 |
+| 5.3 | Release without a token (401) | `DELETE /api/v1/capacity/reservations/{id}` | 401 |
+| 5.4 | A path that is not listed, as the admin (403: everything else is denied) | `GET /api/v1/capacity/other` | 403 |
+
+#### 6 - Service token (the recovery-service sweeper)
+
+| Step | Request | Call | Expect |
+|---|---|---|---|
+| 6.1 | Hold a slot through the gateway (agent) | `POST /api/v1/capacity/reservations` | 201 |
+| 6.2 | Confirm it with the service token, no user token | `PUT /api/v1/capacity/reservations/{id}/confirmation` (direct) | 200 |
+| 6.3 | Release it with the service token | `DELETE /api/v1/capacity/reservations/{id}` (direct) | 204 |
+| 6.4 | All 3 slots are free, and the audit shows the service | `GET /api/v1/capacity/resources/{leg}` | 200 |
+| 6.5 | The service token cannot hold slots (403) | `POST /api/v1/capacity/reservations` (direct) | 403 |
+| 6.6 | A wrong service token changes nothing (401) | `DELETE /api/v1/capacity/reservations/{id}` (direct) | 401 |
+| 6.7 | Through the gateway the service token is ignored (401) | `DELETE /api/v1/capacity/reservations/{id}` | 401 |
+
+#### 7 - Service checks (direct, port 1116)
+
+| Step | Request | Call | Expect |
+|---|---|---|---|
+| 7.1 | Health | `GET /actuator/health` (direct) | 200 |
+| 7.2 | OpenAPI definition (the 409 contract is documented) | `GET /v3/api-docs` (direct) | 200 |

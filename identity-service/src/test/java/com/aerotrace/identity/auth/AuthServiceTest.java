@@ -97,7 +97,8 @@ class AuthServiceTest extends AbstractBaseServiceTest {
             "P-00000000000000000001",
             true,
             Set.of(Role.PASSENGER),
-            NOW);
+            NOW,
+            "system");
     janeEntity =
         new AppUserEntity(
             id,
@@ -186,7 +187,8 @@ class AuthServiceTest extends AbstractBaseServiceTest {
             null,
             true,
             Set.of(Role.AGENT),
-            NOW);
+            NOW,
+            "system");
     when(users.create(any(), any(), any(), any(), eq(Set.of(Role.AGENT)))).thenReturn(agent);
 
     RegisteredUserResponse response =
@@ -552,7 +554,8 @@ class AuthServiceTest extends AbstractBaseServiceTest {
             null,
             false,
             Set.of(Role.AGENT),
-            NOW);
+            NOW,
+            "system");
     when(users.findByUsernameOrEmail("jane")).thenReturn(Optional.of(disabled));
 
     service.forgotPassword(new ForgotPasswordRequest("jane"));

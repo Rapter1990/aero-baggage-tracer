@@ -42,6 +42,8 @@ class AuditColumnsTest extends AbstractIntegrationTest {
     assertThat(response.statusCode()).isEqualTo(201);
 
     String creator = subjectOf(token);
+    // The answer shows who registered the account.
+    assertThat(json(response).get("data").get("createdBy").asString()).isEqualTo(creator);
     var row =
         jdbc.sql(
                 "select created_by, created_at, updated_by, updated_at from identity.app_user"

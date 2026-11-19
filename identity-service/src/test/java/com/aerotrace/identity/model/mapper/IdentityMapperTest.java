@@ -97,7 +97,8 @@ class IdentityMapperTest extends AbstractBaseServiceTest {
             REF,
             true,
             Set.of(Role.PASSENGER, Role.ADMIN),
-            Instant.parse("2026-11-12T10:15:30Z"));
+            Instant.parse("2026-11-12T10:15:30Z"),
+            "system");
 
     // When
     RegisteredUserResponse response = mapper.toRegisteredUserResponse(user);
@@ -118,7 +119,16 @@ class IdentityMapperTest extends AbstractBaseServiceTest {
     // Given
     AppUser user =
         new AppUser(
-            ID, "jane", "j@example.com", "Jane Doe", HASH, null, false, Set.of(Role.AGENT), null);
+            ID,
+            "jane",
+            "j@example.com",
+            "Jane Doe",
+            HASH,
+            null,
+            false,
+            Set.of(Role.AGENT),
+            null,
+            "system");
 
     // Then
     assertThat(mapper.toRegisteredUserResponse(user).status()).isEqualTo("DISABLED");
