@@ -70,6 +70,7 @@ Answer: `201` with `{"reservationId": "...", "status": "HELD"}`.
 | Confirmation | Marks a hold as kept by its case. A released or expired hold answers `409 ILLEGAL_TRANSITION` |
 | Expiry | On by default (`CAPACITY_HOLD_EXPIRY_ENABLED`). Only a hold nobody confirmed within `CAPACITY_HOLD_TTL` (1 h) is given back. A confirmed hold is never expired: its owner releases it. See [ADR 0002](../adr/0002-capacity-hold-lifecycle.md) |
 | Listing | `GET /resources?page=0&size=50`, ordered by id, size capped at 200 |
+| Audit | A resource records who created it and who last changed it, and when. A hold records who made it, who confirmed it and who released it (`system` when it expired). The user is the subject of the token, which is the user's id; `service` for the sweeper. See [ADR 0003](../adr/0003-spring-data-auditing.md) |
 | Resize | The free slots move by the same difference. A total lower than the slots held is `409 CAPACITY_EXCEEDED` |
 
 ## The 409 contract

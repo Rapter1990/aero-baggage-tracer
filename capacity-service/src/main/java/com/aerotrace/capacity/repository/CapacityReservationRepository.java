@@ -75,10 +75,10 @@ public interface CapacityReservationRepository
   @Modifying(flushAutomatically = true, clearAutomatically = true)
   @Query(
       value =
-          "UPDATE capacity.capacity_reservation SET confirmed_at = :now"
+          "UPDATE capacity.capacity_reservation SET confirmed_at = :now, confirmed_by = :actor"
               + " WHERE id = :id AND status = 'HELD' AND confirmed_at IS NULL",
       nativeQuery = true)
-  int confirm(@Param("id") UUID id, @Param("now") Instant now);
+  int confirm(@Param("id") UUID id, @Param("now") Instant now, @Param("actor") String actor);
 
   /** The oldest unconfirmed holds past the cutoff. */
   @Query(

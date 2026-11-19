@@ -57,6 +57,9 @@ public class CapacityReservationEntity {
   @Column(name = "created_by", nullable = false, insertable = false, updatable = false)
   private String createdBy;
 
+  @Column(name = "confirmed_by", insertable = false, updatable = false)
+  private String confirmedBy;
+
   @Column(name = "released_by", insertable = false, updatable = false)
   private String releasedBy;
 }

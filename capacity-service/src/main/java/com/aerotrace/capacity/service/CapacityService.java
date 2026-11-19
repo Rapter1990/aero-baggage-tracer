@@ -178,13 +178,13 @@ public class CapacityService {
               String actor = SecurityAuditorAware.currentAuditor();
               IntSupplier close =
                   () -> reservations.release(reservationId, Instant.now(clock), actor);
-              boolean known = settle(reservationId, close, MetricNames.RESERVATIONS_RELEASED);
+              boolean known =
+                  settle(reservationId, close, actor, MetricNames.RESERVATIONS_RELEASED);
               if (!known
                   && reservations.insertTombstone(reservationId, Instant.now(clock), actor) == 0) {
                 // The hold was inserted between the look-up and the tombstone (the insert waited
-                // for
-                // it to commit): it exists now, so close it.
-                known = settle(reservationId, close, MetricNames.RESERVATIONS_RELEASED);
+                // for it to commit): it exists now, so close it.
+                known = settle(reservationId, close, actor, MetricNames.RESERVATIONS_RELEASED);
               }
               return known;
             }));
@@ -197,7 +197,8 @@ public class CapacityService {
           if (!reservations.existsById(reservationId)) {
             throw new ApiException(ErrorCode.NOT_FOUND, CapacityRules.NO_SUCH_RESERVATION);
           }
-          reservations.confirm(reservationId, Instant.now(clock));
+          reservations.confirm(
+              reservationId, Instant.now(clock), SecurityAuditorAware.currentAuditor());
           CapacityReservationEntity current = reservations.findById(reservationId).orElseThrow();
           if (!CapacityRules.HELD.equals(current.getStatus())) {
             throw new ApiException(ErrorCode.ILLEGAL_TRANSITION, CapacityRules.RESERVATION_CLOSED);
@@ -224,6 +225,8 @@ public class CapacityService {
                   settle(
                       id,
                       () -> reservations.expire(id, cutoff, Instant.now(clock)),
+                      // The job acts for nobody: the slots it gives back are the system's doing.
+                      SecurityAuditorAware.SYSTEM,
                       MetricNames.RESERVATIONS_EXPIRED));
       if (Boolean.TRUE.equals(closed)) {
         expired++;
@@ -236,15 +239,14 @@ public class CapacityService {
    * Runs the guarded close and, only when this call won it, returns the slots and writes the event.
    * Returns false when there is no such hold.
    */
-  private boolean settle(UUID reservationId, IntSupplier close, String counter) {
+  private boolean settle(UUID reservationId, IntSupplier close, String actor, String counter) {
     CapacityReservationEntity hold = reservations.findById(reservationId).orElse(null);
     if (hold == null) {
       return false;
     }
     if (close.getAsInt() == 1) {
       Instant now = Instant.now(clock);
-      resources.giveBack(
-          hold.getResourceId(), hold.getSlots(), now, SecurityAuditorAware.currentAuditor());
+      resources.giveBack(hold.getResourceId(), hold.getSlots(), now, actor);
       publishChange(hold.getResourceId());
       meters.counter(counter).increment();
     }

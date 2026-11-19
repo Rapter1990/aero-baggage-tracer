@@ -9,8 +9,8 @@ import org.springframework.stereotype.Component;
 /**
  * Gives back the slots of holds that nobody confirmed within the time to live (a caller that died
  * between holding and moving its case). A hold a case move confirmed is never touched: it is
- * released by its owner (the recovery-service) when the case is resolved, cancelled or closed. Off
- * by default; see {@code aerotrace.capacity.hold.expiry-enabled}.
+ * released by its owner (the recovery-service) when the case is resolved, cancelled or closed. On
+ * by default; see {@code aerotrace.capacity.hold.expiry-enabled} and ADR 0002.
  */
 @Component
 @ConditionalOnProperty(name = "aerotrace.capacity.hold.expiry-enabled", havingValue = "true")

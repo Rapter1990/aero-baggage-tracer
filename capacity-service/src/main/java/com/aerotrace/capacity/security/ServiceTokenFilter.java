@@ -1,5 +1,6 @@
 package com.aerotrace.capacity.security;
 
+import com.aerotrace.audit.SecurityAuditorAware;
 import com.aerotrace.capacity.constant.CapacityRules;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -46,7 +47,7 @@ final class ServiceTokenFilter extends OncePerRequestFilter {
       SecurityContextHolder.getContext()
           .setAuthentication(
               UsernamePasswordAuthenticationToken.authenticated(
-                  "service",
+                  SecurityAuditorAware.SERVICE,
                   null,
                   List.of(new SimpleGrantedAuthority("ROLE_" + CapacityRules.SERVICE_ROLE))));
     }

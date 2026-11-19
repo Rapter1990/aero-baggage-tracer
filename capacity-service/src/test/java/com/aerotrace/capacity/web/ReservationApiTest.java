@@ -274,6 +274,13 @@ class ReservationApiTest extends AbstractCapacityTest {
     assertThat(held.getUpdatedBy()).isEqualTo("user-agent");
     assertThat(reservationRows.findById(id).orElseThrow().getCreatedBy()).isEqualTo("user-agent");
     assertThat(reservationRows.findById(id).orElseThrow().getReleasedBy()).isNull();
+    assertThat(reservationRows.findById(id).orElseThrow().getConfirmedBy()).isNull();
+
+    mockMvc
+        .perform(put(RESERVATIONS + "/{id}/confirmation", id).with(as(Role.DISPATCHER)))
+        .andExpect(status().isOk());
+    assertThat(reservationRows.findById(id).orElseThrow().getConfirmedBy())
+        .isEqualTo("user-dispatcher");
 
     mockMvc
         .perform(delete(RESERVATIONS + "/{id}", id).with(as(Role.DISPATCHER)))

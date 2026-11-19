@@ -61,6 +61,10 @@ spring:
         max.block.ms: 5000
 
 aerotrace:
+  audit:
+    # The audit columns of this service are written by its native SQL (it has no AuditableEntity),
+    # so the Spring Data auditing machinery of the audit-module is not needed.
+    jpa-auditing: false
   capacity:
     outbox:
       # How often the relay looks for unpublished events, and how many it takes at a time.

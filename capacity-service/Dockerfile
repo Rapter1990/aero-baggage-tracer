@@ -9,7 +9,7 @@ WORKDIR /src
 # Step #3: Copy the whole repository (the parent POM lists every module).
 COPY . .
 
-# Step #4: Package capacity-service and common-module, caching ~/.m2 between builds.
+# Step #4: Package capacity-service with common-module and audit-module, caching ~/.m2 between builds.
 RUN --mount=type=cache,target=/root/.m2 \
     mvn -q -pl capacity-service -am -DskipTests -Dspotless.check.skip=true package
 
