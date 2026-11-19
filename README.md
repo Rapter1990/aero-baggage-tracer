@@ -16,7 +16,7 @@ Java 25 / Spring Boot microservices for tracing airport baggage.
 | [Observability](#observability-opentelemetry-collector-tempo-loki-prometheus-grafana) | Traces, metrics, logs, dashboards |
 | [Tests](#running-the-tests) | Run tests and chart coverage |
 
-Work items are in [docs/issues/GITHUB_ISSUES.md](docs/issues/GITHUB_ISSUES.md).
+Work items are in [docs/issues/GITHUB_ISSUES.md](docs/issues/GITHUB_ISSUES.md). Step-by-step commands for implementing one issue are in [docs/issues/IMPLEMENTATION-GUIDE.md](docs/issues/IMPLEMENTATION-GUIDE.md).
 
 ## Agents
 
