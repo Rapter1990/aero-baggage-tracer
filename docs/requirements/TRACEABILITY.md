@@ -34,7 +34,7 @@ Sources of truth: [BUSINESS_RULES.md](BUSINESS_RULES.md) and [ACCEPTANCE_TESTS.m
 | AT-11 | #12 | `ReservationApiTest` (50 parallel requests, 10 slots, real PostgreSQL) |
 | AT-12 | #11 | `CapacitySagaTest` (against a stub capacity-service; the real service is #12) |
 | AT-13 | #14 | |
-| AT-14 | #11, #15 | `KafkaOutageTest` (a real broker is paused during a move: it commits, the events stay pending, and are published in order once, after the broker is back); `RecoveryCaseApiTest` (case level). The journey-service's outbox is #15's |
+| AT-14 | #11, #15 | `KafkaOutageTest` (a real broker is paused during a move: it commits, the events stay pending, and are published in order after the broker is back, at least once: an attempt the outage cut off may land twice with the same event id, which consumers dedupe); `RecoveryCaseApiTest` (case level). The journey-service's outbox is #15's |
 | AT-15 | #9, #8 | not tagged with its id yet |
 | AT-16 | #7 | `GatewaySecurityTest` |
 | AT-17 | #16 | |
