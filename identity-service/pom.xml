@@ -27,6 +27,11 @@
             <groupId>com.aerotrace</groupId>
             <artifactId>common-module</artifactId>
         </dependency>
+        <!-- Created/updated by and at on entities (Spring Data auditing); see ADR 0003. -->
+        <dependency>
+            <groupId>com.aerotrace</groupId>
+            <artifactId>audit-module</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

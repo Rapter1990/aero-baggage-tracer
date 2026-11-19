@@ -51,4 +51,12 @@ public class CapacityReservationEntity {
 
   @Column(name = "released_at", insertable = false, updatable = false)
   private Instant releasedAt;
+
+  // Who made the hold and who closed it (released it, or "system" when it expired). Written by the
+  // guarded native SQL of the repository, which does not fire JPA auditing.
+  @Column(name = "created_by", nullable = false, insertable = false, updatable = false)
+  private String createdBy;
+
+  @Column(name = "released_by", insertable = false, updatable = false)
+  private String releasedBy;
 }

@@ -50,7 +50,8 @@ public abstract class AbstractApiTest extends AbstractTestContainerConfiguration
     return SecurityMockMvcRequestPostProcessors.jwt()
         .jwt(
             token -> {
-              token.subject("user-" + role.name().toLowerCase());
+              // A fixed locale: in a Turkish locale "ADMIN" would become "admın" (dotless i).
+              token.subject("user-" + role.name().toLowerCase(java.util.Locale.ROOT));
               token.claim(JwtClaims.ROLES, List.of(role.name()));
               if (passengerRef != null) {
                 token.claim(JwtClaims.PASSENGER_REF, passengerRef);

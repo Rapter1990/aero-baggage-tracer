@@ -73,7 +73,7 @@ public class BaggageService {
       throw duplicate();
     }
     ItineraryEntity itinerary =
-        itineraries.save(new ItineraryEntity(bag.getId(), now, toLegs(request.legs())));
+        itineraries.save(new ItineraryEntity(bag.getId(), toLegs(request.legs())));
     return new RegisteredBagResponse(
         bag.getBagTag(),
         bag.getRegisteredAt(),

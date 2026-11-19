@@ -21,8 +21,9 @@ public interface CapacityReservationRepository
   @Query(
       value =
           "INSERT INTO capacity.capacity_reservation"
-              + " (id, resource_id, case_id, bag_tag, slots, status, idempotency_key, created_at)"
-              + " VALUES (:id, :resourceId, :caseId, :bagTag, :slots, 'HELD', :key, :now)",
+              + " (id, resource_id, case_id, bag_tag, slots, status, idempotency_key, created_at,"
+              + " created_by)"
+              + " VALUES (:id, :resourceId, :caseId, :bagTag, :slots, 'HELD', :key, :now, :actor)",
       nativeQuery = true)
   int insertHeld(
       @Param("id") UUID id,
@@ -31,7 +32,8 @@ public interface CapacityReservationRepository
       @Param("bagTag") String bagTag,
       @Param("slots") int slots,
       @Param("key") String idempotencyKey,
-      @Param("now") Instant now);
+      @Param("now") Instant now,
+      @Param("actor") String actor);
 
   /**
    * Records that an id was released before it was ever held. A later hold with the same id meets
@@ -42,25 +44,28 @@ public interface CapacityReservationRepository
   @Modifying(flushAutomatically = true, clearAutomatically = true)
   @Query(
       value =
-          "INSERT INTO capacity.capacity_reservation (id, status, created_at, released_at)"
-              + " VALUES (:id, 'RELEASED', :now, :now) ON CONFLICT (id) DO NOTHING",
+          "INSERT INTO capacity.capacity_reservation"
+              + " (id, status, created_at, created_by, released_at, released_by)"
+              + " VALUES (:id, 'RELEASED', :now, :actor, :now, :actor) ON CONFLICT (id) DO NOTHING",
       nativeQuery = true)
-  int insertTombstone(@Param("id") UUID id, @Param("now") Instant now);
+  int insertTombstone(
+      @Param("id") UUID id, @Param("now") Instant now, @Param("actor") String actor);
 
   /** HELD to RELEASED; 0 rows means it was already closed (or never existed). */
   @Modifying(flushAutomatically = true, clearAutomatically = true)
   @Query(
       value =
-          "UPDATE capacity.capacity_reservation SET status = 'RELEASED', released_at = :now"
-              + " WHERE id = :id AND status = 'HELD'",
+          "UPDATE capacity.capacity_reservation SET status = 'RELEASED', released_at = :now,"
+              + " released_by = :actor WHERE id = :id AND status = 'HELD'",
       nativeQuery = true)
-  int release(@Param("id") UUID id, @Param("now") Instant now);
+  int release(@Param("id") UUID id, @Param("now") Instant now, @Param("actor") String actor);
 
   /** HELD to EXPIRED, only while nobody confirmed it and it is older than the cutoff. */
   @Modifying(flushAutomatically = true, clearAutomatically = true)
   @Query(
       value =
-          "UPDATE capacity.capacity_reservation SET status = 'EXPIRED', released_at = :now"
+          "UPDATE capacity.capacity_reservation SET status = 'EXPIRED', released_at = :now,"
+              + " released_by = 'system'"
               + " WHERE id = :id AND status = 'HELD' AND confirmed_at IS NULL"
               + " AND created_at < :cutoff",
       nativeQuery = true)

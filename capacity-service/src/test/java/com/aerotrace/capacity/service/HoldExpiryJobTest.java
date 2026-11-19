@@ -22,6 +22,7 @@ class HoldExpiryJobTest extends AbstractCapacityTest {
   @Autowired CapacityService service;
   @Autowired HoldExpiryJob job;
   @Autowired CapacityResourceRepository resources;
+  @Autowired com.aerotrace.capacity.repository.CapacityReservationRepository reservationRows;
   @MockitoBean KafkaTemplate<String, String> kafka;
 
   @Test
@@ -37,6 +38,10 @@ class HoldExpiryJobTest extends AbstractCapacityTest {
     assertThat(resources.findById(leg).orElseThrow().getRemainingSlots()).isEqualTo(1);
 
     job.sweep();
+
+    // The job has no user: the hold it closed records "system".
+    assertThat(reservationRows.findById(unconfirmed).orElseThrow().getReleasedBy())
+        .isEqualTo("system");
 
     assertThat(resources.findById(leg).orElseThrow().getRemainingSlots()).isEqualTo(3);
     // The expired hold is gone for good: its id answers 409 and does not hold again.

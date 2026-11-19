@@ -58,6 +58,7 @@ class ReservationApiTest extends AbstractCapacityTest {
   @Autowired CapacityResourceRepository resources;
   @Autowired OutboxEventRepository outbox;
   @Autowired CapacityService service;
+  @Autowired com.aerotrace.capacity.repository.CapacityReservationRepository reservationRows;
   @Autowired MeterRegistry meters;
   @MockitoBean KafkaTemplate<String, String> kafka;
 
@@ -247,6 +248,47 @@ class ReservationApiTest extends AbstractCapacityTest {
           .andExpect(status().isNoContent());
       assertThat(remaining(leg)).isEqualTo(3);
     }
+  }
+
+  @Test
+  @DisplayName("audit: who created and last changed a resource, who held and who released a hold")
+  void auditColumnsRecordTheCaller() throws Exception {
+    String leg = newLeg();
+    createResource(leg, 5);
+    var created = resources.findById(leg).orElseThrow();
+    assertThat(created.getCreatedBy()).isEqualTo("user-admin");
+    assertThat(created.getUpdatedBy()).isEqualTo("user-admin");
+    assertThat(created.getUpdatedAt()).isEqualTo(created.getCreatedAt());
+
+    UUID id = UUID.randomUUID();
+    mockMvc
+        .perform(
+            post(RESERVATIONS)
+                .with(as(Role.AGENT))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(body(id, leg, 1))))
+        .andExpect(status().isCreated());
+    var held = resources.findById(leg).orElseThrow();
+    // The creator stays; the last change is the agent's hold.
+    assertThat(held.getCreatedBy()).isEqualTo("user-admin");
+    assertThat(held.getUpdatedBy()).isEqualTo("user-agent");
+    assertThat(reservationRows.findById(id).orElseThrow().getCreatedBy()).isEqualTo("user-agent");
+    assertThat(reservationRows.findById(id).orElseThrow().getReleasedBy()).isNull();
+
+    mockMvc
+        .perform(delete(RESERVATIONS + "/{id}", id).with(as(Role.DISPATCHER)))
+        .andExpect(status().isNoContent());
+    assertThat(reservationRows.findById(id).orElseThrow().getReleasedBy())
+        .isEqualTo("user-dispatcher");
+    assertThat(resources.findById(leg).orElseThrow().getUpdatedBy()).isEqualTo("user-dispatcher");
+
+    // A release of an id that was never held records who asked for it on the tombstone.
+    UUID neverHeld = UUID.randomUUID();
+    mockMvc
+        .perform(delete(RESERVATIONS + "/{id}", neverHeld).with(as(Role.AGENT)))
+        .andExpect(status().isNotFound());
+    assertThat(reservationRows.findById(neverHeld).orElseThrow().getCreatedBy())
+        .isEqualTo("user-agent");
   }
 
   @Test

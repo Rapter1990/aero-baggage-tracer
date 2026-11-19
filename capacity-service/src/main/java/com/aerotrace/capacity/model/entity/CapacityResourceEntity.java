@@ -30,6 +30,17 @@ public class CapacityResourceEntity {
   @Column(name = "remaining_slots", nullable = false, insertable = false, updatable = false)
   private int remainingSlots;
 
+  // Who created and last changed the resource, and when. Written by the guarded native SQL of the
+  // repository (it does not fire JPA auditing), so they are read-only here.
+  @Column(name = "created_by", nullable = false, insertable = false, updatable = false)
+  private String createdBy;
+
+  @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
+  private Instant createdAt;
+
+  @Column(name = "updated_by", nullable = false, insertable = false, updatable = false)
+  private String updatedBy;
+
   @Column(name = "updated_at", nullable = false, insertable = false, updatable = false)
   private Instant updatedAt;
 }

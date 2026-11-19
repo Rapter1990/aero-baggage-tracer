@@ -1,5 +1,6 @@
 package com.aerotrace.capacity.service;
 
+import com.aerotrace.audit.SecurityAuditorAware;
 import com.aerotrace.capacity.config.CapacityProperties;
 import com.aerotrace.capacity.constant.CapacityRules;
 import com.aerotrace.capacity.constant.MetricNames;
@@ -104,7 +105,8 @@ public class CapacityService {
 
   private ReservationResponse hold(ReservationRequest request, String idempotencyKey) {
     Instant now = Instant.now(clock);
-    if (resources.take(request.legId(), request.slots(), now) == 0) {
+    String actor = SecurityAuditorAware.currentAuditor();
+    if (resources.take(request.legId(), request.slots(), now, actor) == 0) {
       // A retry that waited for the original's row lock finds the leg full because of the original
       // hold: answer with that hold, not with "full".
       CapacityReservationEntity original =
@@ -128,7 +130,8 @@ public class CapacityService {
         request.bagTag(),
         request.slots(),
         idempotencyKey,
-        now);
+        now,
+        actor);
     publishChange(request.legId());
     return new ReservationResponse(request.reservationId(), CapacityRules.HELD);
   }
@@ -172,9 +175,12 @@ public class CapacityService {
     return Boolean.TRUE.equals(
         transaction.execute(
             status -> {
-              IntSupplier close = () -> reservations.release(reservationId, Instant.now(clock));
+              String actor = SecurityAuditorAware.currentAuditor();
+              IntSupplier close =
+                  () -> reservations.release(reservationId, Instant.now(clock), actor);
               boolean known = settle(reservationId, close, MetricNames.RESERVATIONS_RELEASED);
-              if (!known && reservations.insertTombstone(reservationId, Instant.now(clock)) == 0) {
+              if (!known
+                  && reservations.insertTombstone(reservationId, Instant.now(clock), actor) == 0) {
                 // The hold was inserted between the look-up and the tombstone (the insert waited
                 // for
                 // it to commit): it exists now, so close it.
@@ -237,7 +243,8 @@ public class CapacityService {
     }
     if (close.getAsInt() == 1) {
       Instant now = Instant.now(clock);
-      resources.giveBack(hold.getResourceId(), hold.getSlots(), now);
+      resources.giveBack(
+          hold.getResourceId(), hold.getSlots(), now, SecurityAuditorAware.currentAuditor());
       publishChange(hold.getResourceId());
       meters.counter(counter).increment();
     }
@@ -267,8 +274,9 @@ public class CapacityService {
             // Nothing changes, so no event: it would only make consumers write the same snapshot.
             return ResourceResponse.of(current);
           }
-          if (resources.createIfAbsent(resourceId, totalSlots, now) == 0
-              && resources.resize(resourceId, totalSlots, now) == 0) {
+          String actor = SecurityAuditorAware.currentAuditor();
+          if (resources.createIfAbsent(resourceId, totalSlots, now, actor) == 0
+              && resources.resize(resourceId, totalSlots, now, actor) == 0) {
             throw new ApiException(ErrorCode.CAPACITY_EXCEEDED, CapacityRules.SHRINK_BELOW_HELD);
           }
           publishChange(resourceId);
