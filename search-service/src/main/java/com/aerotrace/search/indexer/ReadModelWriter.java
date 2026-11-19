@@ -249,7 +249,14 @@ public class ReadModelWriter {
     for (int i = 0; i < changes.size(); i++) {
       JourneyChange change = changes.get(i);
       Map<String, JsonData> params = new HashMap<>();
-      change.params().forEach((key, value) -> params.put(key, JsonData.of(value)));
+      change
+          .params()
+          .forEach(
+              (key, value) -> {
+                if (value != null) {
+                  params.put(key, JsonData.of(value));
+                }
+              });
       Script script =
           Script.of(s -> s.source(src -> src.scriptString(JourneyChange.SCRIPT)).params(params));
       for (String target : targets) {

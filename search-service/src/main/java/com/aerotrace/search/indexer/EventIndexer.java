@@ -125,7 +125,7 @@ public class EventIndexer {
     settle(events, results);
   }
 
-  static JourneyChange caseOnJourney(CaseChange c, Instant eventAt) {
+  public static JourneyChange caseOnJourney(CaseChange c, Instant eventAt) {
     Instant caseAt = c.openedAt() != null ? c.openedAt() : eventAt;
     return JourneyChange.caseState(
         c.bagTag(),
