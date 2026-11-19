@@ -1,0 +1,18 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": "__REPLICAS__"
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "legId": { "type": "keyword" },
+      "bagTag": { "type": "keyword" },
+      "flightNumber": { "type": "keyword" },
+      "airline": { "type": "keyword" },
+      "origin": { "type": "keyword" },
+      "destination": { "type": "keyword" },
+      "departureAt": { "type": "date" }
+    }
+  }
+}

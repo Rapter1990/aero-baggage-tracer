@@ -87,7 +87,7 @@
                             <rules>
                                 <bannedDependencies>
                                     <searchTransitive>true</searchTransitive>
-                                    <message>common-module must stay free of persistence and of web starters.</message>
+                                    <message>common-module must stay free of persistence, of web starters and of Elasticsearch.</message>
                                     <excludes>
                                         <exclude>org.hibernate.orm:*</exclude>
                                         <exclude>org.hibernate:*</exclude>
@@ -97,6 +97,11 @@
                                         <exclude>org.springframework.boot:spring-boot-starter-web</exclude>
                                         <exclude>org.springframework.boot:spring-boot-starter-webmvc</exclude>
                                         <exclude>org.springframework.boot:spring-boot-starter-webflux</exclude>
+                                        <!-- Elasticsearch belongs to the search-service only (ADR 0004, decision 10). -->
+                                        <exclude>org.springframework.data:spring-data-elasticsearch</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-data-elasticsearch</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-elasticsearch</exclude>
+                                        <exclude>co.elastic.clients:*</exclude>
                                     </excludes>
                                 </bannedDependencies>
                             </rules>

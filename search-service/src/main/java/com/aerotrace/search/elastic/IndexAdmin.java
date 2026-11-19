@@ -1,0 +1,273 @@
+package com.aerotrace.search.elastic;
+
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.ElasticsearchException;
+import co.elastic.clients.elasticsearch.indices.update_aliases.Action;
+import com.aerotrace.search.config.SearchProperties;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.StringReader;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.InitializingBean;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+/**
+ * Creates the index templates, the first indexes and their aliases, resolves which indexes are read
+ * and written, swaps the read alias after a rebuild and removes indexes nobody uses any more.
+ *
+ * <p>Runs before the Kafka listeners start (it initializes with its bean), so no event can be
+ * written through an alias that does not exist yet: Elasticsearch would create a plain index of
+ * that name instead.
+ */
+@Component
+public class IndexAdmin implements InitializingBean {
+
+  private static final Logger LOG = LoggerFactory.getLogger(IndexAdmin.class);
+  private static final String REPLICAS = "\"__REPLICAS__\"";
+  private static final int STARTUP_ATTEMPTS = 30;
+
+  private final ElasticsearchClient client;
+  private final SearchProperties.Index settings;
+  private final Clock clock;
+
+  public IndexAdmin(ElasticsearchClient client, SearchProperties properties, Clock clock) {
+    this.client = client;
+    this.settings = properties.index();
+    this.clock = clock;
+  }
+
+  @Override
+  public void afterPropertiesSet() throws InterruptedException {
+    for (int attempt = 1; ; attempt++) {
+      try {
+        bootstrap();
+        return;
+      } catch (IOException | RuntimeException e) {
+        if (attempt >= STARTUP_ATTEMPTS) {
+          throw new IllegalStateException("Elasticsearch could not be prepared", e);
+        }
+        LOG.warn("Elasticsearch not ready (attempt {}): {}", attempt, e.getClass().getSimpleName());
+        Thread.sleep(Math.min(1_000L * attempt, 5_000L));
+      }
+    }
+  }
+
+  /** Templates, first indexes and aliases. Idempotent: safe on every start of every instance. */
+  void bootstrap() throws IOException {
+    for (IndexFamily family : IndexFamily.values()) {
+      String body =
+          "{\"index_patterns\":[\""
+              + family.pattern()
+              + "\"],\"priority\":100,\"template\":"
+              + resource(family.templateResource())
+              + "}";
+      client
+          .indices()
+          .putIndexTemplate(t -> t.name(family.base()).withJson(new StringReader(body)));
+      if (!client.indices().existsAlias(a -> a.name(family.readAlias())).value()) {
+        createIgnoringExisting(
+            family.initialIndex(), family.readAlias(), family.liveAlias(), null /* template */);
+      }
+    }
+    for (SupportIndex index : SupportIndex.values()) {
+      if (!client.indices().exists(e -> e.index(index.index())).value()) {
+        createIgnoringExisting(index.index(), null, null, resource(index.resource()));
+      }
+    }
+  }
+
+  private void createIgnoringExisting(String index, String read, String live, String body)
+      throws IOException {
+    try {
+      client
+          .indices()
+          .create(
+              c -> {
+                c.index(index);
+                if (body != null) {
+                  c.withJson(new StringReader(body));
+                }
+                if (read != null) {
+                  c.aliases(read, a -> a).aliases(live, a -> a);
+                }
+                return c;
+              });
+      LOG.info("Created index {}", index);
+    } catch (ElasticsearchException e) {
+      if (!"resource_already_exists_exception".equals(e.error().type())) {
+        throw e;
+      }
+    }
+  }
+
+  private String resource(String path) {
+    try (InputStream in = new ClassPathResource(path).getInputStream()) {
+      return new String(in.readAllBytes(), StandardCharsets.UTF_8)
+          .replace(REPLICAS, String.valueOf(settings.replicas()));
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  /** The indexes the indexer writes to: one, or two while a rebuild runs. */
+  public List<String> liveIndexes(IndexFamily family) throws IOException {
+    return indexesOf(family.liveAlias());
+  }
+
+  /** The index searches read (exactly one). */
+  public String readIndex(IndexFamily family) throws IOException {
+    List<String> indexes = indexesOf(family.readAlias());
+    if (indexes.size() != 1) {
+      throw new IllegalStateException(family.readAlias() + " must name exactly one index");
+    }
+    return indexes.get(0);
+  }
+
+  public List<String> indexesOf(String alias) throws IOException {
+    if (!client.indices().existsAlias(a -> a.name(alias)).value()) {
+      return List.of();
+    }
+    return new ArrayList<>(
+        new TreeSet<>(client.indices().getAlias(a -> a.name(alias)).aliases().keySet()));
+  }
+
+  /** Creates the next index of a family from its template; it is in no alias yet. */
+  public String createNext(IndexFamily family) throws IOException {
+    String index = family.base() + "-v" + clock.millis();
+    client.indices().create(c -> c.index(index));
+    return index;
+  }
+
+  /** Live events now also reach the new index. */
+  public void addToLive(IndexFamily family, String index) throws IOException {
+    client
+        .indices()
+        .updateAliases(
+            u -> u.actions(Action.of(a -> a.add(x -> x.index(index).alias(family.liveAlias())))));
+  }
+
+  /**
+   * One atomic {@code _aliases} call: the read alias moves to the new index, and the old indexes
+   * leave both aliases. Searches see either the old index or the new one, never none or both.
+   */
+  public void swapRead(IndexFamily family, String newIndex) throws IOException {
+    List<String> oldRead = indexesOf(family.readAlias());
+    List<String> oldLive = indexesOf(family.liveAlias());
+    List<Action> actions = new ArrayList<>();
+    for (String old : oldRead) {
+      if (!old.equals(newIndex)) {
+        actions.add(Action.of(a -> a.remove(r -> r.index(old).alias(family.readAlias()))));
+      }
+    }
+    actions.add(Action.of(a -> a.add(x -> x.index(newIndex).alias(family.readAlias()))));
+    for (String old : oldLive) {
+      if (!old.equals(newIndex)) {
+        actions.add(Action.of(a -> a.remove(r -> r.index(old).alias(family.liveAlias()))));
+      }
+    }
+    client.indices().updateAliases(u -> u.actions(actions));
+    // The grace period of an old index starts now, when it stops being read.
+    Set<String> retired = new TreeSet<>(oldRead);
+    retired.addAll(oldLive);
+    retired.remove(newIndex);
+    for (String old : retired) {
+      client.index(
+          i ->
+              i.index(SupportIndex.JOBS.index())
+                  .id(RETIRED_PREFIX + old)
+                  .document(
+                      Map.of(
+                          "kind",
+                          "RETIRED",
+                          "jobId",
+                          old,
+                          "finishedAt",
+                          Elastic.iso(clock.instant()))));
+    }
+  }
+
+  private static final String RETIRED_PREFIX = "retired:";
+
+  /** Takes a failed rebuild's index out of the live alias and deletes it. */
+  public void discard(IndexFamily family, String index) throws IOException {
+    if (indexesOf(family.readAlias()).contains(index)) {
+      throw new IllegalStateException("the read index is never discarded");
+    }
+    if (indexesOf(family.liveAlias()).contains(index)) {
+      client
+          .indices()
+          .updateAliases(
+              u ->
+                  u.actions(
+                      Action.of(a -> a.remove(r -> r.index(index).alias(family.liveAlias())))));
+    }
+    client.indices().delete(d -> d.index(index).ignoreUnavailable(true));
+  }
+
+  public void refresh(String index) throws IOException {
+    client.indices().refresh(r -> r.index(index));
+  }
+
+  /**
+   * Deletes the indexes of a family that are in neither alias once the grace period (longer than
+   * the point-in-time keep-alive) has passed: for an index retired by a swap, counted from the
+   * swap; for any other index, from its creation, which its name carries. So a rebuild's index that
+   * was just created and is not in an alias yet is left alone, and an open cursor never loses its
+   * index.
+   */
+  @Scheduled(
+      fixedDelayString = "${aerotrace.search.index.janitor-delay:1m}",
+      initialDelayString = "${aerotrace.search.index.janitor-delay:1m}")
+  public void removeUnusedIndexes() {
+    try {
+      for (IndexFamily family : IndexFamily.values()) {
+        Set<String> used = new TreeSet<>(indexesOf(family.readAlias()));
+        used.addAll(indexesOf(family.liveAlias()));
+        Instant cutOff = clock.instant().minus(settings.oldIndexGrace());
+        for (String index :
+            client.indices().get(g -> g.index(family.pattern())).indices().keySet()) {
+          if (family.owns(index) && !used.contains(index) && unusedSince(index).isBefore(cutOff)) {
+            client.indices().delete(d -> d.index(index).ignoreUnavailable(true));
+            client.delete(d -> d.index(SupportIndex.JOBS.index()).id(RETIRED_PREFIX + index));
+            LOG.info("Deleted unused index {}", index);
+          }
+        }
+      }
+    } catch (IOException | RuntimeException e) {
+      LOG.warn("Unused indexes not checked: {}", e.getClass().getSimpleName());
+    }
+  }
+
+  @SuppressWarnings("rawtypes")
+  private Instant unusedSince(String index) throws IOException {
+    var retired =
+        client.get(g -> g.index(SupportIndex.JOBS.index()).id(RETIRED_PREFIX + index), Map.class);
+    if (retired.found() && retired.source() != null) {
+      return Elastic.instant(retired.source().get("finishedAt"));
+    }
+    return createdAt(index);
+  }
+
+  /** {@code cases-v1} counts as old; later indexes carry their creation time in the name. */
+  static Instant createdAt(String index) {
+    String suffix = index.substring(index.lastIndexOf("-v") + 2);
+    try {
+      long millis = Long.parseLong(suffix);
+      return millis < 1_000_000 ? Instant.EPOCH : Instant.ofEpochMilli(millis);
+    } catch (NumberFormatException e) {
+      return Instant.EPOCH;
+    }
+  }
+}
