@@ -260,7 +260,7 @@ Recovery case state machine, handler assignment and action orchestration.
 - [x] BR-05: every move follows the state machine and records who/when/why; an illegal move is `409` (AT-10). Assignment of a case to a handler is recorded the same way (`PUT .../assignment`).
 - [x] BR-07: a RESOLVED case cannot be reopened; a new leg needs a new case key.
 - [x] AT-09, AT-10, AT-12 (`RecoveryCaseApiTest`, `RecoveryStateMachineTest`, `CapacitySagaTest`).
-- [x] AT-14: Kafka stopped during a move, the move commits, and the events are published in order, once, when the broker is back (`KafkaOutageTest`, a real broker).
+- [x] AT-14: Kafka stopped during a move, the move commits, and the events are published in order when the broker is back, at least once: an attempt the outage cut off may land twice with the same event id, which consumers dedupe (`KafkaOutageTest`, a real broker).
 - [x] AT-22 at application level: a restarted instance keeps the committed case, history and events and carries on (`ApplicationRestartTest`). The restart of a real Minikube pod is demonstrated in #18.
 - [x] `GET /recovery-cases` pages and sorts deterministically; `Idempotency-Key` retries (create and move) have no second effect (`CaseOperationsApiTest`).
 - [x] Unit tests for strategies, guards, compensation.
@@ -283,9 +283,9 @@ Finite recovery cart / flight / bag-slot capacity with atomic reservations.
 - Metric `capacity_reservation_conflicts_total`; idempotent reservations via `Idempotency-Key`.
 
 **Acceptance criteria**
-- [ ] AT-11: 50 concurrent requests for 10 slots → exactly 10 succeed (race test).
-- [ ] AT-19: Redis offline → no overbooking.
-- [ ] 409 conflict contract documented in OpenAPI.
+- [x] AT-11: 50 concurrent requests for 10 slots → exactly 10 succeed (race test).
+- [x] AT-19: Redis offline → no overbooking (the service has no Redis dependency; PostgreSQL alone decides).
+- [x] 409 conflict contract documented in OpenAPI.
 
 ---
 

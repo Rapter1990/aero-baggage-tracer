@@ -9,6 +9,7 @@ What the platform offers, how requests flow, how to try them in Postman.
 | [Identity Service API](IDENTITY-API.md) | Calls, tokens, flows, requests |
 | [Journey Service API](JOURNEY-API.md) | Calls, rules, scans, events, requests |
 | [Recovery Service API](RECOVERY-API.md) | Cases, moves, capacity, policy, events |
+| [Capacity Service API](CAPACITY-API.md) | Reservations, release, resources, the 409 contract, events |
 | [README](../../README.md) | Setup, variables, limits, observability |
 
 ## At a glance
@@ -19,6 +20,7 @@ What the platform offers, how requests flow, how to try them in Postman.
 | identity-service | `http://localhost:1112` | `/api/v1/auth/**` |
 | journey-service | `http://localhost:1113` | `/api/v1/bags/**`, `/api/v1/scans/**` |
 | recovery-service | `http://localhost:1115` | `/api/v1/recovery-cases/**`, `/api/v1/recovery-policy` |
+| capacity-service | `http://localhost:1116` | `/api/v1/capacity/**` |
 
 Success answers look like `{"success":true,"data":...,"timestamp":...}`. Errors use the shared shape, see [response format](../../README.md#api-response-format).
 
@@ -82,11 +84,23 @@ Two files in `postman/`:
 | 2 Open a case (agent) | Opens a case; the same `Idempotency-Key` returns it again; a second open is refused; an invalid bag tag is refused |
 | 3 Move the case (dispatcher) | `ASSESSING`; a retry with the same key; an old version, a skipped state, no reason and an unknown case are refused |
 | 4 Assign a handler | Assigns the agent; assigning again changes nothing; a bad assignee and the admin are refused |
-| 5 Reserve capacity and finish | `RESERVED` (200, or 503 while the capacity-service is not running), cancel, a closed case is never reopened or assigned, a new case for the same leg is allowed |
+| 5 Reserve capacity and finish | Provisions 5 slots for the leg as the admin, `RESERVED` (200, a slot is held), checks one slot is held, cancel (the slot is back), a closed case is never reopened or given to another handler, a new case for the same leg is allowed |
 | 6 List cases | State filter and paging, size capped at 100, an unknown state refused |
 | 7 Recovery policy | Read, change as admin (an agent is refused, an old version is refused, an out-of-range value is refused), put it back |
 | 8 Refused calls | No token 401; passenger and admin 403 where the role is not allowed |
 | 9 Service checks (port 1115) | Health and OpenAPI via `recoveryUrl` |
+
+**Capacity Service folders** (run top to bottom; the Recovery folder provisions its own leg, so the two are independent)
+
+| Folder | What it does |
+|---|---|
+| 1 Sign in | Admin, agent, dispatcher and passenger tokens; a new leg id per run |
+| 2 Resources (the admin sets capacity) | Create, read, set the same total again, refusals (agent, bad id, bad total, unknown), list; the answer shows who created and last changed the resource |
+| 3 Hold slots (agent) | Hold, repeat, same id for another request, `Idempotency-Key`, full leg (`409 CAPACITY_EXCEEDED`), leg without a resource (`404 CAPACITY_NOT_PROVISIONED`), invalid, passenger and no token refused |
+| 4 Confirm and release (dispatcher) | Confirm, release (once), a released hold does not hold again, a release before the hold leaves a tombstone, unknown ids, all slots back |
+| 5 Refused calls | Passenger, dispatcher and no-token refusals, an unlisted path |
+| 6 Service token (the recovery-service sweeper) | Confirm and release directly on port 1116 with `X-Service-Token` and no user token; the token cannot hold slots; a wrong token and the gateway are refused |
+| 7 Service checks (port 1116) | Health and OpenAPI (the 409 contract) via `capacityUrl` |
 
 **Notes**
 
@@ -95,7 +109,11 @@ Two files in `postman/`:
 | Tokens | Test scripts store them in the environment |
 | Recovery accounts | `recoveryAgentUsername`, `recoveryDispatcherUsername`, `recoveryAdminUsername`, `recoveryPassengerUsername` (the dev dummy accounts) and `recoveryPassword` |
 | Recovery variables | The scripts fill `recoveryBagTag`, `recoveryLegId`, `recoveryCaseId`, `recoveryCaseVersion`, `recoveryCreateKey`, `recoveryMoveKey`, `recoveryAgentSubject`, `recoveryPolicyMinutes` and `recoveryPolicyVersion` |
-| Recovery capacity | Request 5.1 needs the capacity-service (issue #12); until it runs it answers 503 and the folder still passes |
+| Recovery capacity | Request 5.1 provisions the leg in the capacity-service as the admin, so the capacity-service must be running (without it 5.2 answers 503) |
+| Capacity variables | `capacityUrl` (port 1116), `capacityAdminUsername`, `capacityAgentUsername`, `capacityDispatcherUsername`, `capacityPassengerUsername`, `capacityPassword`, and `capacityServiceToken` (must equal `CAPACITY_SERVICE_TOKEN` of the stack; the Compose default is `aerotrace-local-service-token`) |
+| Capacity values the scripts fill | `capacityAdminToken`, `capacityAgentToken`, `capacityDispatcherToken`, `capacityPassengerToken`, the three `...Subject` values (the user ids the audit columns record), `capacityLegId`, `capacityReservationId`, `capacityReservationId2`, `capacityUnheldId`, `capacityServiceHoldId`, `capacityCaseId`, `capacityBagTag`, `capacityIdempotencyKey`, `capacityCreatedAt`, `recoveryCapacityTotal` |
+| Audit | The register answer (`createdBy`: the admin's user id, or `anonymous`) and the capacity resource answer (`createdBy`, `createdAt`, `updatedBy`, `updatedAt`) show who did it. The other services keep these columns in the database only (ADR 0003) |
+| Auth rate limit | The gateway lets one address make 12 auth calls a minute (burst 10). The Identity folder alone makes about 35, so a full run needs a higher limit: put `AUTH_RATE_LIMIT_REPLENISH_RATE=100` and `AUTH_RATE_LIMIT_BURST_CAPACITY=1000` in `.env` and recreate the gateway. Without it the later requests answer `429` |
 | Recovery policy | Folder 7 puts the policy back to the value it read, so a run leaves it unchanged |
 | Identity 1.2 | Needs `adminUsername` and `adminPassword` |
 | Default admin | The dev dummy admin |
@@ -113,7 +131,7 @@ Two files in `postman/`:
 newman run postman/AeroTrace.postman_collection.json -e postman/AeroTrace-local.postman_environment.json --delay-request 150 --folder "Identity Service"
 ```
 
-Use `--folder "Journey Service"` for the journey folder and `--folder "Recovery Service"` for the recovery folder.
+Use `--folder "Journey Service"` for the journey folder, `--folder "Recovery Service"` for the recovery folder and `--folder "Capacity Service"` for the capacity folder.
 
 **Run order of the collection**
 
@@ -125,9 +143,12 @@ flowchart LR
     subgraph Journey Service
         J1[1 Agent] --> J2[2 Passenger - owner] --> J3[3 Other passenger] --> J4[4 Service checks :1113]
     end
+    subgraph Capacity Service
+        P1[1 Sign in] --> P2[2 Resources] --> P3[3 Hold slots] --> P4[4 Confirm and release] --> P5[5 Refused] --> P6[6 Service token :1116] --> P7[7 Service checks :1116]
+    end
     subgraph Recovery Service
         R1[1 Sign in] --> R2[2 Open a case] --> R3[3 Move] --> R4[4 Assign] --> R5[5 Reserve and finish] --> R6[6 List] --> R7[7 Policy] --> R8[8 Refused] --> R9[9 Service checks :1115]
     end
 ```
 
-The tables of every request are in [Identity Service API](IDENTITY-API.md#every-request-in-the-postman-collection) and [Journey Service API](JOURNEY-API.md#every-request-in-the-postman-collection). The recovery requests are listed above and in [Recovery Service API](RECOVERY-API.md).
+The tables of every request are in [Identity Service API](IDENTITY-API.md#every-request-in-the-postman-collection) and [Journey Service API](JOURNEY-API.md#every-request-in-the-postman-collection). The recovery requests are listed above and in [Recovery Service API](RECOVERY-API.md). The capacity requests are in [Capacity Service API](CAPACITY-API.md#every-request-in-the-postman-collection).

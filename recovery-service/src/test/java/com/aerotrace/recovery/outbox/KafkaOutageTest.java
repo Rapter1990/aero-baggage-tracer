@@ -222,12 +222,30 @@ class KafkaOutageTest extends AbstractRecoveryTest {
     relay.publishPending();
     relay.publishPending();
 
+    // Publishing is at least once, and consumers dedupe on the event id. An attempt that the outage
+    // cut off (the producer gave up and the row stayed pending) can still reach the broker when it
+    // resumes, so the replay may write that one event a second time. That is allowed; what must
+    // hold is: exactly two distinct events, in the order they were committed, none more than twice,
+    // and no event of an older version after a newer one.
     List<ConsumerRecord<String, String>> records = recordsFor(caseId, 2);
-    assertThat(records).hasSize(2);
-    EventEnvelope<CaseChangedPayload> first =
-        EventJson.read(records.get(0).value(), CaseChangedPayload.class);
-    EventEnvelope<CaseChangedPayload> second =
-        EventJson.read(records.get(1).value(), CaseChangedPayload.class);
+    Map<String, EventEnvelope<CaseChangedPayload>> distinct = new LinkedHashMap<>();
+    Map<String, Integer> copies = new LinkedHashMap<>();
+    long lastVersion = 0;
+    for (ConsumerRecord<String, String> record : records) {
+      EventEnvelope<CaseChangedPayload> event =
+          EventJson.read(record.value(), CaseChangedPayload.class);
+      distinct.putIfAbsent(event.eventId(), event);
+      copies.merge(event.eventId(), 1, Integer::sum);
+      assertThat(event.payload().version())
+          .as("events of a case stay in order")
+          .isGreaterThanOrEqualTo(lastVersion);
+      lastVersion = event.payload().version();
+    }
+    assertThat(distinct).hasSize(2);
+    assertThat(copies.values()).allSatisfy(count -> assertThat(count).isBetween(1, 2));
+    List<EventEnvelope<CaseChangedPayload>> events = List.copyOf(distinct.values());
+    EventEnvelope<CaseChangedPayload> first = events.get(0);
+    EventEnvelope<CaseChangedPayload> second = events.get(1);
     assertThat(first.payload().state()).isEqualTo(RecoveryState.OPEN);
     assertThat(first.payload().version()).isEqualTo(1);
     assertThat(second.payload().state()).isEqualTo(RecoveryState.ASSESSING);

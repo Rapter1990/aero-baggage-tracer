@@ -10,8 +10,10 @@ import org.springframework.stereotype.Component;
 
 /**
  * The compensating workflow of the capacity saga: holds that ran out are released and their cases
- * cancelled, and releases that failed earlier are retried. Runs in every replica; both operations
- * are safe to repeat (a moved case is skipped, releasing a released hold is a no-op).
+ * cancelled, releases that failed earlier are retried, and holds of active cases that were not
+ * confirmed yet are confirmed (the capacity-service expires unconfirmed holds). Runs in every
+ * replica; every operation is safe to repeat (a moved case is skipped, releasing a released hold or
+ * confirming a confirmed one is a no-op).
  */
 @Component
 class HoldSweeper {
@@ -34,8 +36,13 @@ class HoldSweeper {
       int expired =
           service.expireHolds(Instant.now(clock).minus(properties.capacity().holdTimeout()));
       int retried = service.retryReleases();
-      if (expired > 0 || retried > 0) {
-        LOG.info("Hold sweep: {} expired, {} releases retried", expired, retried);
+      int confirmed = service.retryConfirms();
+      if (expired > 0 || retried > 0 || confirmed > 0) {
+        LOG.info(
+            "Hold sweep: {} expired, {} releases retried, {} confirmations retried",
+            expired,
+            retried,
+            confirmed);
       }
     } catch (RuntimeException e) {
       // The next run tries again.

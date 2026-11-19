@@ -111,6 +111,9 @@ aerotrace:
       # A case that stays RESERVED longer than this is cancelled and its hold released.
       hold-timeout: ${CAPACITY_HOLD_TIMEOUT:15m}
       sweep-delay: ${CAPACITY_SWEEP_DELAY:30s}
+      # Shared secret the capacity-service accepts from a service caller. Sent only on calls without
+      # a user token (the sweeper's releases). No default: empty sends none.
+      service-token: ${CAPACITY_SERVICE_TOKEN:}
     docs:
       enabled: ${DOCS_ENABLED:true}
     jwt:

@@ -233,6 +233,7 @@ class UserServiceTest extends AbstractBaseServiceTest {
         null,
         enabled,
         Set.of(Role.PASSENGER),
-        null);
+        null,
+        "system");
   }
 }

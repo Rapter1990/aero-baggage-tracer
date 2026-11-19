@@ -62,6 +62,13 @@ public class RecoveryCaseEntity {
   @Column(name = "reservation_id")
   private UUID reservationId;
 
+  /**
+   * When the capacity-service was told that the case kept its hold; null until then. The
+   * capacity-service expires holds nobody confirmed.
+   */
+  @Column(name = "hold_confirmed_at")
+  private Instant holdConfirmedAt;
+
   /** When the hold was made; the hold expires a configured time after this. */
   @Column(name = "reserved_at")
   private Instant reservedAt;

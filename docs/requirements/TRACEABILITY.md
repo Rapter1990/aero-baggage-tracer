@@ -11,7 +11,7 @@ Sources of truth: [BUSINESS_RULES.md](BUSINESS_RULES.md) and [ACCEPTANCE_TESTS.m
 | BR-01 | #11 Recovery Service | `RecoveryCaseApiTest` (AT-09 and the BR-01 cases), `RiskEventHandlerTest` (events never open a second case) |
 | BR-02 | #10 Risk Streams | `LegRiskTest`, `AcceptanceScenariosTest` (AT-07) |
 | BR-03 | #10 Risk Streams | `ScanAnomalyTest`, `AcceptanceScenariosTest` (AT-06); consumed in #11: `ScanAnomalyHandlerTest` |
-| BR-04 | #12 Capacity Service | |
+| BR-04 | #12 Capacity Service | `ReservationApiTest` (AT-11 and the BR-04 cases), `RedisOfflineTest` (AT-19), `OpenApiDocsTest` (the 409 contract) |
 | BR-05 | #11 Recovery Service | `RecoveryStateMachineTest`, `RecoveryCaseApiTest` |
 | BR-06 | #9 Journey Service (also #10 for the stream grace) | `LateEventGraceTest` (stream side) |
 | BR-07 | #11 Recovery Service | `RecoveryStateMachineTest`, `RecoveryCaseApiTest` |
@@ -31,15 +31,15 @@ Sources of truth: [BUSINESS_RULES.md](BUSINESS_RULES.md) and [ACCEPTANCE_TESTS.m
 | AT-08 | #10 | `AcceptanceScenariosTest` |
 | AT-09 | #11 | `RecoveryCaseApiTest` |
 | AT-10 | #11 | `RecoveryStateMachineTest`, `RecoveryCaseApiTest` |
-| AT-11 | #12 | |
+| AT-11 | #12 | `ReservationApiTest` (50 parallel requests, 10 slots, real PostgreSQL) |
 | AT-12 | #11 | `CapacitySagaTest` (against a stub capacity-service; the real service is #12) |
 | AT-13 | #14 | |
-| AT-14 | #11, #15 | `KafkaOutageTest` (a real broker is paused during a move: it commits, the events stay pending, and are published in order once, after the broker is back); `RecoveryCaseApiTest` (case level). The journey-service's outbox is #15's |
+| AT-14 | #11, #15 | `KafkaOutageTest` (a real broker is paused during a move: it commits, the events stay pending, and are published in order after the broker is back, at least once: an attempt the outage cut off may land twice with the same event id, which consumers dedupe); `RecoveryCaseApiTest` (case level). The journey-service's outbox is #15's |
 | AT-15 | #9, #8 | not tagged with its id yet |
 | AT-16 | #7 | `GatewaySecurityTest` |
 | AT-17 | #16 | |
 | AT-18 | #13 | |
-| AT-19 | #12 | capacity side is #12; recovery side (no duplicate case with Redis down): `RedisDownTest` |
+| AT-19 | #12 | capacity side: `RedisOfflineTest` (the service has no Redis; an unreachable Redis cannot change the 50-for-10 result); recovery side (no duplicate case with Redis down): `RedisDownTest` |
 | AT-20 | #19 | |
 | AT-21 | #19 | |
 | AT-22 | #11, #18 | application level: `ApplicationRestartTest` (a second instance on the same database finds the committed case, history and events). The Minikube pod restart is #18 |

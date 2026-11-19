@@ -1,5 +1,6 @@
 package com.aerotrace.identity.model.entity;
 
+import com.aerotrace.audit.AuditableEntity;
 import com.aerotrace.common.security.Role;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
@@ -12,10 +13,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.PostLoad;
 import jakarta.persistence.PostPersist;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
-import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -35,7 +34,7 @@ import org.springframework.data.domain.Persistable;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "app_user", schema = "identity")
-public class AppUserEntity implements Persistable<UUID> {
+public class AppUserEntity extends AuditableEntity implements Persistable<UUID> {
 
   @Id private UUID id;
 
@@ -56,9 +55,6 @@ public class AppUserEntity implements Persistable<UUID> {
 
   @Column(nullable = false)
   private boolean enabled = true;
-
-  @Column(name = "created_at", nullable = false, updatable = false)
-  private Instant createdAt;
 
   @ElementCollection(fetch = FetchType.EAGER)
   @CollectionTable(
@@ -93,13 +89,6 @@ public class AppUserEntity implements Persistable<UUID> {
   /** Replaces the password with the hash of a new one. */
   public void changePassword(String newPasswordHash) {
     this.passwordHash = newPasswordHash;
-  }
-
-  @PrePersist
-  void prePersist() {
-    if (createdAt == null) {
-      createdAt = Instant.now();
-    }
   }
 
   @PostLoad

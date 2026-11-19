@@ -1,5 +1,6 @@
 package com.aerotrace.journey.model.entity;
 
+import com.aerotrace.audit.AuditableEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -17,7 +18,7 @@ import org.hibernate.annotations.UuidGenerator;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "baggage", schema = "journey")
-public class BaggageEntity {
+public class BaggageEntity extends AuditableEntity {
 
   @Id @GeneratedValue @UuidGenerator private UUID id;
 

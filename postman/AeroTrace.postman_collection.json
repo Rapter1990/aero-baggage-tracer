@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "AeroTrace",
-    "description": "The AeroTrace API through the api-gateway (default http://localhost:8080): the Identity Service (authentication), the Journey Service (bags, scans, journey) and the Recovery Service (cases, moves, assignment, policy). Each service has its own folder; run a folder top to bottom with the runner. The gateway limits each address to about 10 requests per second (burst 20), so run with a delay of 150 ms or more between requests. Each folder signs in with the dev dummy accounts or the accounts the identity folder creates, so use the compose stack with the dev Liquibase context.",
+    "description": "The AeroTrace API through the api-gateway (default http://localhost:8080): the Identity Service (authentication), the Journey Service (bags, scans, journey), the Recovery Service (cases, moves, assignment, policy) and the Capacity Service (resources, holds, confirmation, release). Each service has its own folder; run a folder top to bottom with the runner. The gateway limits each address to about 10 requests per second (burst 20), so run with a delay of 150 ms or more between requests. Each folder signs in with the dev dummy accounts or the accounts the identity folder creates, so use the compose stack with the dev Liquibase context.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -57,7 +57,8 @@
                           "});",
                           "pm.test('not cacheable', () => pm.expect(pm.response.headers.get('Cache-Control')).to.include('no-store'));",
                           "pm.environment.set('userId', body.data.id);",
-                          "pm.environment.set('passengerId', body.data.id);"
+                          "pm.environment.set('passengerId', body.data.id);",
+                          "pm.test('audit: created by nobody signed in, so \"anonymous\"', () => pm.expect(body.data.createdBy).to.eql('anonymous'));"
                         ]
                       }
                     }
@@ -156,7 +157,13 @@
                           "  pm.expect(body.data.status).to.eql('ACTIVE');",
                           "  pm.expect(pm.response.text()).to.not.include('passengerRef');",
                           "});",
-                          "pm.environment.set('agentId', pm.response.json().data.id);"
+                          "pm.environment.set('agentId', pm.response.json().data.id);",
+                          "function adminSubject() {",
+                          "  const part = pm.environment.get('adminAccessToken').split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                          "  return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4))).sub;",
+                          "}",
+                          "pm.test('audit: created by the admin who registered it (the user id of the token)', () =>",
+                          "  pm.expect(pm.response.json().data.createdBy).to.eql(adminSubject()));"
                         ]
                       }
                     }
@@ -220,7 +227,13 @@
                           "  pm.expect(body.data.status).to.eql('ACTIVE');",
                           "  pm.expect(pm.response.text()).to.not.include('passengerRef');",
                           "});",
-                          "pm.environment.set('dispatcherId', pm.response.json().data.id);"
+                          "pm.environment.set('dispatcherId', pm.response.json().data.id);",
+                          "function adminSubject() {",
+                          "  const part = pm.environment.get('adminAccessToken').split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                          "  return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4))).sub;",
+                          "}",
+                          "pm.test('audit: created by the admin who registered it (the user id of the token)', () =>",
+                          "  pm.expect(pm.response.json().data.createdBy).to.eql(adminSubject()));"
                         ]
                       }
                     }
@@ -284,7 +297,13 @@
                           "  pm.expect(body.data.status).to.eql('ACTIVE');",
                           "  pm.expect(pm.response.text()).to.not.include('passengerRef');",
                           "});",
-                          "pm.environment.set('newAdminId', pm.response.json().data.id);"
+                          "pm.environment.set('newAdminId', pm.response.json().data.id);",
+                          "function adminSubject() {",
+                          "  const part = pm.environment.get('adminAccessToken').split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                          "  return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4))).sub;",
+                          "}",
+                          "pm.test('audit: created by the admin who registered it (the user id of the token)', () =>",
+                          "  pm.expect(pm.response.json().data.createdBy).to.eql(adminSubject()));"
                         ]
                       }
                     }
@@ -3501,7 +3520,7 @@
     },
     {
       "name": "Recovery Service",
-      "description": "The recovery-service through the api-gateway: open a case, move it along the state machine, assign a handler, reserve capacity, list cases and change the recovery policy. Run the folders top to bottom with the dev dummy accounts (agent, dispatcher, admin, passenger). Moving a case to RESERVED needs the capacity-service: until it runs, that request answers 503 and the folder still passes. Run with a delay of 150 ms or more between requests.",
+      "description": "The recovery-service through the api-gateway: open a case, move it along the state machine, assign a handler, reserve capacity, list cases and change the recovery policy. Run the folders top to bottom with the dev dummy accounts (agent, dispatcher, admin, passenger). Moving a case to RESERVED holds a slot in the capacity-service: folder 5 first provisions capacity for the leg as the admin, so the capacity-service must be running (without it that request answers 503). Run with a delay of 150 ms or more between requests.",
       "item": [
         {
           "name": "1 - Sign in",
@@ -4481,25 +4500,75 @@
         },
         {
           "name": "5 - Reserve capacity and finish",
-          "description": "AT-12: moving to RESERVED holds a slot in the capacity-service; a timeout releases it. BR-07: a closed case is never reopened.",
+          "description": "AT-12: moving to RESERVED holds a slot in the capacity-service (provisioned first, as the admin); cancelling releases it. BR-07: a closed case is never reopened.",
           "item": [
             {
-              "name": "5.1 Move to RESERVED (needs the capacity-service: 200, or 503 while it is not running)",
+              "name": "5.1 Provision capacity for the leg (admin, the capacity-service)",
               "event": [
                 {
                   "listen": "test",
                   "script": {
                     "type": "text/javascript",
                     "exec": [
-                      "pm.test('200 with a hold, 409 when no capacity is left, or 503 while capacity cannot be checked', () =>",
-                      "  pm.expect(pm.response.code).to.be.oneOf([200, 409, 503]));",
-                      "if (pm.response.code === 200) {",
-                      "  pm.test('RESERVED', () => pm.expect(pm.response.json().data.state).to.eql('RESERVED'));",
-                      "  pm.environment.set('recoveryCaseVersion', pm.response.json().data.version);",
-                      "} else {",
-                      "  pm.test('nothing was held, the case stays ASSESSING', () =>",
-                      "    pm.expect(['CAPACITY_EXCEEDED', 'CAPACITY_UNAVAILABLE']).to.include(pm.response.json().code));",
-                      "}"
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const d = pm.response.json().data;",
+                      "pm.test('the leg has 5 slots', () => {",
+                      "  pm.expect(d.resourceId).to.eql(pm.environment.get('recoveryLegId'));",
+                      "  pm.expect(d.totalSlots).to.eql(5);",
+                      "});",
+                      "pm.environment.set('recoveryCapacityTotal', d.totalSlots);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources/{{recoveryLegId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources",
+                    "{{recoveryLegId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"totalSlots\": 5\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{recoveryAdminToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "5.2 Move to RESERVED (a slot is held in the capacity-service)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200: the hold was taken', () => pm.response.to.have.status(200));",
+                      "pm.test('RESERVED', () => pm.expect(pm.response.json().data.state).to.eql('RESERVED'));",
+                      "pm.environment.set('recoveryCaseVersion', pm.response.json().data.version);"
                     ]
                   }
                 }
@@ -4542,7 +4611,51 @@
               }
             },
             {
-              "name": "5.2 Cancel the case (releases the hold, if any)",
+              "name": "5.3 One slot of the leg is held",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const d = pm.response.json().data;",
+                      "const total = Number(pm.environment.get('recoveryCapacityTotal'));",
+                      "pm.test('one slot is held', () => pm.expect(d.remainingSlots).to.eql(total - 1));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources/{{recoveryLegId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources",
+                    "{{recoveryLegId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{recoveryAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "5.4 Cancel the case (releases the hold)",
               "event": [
                 {
                   "listen": "test",
@@ -4594,7 +4707,51 @@
               }
             },
             {
-              "name": "5.3 Move the cancelled case again (refused: a closed case is never reopened)",
+              "name": "5.5 The slot is back",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const d = pm.response.json().data;",
+                      "const total = Number(pm.environment.get('recoveryCapacityTotal'));",
+                      "pm.test('the slot is back', () => pm.expect(d.remainingSlots).to.eql(total));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources/{{recoveryLegId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources",
+                    "{{recoveryLegId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{recoveryAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "5.6 Move the cancelled case again (refused: a closed case is never reopened)",
               "event": [
                 {
                   "listen": "test",
@@ -4645,7 +4802,7 @@
               }
             },
             {
-              "name": "5.4 Assign the cancelled case (refused)",
+              "name": "5.7 Assign the cancelled case to another handler (refused: a closed case cannot be assigned)",
               "event": [
                 {
                   "listen": "test",
@@ -4668,7 +4825,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"assignee\": \"{{recoveryAgentSubject}}\",\n  \"expectedVersion\": {{recoveryCaseVersion}}\n}"
+                  "raw": "{\n  \"assignee\": \"{{$guid}}\",\n  \"expectedVersion\": {{recoveryCaseVersion}}\n}"
                 },
                 "url": {
                   "raw": "{{baseUrl}}/api/v1/recovery-cases/{{recoveryCaseId}}/assignment",
@@ -4696,7 +4853,7 @@
               }
             },
             {
-              "name": "5.5 Open a case for the same bag and leg again (allowed: the old case is closed)",
+              "name": "5.8 Open a case for the same bag and leg again (allowed: the old case is closed)",
               "event": [
                 {
                   "listen": "test",
@@ -5481,6 +5638,2398 @@
                   "raw": "{{recoveryUrl}}/v3/api-docs",
                   "host": [
                     "{{recoveryUrl}}"
+                  ],
+                  "path": [
+                    "v3",
+                    "api-docs"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Capacity Service",
+      "description": "The capacity-service through the api-gateway: the admin sets the capacity of a leg, staff hold, confirm and release slots, and the answers show who created and last changed a resource (Spring Data auditing). Run the folders top to bottom with the dev dummy accounts (admin, agent, dispatcher, passenger). Folder 6 calls the capacity-service directly with the service token (port 1116). Run with a delay of 150 ms or more between requests.",
+      "item": [
+        {
+          "name": "1 - Sign in",
+          "description": "Tokens of the dev dummy accounts. The subject of a token is the user id, which is what the audit columns record.",
+          "item": [
+            {
+              "name": "1.1 Sign in as the admin",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "// A new leg for every run, so a run never meets the slots of an earlier one.",
+                      "pm.environment.set('capacityLegId', 'LEG-PM-' + Date.now().toString(36).toUpperCase());"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "function claims(token) {",
+                      "  const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                      "  return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4)));",
+                      "}",
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const result = pm.response.json().data;",
+                      "pm.environment.set('capacityAdminToken', result.accessToken);",
+                      "pm.environment.set('capacityAdminSubject', claims(result.accessToken).sub);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"usernameOrEmail\": \"{{capacityAdminUsername}}\",\n  \"password\": \"{{capacityPassword}}\"\n}"
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            },
+            {
+              "name": "1.2 Sign in as the agent",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "function claims(token) {",
+                      "  const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                      "  return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4)));",
+                      "}",
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const result = pm.response.json().data;",
+                      "pm.environment.set('capacityAgentToken', result.accessToken);",
+                      "pm.environment.set('capacityAgentSubject', claims(result.accessToken).sub);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"usernameOrEmail\": \"{{capacityAgentUsername}}\",\n  \"password\": \"{{capacityPassword}}\"\n}"
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            },
+            {
+              "name": "1.3 Sign in as the dispatcher",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "function claims(token) {",
+                      "  const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                      "  return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4)));",
+                      "}",
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const result = pm.response.json().data;",
+                      "pm.environment.set('capacityDispatcherToken', result.accessToken);",
+                      "pm.environment.set('capacityDispatcherSubject', claims(result.accessToken).sub);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"usernameOrEmail\": \"{{capacityDispatcherUsername}}\",\n  \"password\": \"{{capacityPassword}}\"\n}"
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            },
+            {
+              "name": "1.4 Sign in as the passenger",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "function claims(token) {",
+                      "  const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                      "  return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4)));",
+                      "}",
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const result = pm.response.json().data;",
+                      "pm.environment.set('capacityPassengerToken', result.accessToken);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"usernameOrEmail\": \"{{capacityPassengerUsername}}\",\n  \"password\": \"{{capacityPassword}}\"\n}"
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "2 - Resources (the admin sets capacity)",
+          "description": "Only an admin creates a resource or changes its total. The resource id is the leg id. The answer shows who created and last changed it (audit).",
+          "item": [
+            {
+              "name": "2.1 Create the resource with 3 slots (admin)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const body = pm.response.json();",
+                      "pm.test('wrapped in the ApiResponse envelope', () => {",
+                      "  pm.expect(body.success).to.eql(true);",
+                      "  pm.expect(body.timestamp).to.be.a('string');",
+                      "});",
+                      "const d = pm.response.json().data;",
+                      "pm.test('the resource with its total and free slots', () => {",
+                      "  pm.expect(d.resourceId).to.eql(pm.environment.get('capacityLegId'));",
+                      "  pm.expect(d.totalSlots).to.eql(3);",
+                      "  pm.expect(d.remainingSlots).to.eql(3);",
+                      "});",
+                      "pm.test('audit: created and last changed by the admin, at the same time', () => {",
+                      "  pm.expect(d.createdBy).to.eql(pm.environment.get('capacityAdminSubject'));",
+                      "  pm.expect(d.updatedBy).to.eql(pm.environment.get('capacityAdminSubject'));",
+                      "  pm.expect(d.updatedAt).to.eql(d.createdAt);",
+                      "});",
+                      "pm.environment.set('capacityCreatedAt', d.createdAt);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources/{{capacityLegId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources",
+                    "{{capacityLegId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"totalSlots\": 3\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAdminToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "2.2 Read the resource (agent)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const body = pm.response.json();",
+                      "pm.test('wrapped in the ApiResponse envelope', () => {",
+                      "  pm.expect(body.success).to.eql(true);",
+                      "  pm.expect(body.timestamp).to.be.a('string');",
+                      "});",
+                      "const d = pm.response.json().data;",
+                      "pm.test('the resource with its total and free slots', () => {",
+                      "  pm.expect(d.resourceId).to.eql(pm.environment.get('capacityLegId'));",
+                      "  pm.expect(d.totalSlots).to.eql(3);",
+                      "  pm.expect(d.remainingSlots).to.eql(3);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources/{{capacityLegId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources",
+                    "{{capacityLegId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "2.3 Set the same total again (nothing changes)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const d = pm.response.json().data;",
+                      "pm.test('the resource with its total and free slots', () => {",
+                      "  pm.expect(d.resourceId).to.eql(pm.environment.get('capacityLegId'));",
+                      "  pm.expect(d.totalSlots).to.eql(3);",
+                      "  pm.expect(d.remainingSlots).to.eql(3);",
+                      "});",
+                      "pm.test('audit: nothing changed, so the last change is still the creation', () =>",
+                      "  pm.expect(d.updatedAt).to.eql(pm.environment.get('capacityCreatedAt')));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources/{{capacityLegId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources",
+                    "{{capacityLegId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"totalSlots\": 3\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAdminToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "2.4 Set the total as the agent (refused)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('403', () => pm.response.to.have.status(403));",
+                      "pm.test('ACCESS_DENIED: only an admin manages resources', () => pm.expect(pm.response.json().code).to.eql('ACCESS_DENIED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources/{{capacityLegId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources",
+                    "{{capacityLegId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"totalSlots\": 9\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "2.5 An invalid resource id (refused)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('400', () => pm.response.to.have.status(400));",
+                      "pm.test('VALIDATION_ERROR', () => pm.expect(pm.response.json().code).to.eql('VALIDATION_ERROR'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources/bad%20id!",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources",
+                    "bad%20id!"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"totalSlots\": 3\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAdminToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "2.6 A total out of range (refused)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('400', () => pm.response.to.have.status(400));",
+                      "pm.test('VALIDATION_ERROR', () => pm.expect(pm.response.json().code).to.eql('VALIDATION_ERROR'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources/{{capacityLegId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources",
+                    "{{capacityLegId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"totalSlots\": -1\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAdminToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "2.7 Read a resource that does not exist",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('404', () => pm.response.to.have.status(404));",
+                      "pm.test('NOT_FOUND', () => pm.expect(pm.response.json().code).to.eql('NOT_FOUND'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources/NO-SUCH-LEG-PM",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources",
+                    "NO-SUCH-LEG-PM"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "2.8 List the resources, one per page (agent)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const body = pm.response.json();",
+                      "pm.test('wrapped in the ApiResponse envelope', () => {",
+                      "  pm.expect(body.success).to.eql(true);",
+                      "  pm.expect(body.timestamp).to.be.a('string');",
+                      "});",
+                      "pm.test('one resource, with its audit values', () => {",
+                      "  pm.expect(body.data).to.be.an('array').with.lengthOf(1);",
+                      "  pm.expect(body.data[0].createdBy).to.be.a('string');",
+                      "  pm.expect(body.data[0].updatedAt).to.be.a('string');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources?page=0&size=1",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "0"
+                    },
+                    {
+                      "key": "size",
+                      "value": "1"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "3 - Hold slots (agent)",
+          "description": "The caller chooses the reservation id. Repeating a request takes nothing more. 50 parallel requests for 10 slots succeed exactly 10 times (BR-04, AT-11, tested against PostgreSQL); here the leg has 3 slots.",
+          "item": [
+            {
+              "name": "3.1 Hold one slot",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.environment.set('capacityReservationId', pm.variables.replaceIn('{{$guid}}'));",
+                      "pm.environment.set('capacityCaseId', pm.variables.replaceIn('{{$guid}}'));",
+                      "pm.environment.set('capacityBagTag', String(Math.floor(Math.random() * 1e10)).padStart(10, '0'));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('201', () => pm.response.to.have.status(201));",
+                      "const body = pm.response.json();",
+                      "pm.test('wrapped in the ApiResponse envelope', () => {",
+                      "  pm.expect(body.success).to.eql(true);",
+                      "  pm.expect(body.timestamp).to.be.a('string');",
+                      "});",
+                      "pm.test('HELD, with the id the caller chose', () => {",
+                      "  pm.expect(body.data.status).to.eql('HELD');",
+                      "  pm.expect(body.data.reservationId).to.eql(pm.environment.get('capacityReservationId'));",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reservationId\": \"{{capacityReservationId}}\",\n  \"caseId\": \"{{capacityCaseId}}\",\n  \"bagTag\": \"{{capacityBagTag}}\",\n  \"legId\": \"{{capacityLegId}}\",\n  \"slots\": 1\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "3.2 Repeat the same request (the same hold, nothing more is taken)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('201', () => pm.response.to.have.status(201));",
+                      "const body = pm.response.json();",
+                      "pm.test('wrapped in the ApiResponse envelope', () => {",
+                      "  pm.expect(body.success).to.eql(true);",
+                      "  pm.expect(body.timestamp).to.be.a('string');",
+                      "});",
+                      "pm.test('HELD, with the id the caller chose', () => {",
+                      "  pm.expect(body.data.status).to.eql('HELD');",
+                      "  pm.expect(body.data.reservationId).to.eql(pm.environment.get('capacityReservationId'));",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reservationId\": \"{{capacityReservationId}}\",\n  \"caseId\": \"{{capacityCaseId}}\",\n  \"bagTag\": \"{{capacityBagTag}}\",\n  \"legId\": \"{{capacityLegId}}\",\n  \"slots\": 1\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "3.3 Two slots are free, and the audit shows the agent as the last to change it",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const d = pm.response.json().data;",
+                      "pm.test('the resource with its total and free slots', () => {",
+                      "  pm.expect(d.resourceId).to.eql(pm.environment.get('capacityLegId'));",
+                      "  pm.expect(d.totalSlots).to.eql(3);",
+                      "  pm.expect(d.remainingSlots).to.eql(2);",
+                      "});",
+                      "pm.test('audit: created by the admin, last changed by the agent, later than the creation', () => {",
+                      "  pm.expect(d.createdBy).to.eql(pm.environment.get('capacityAdminSubject'));",
+                      "  pm.expect(d.updatedBy).to.eql(pm.environment.get('capacityAgentSubject'));",
+                      "  pm.expect(new Date(d.updatedAt).getTime()).to.be.above(new Date(d.createdAt).getTime());",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources/{{capacityLegId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources",
+                    "{{capacityLegId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "3.4 The same reservation id for a different request (refused)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('409', () => pm.response.to.have.status(409));",
+                      "pm.test('VERSION_CONFLICT', () => pm.expect(pm.response.json().code).to.eql('VERSION_CONFLICT'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reservationId\": \"{{capacityReservationId}}\",\n  \"caseId\": \"{{capacityCaseId}}\",\n  \"bagTag\": \"{{capacityBagTag}}\",\n  \"legId\": \"{{capacityLegId}}\",\n  \"slots\": 2\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "3.5 Hold one more slot with an Idempotency-Key",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.environment.set('capacityReservationId2', pm.variables.replaceIn('{{$guid}}'));",
+                      "pm.environment.set('capacityIdempotencyKey', 'pm-' + Date.now());"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('201', () => pm.response.to.have.status(201));",
+                      "const body = pm.response.json();",
+                      "pm.test('wrapped in the ApiResponse envelope', () => {",
+                      "  pm.expect(body.success).to.eql(true);",
+                      "  pm.expect(body.timestamp).to.be.a('string');",
+                      "});",
+                      "pm.test('HELD, with the id the caller chose', () => {",
+                      "  pm.expect(body.data.status).to.eql('HELD');",
+                      "  pm.expect(body.data.reservationId).to.eql(pm.environment.get('capacityReservationId2'));",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{capacityIdempotencyKey}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reservationId\": \"{{capacityReservationId2}}\",\n  \"caseId\": \"{{capacityCaseId}}\",\n  \"bagTag\": \"{{capacityBagTag}}\",\n  \"legId\": \"{{capacityLegId}}\",\n  \"slots\": 1\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "3.6 The same Idempotency-Key for another reservation (refused)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('409', () => pm.response.to.have.status(409));",
+                      "pm.test('VERSION_CONFLICT', () => pm.expect(pm.response.json().code).to.eql('VERSION_CONFLICT'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{capacityIdempotencyKey}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reservationId\": \"{{$guid}}\",\n  \"caseId\": \"{{capacityCaseId}}\",\n  \"bagTag\": \"{{capacityBagTag}}\",\n  \"legId\": \"{{capacityLegId}}\",\n  \"slots\": 1\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "3.7 Two slots when one is left (409 CAPACITY_EXCEEDED, nothing is taken)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('409', () => pm.response.to.have.status(409));",
+                      "pm.test('CAPACITY_EXCEEDED, the contract the recovery-service relies on', () => pm.expect(pm.response.json().code).to.eql('CAPACITY_EXCEEDED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reservationId\": \"{{$guid}}\",\n  \"caseId\": \"{{capacityCaseId}}\",\n  \"bagTag\": \"{{capacityBagTag}}\",\n  \"legId\": \"{{capacityLegId}}\",\n  \"slots\": 2\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "3.8 A leg without a resource (404, a set-up problem and not a full leg)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('404', () => pm.response.to.have.status(404));",
+                      "pm.test('CAPACITY_NOT_PROVISIONED', () => pm.expect(pm.response.json().code).to.eql('CAPACITY_NOT_PROVISIONED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reservationId\": \"{{$guid}}\",\n  \"caseId\": \"{{capacityCaseId}}\",\n  \"bagTag\": \"{{capacityBagTag}}\",\n  \"legId\": \"NO-SUCH-LEG-PM\",\n  \"slots\": 1\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "3.9 Zero slots (refused)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('400', () => pm.response.to.have.status(400));",
+                      "pm.test('VALIDATION_ERROR', () => pm.expect(pm.response.json().code).to.eql('VALIDATION_ERROR'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reservationId\": \"{{$guid}}\",\n  \"caseId\": \"{{capacityCaseId}}\",\n  \"bagTag\": \"{{capacityBagTag}}\",\n  \"legId\": \"{{capacityLegId}}\",\n  \"slots\": 0\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "3.10 Hold a slot as the passenger (refused)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('403', () => pm.response.to.have.status(403));",
+                      "pm.test('ACCESS_DENIED', () => pm.expect(pm.response.json().code).to.eql('ACCESS_DENIED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reservationId\": \"{{$guid}}\",\n  \"caseId\": \"{{capacityCaseId}}\",\n  \"bagTag\": \"{{capacityBagTag}}\",\n  \"legId\": \"{{capacityLegId}}\",\n  \"slots\": 1\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityPassengerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "3.11 Hold a slot without a token (refused)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('401', () => pm.response.to.have.status(401));",
+                      "pm.test('UNAUTHENTICATED', () => pm.expect(pm.response.json().code).to.eql('UNAUTHENTICATED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reservationId\": \"{{$guid}}\",\n  \"caseId\": \"{{capacityCaseId}}\",\n  \"bagTag\": \"{{capacityBagTag}}\",\n  \"legId\": \"{{capacityLegId}}\",\n  \"slots\": 1\n}"
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "4 - Confirm and release (dispatcher)",
+          "description": "Confirming says a case move kept the hold, so the capacity-service never expires it. A release returns the slots once. A release of an id that was never held leaves a tombstone, so a hold that arrives late is refused (ADR 0002).",
+          "item": [
+            {
+              "name": "4.1 Confirm the first hold",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const body = pm.response.json();",
+                      "pm.test('wrapped in the ApiResponse envelope', () => {",
+                      "  pm.expect(body.success).to.eql(true);",
+                      "  pm.expect(body.timestamp).to.be.a('string');",
+                      "});",
+                      "pm.test('CONFIRMED', () => pm.expect(body.data.status).to.eql('CONFIRMED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations/{{capacityReservationId}}/confirmation",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations",
+                    "{{capacityReservationId}}",
+                    "confirmation"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityDispatcherToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "4.2 Confirm it again (nothing changes)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.test('still CONFIRMED', () => pm.expect(pm.response.json().data.status).to.eql('CONFIRMED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations/{{capacityReservationId}}/confirmation",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations",
+                    "{{capacityReservationId}}",
+                    "confirmation"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityDispatcherToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "4.3 Release the first hold",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('204', () => pm.response.to.have.status(204));",
+                      "pm.test('no body', () => pm.expect(pm.response.text()).to.eql(''));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations/{{capacityReservationId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations",
+                    "{{capacityReservationId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityDispatcherToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "4.4 Release it again (204, the slot is returned only once)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('204', () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations/{{capacityReservationId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations",
+                    "{{capacityReservationId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityDispatcherToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "4.5 Two slots are free again, and the audit shows the dispatcher",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const d = pm.response.json().data;",
+                      "pm.test('the resource with its total and free slots', () => {",
+                      "  pm.expect(d.resourceId).to.eql(pm.environment.get('capacityLegId'));",
+                      "  pm.expect(d.totalSlots).to.eql(3);",
+                      "  pm.expect(d.remainingSlots).to.eql(2);",
+                      "});",
+                      "pm.test('audit: last changed by the dispatcher who released the hold', () =>",
+                      "  pm.expect(d.updatedBy).to.eql(pm.environment.get('capacityDispatcherSubject')));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources/{{capacityLegId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources",
+                    "{{capacityLegId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "4.6 A released hold does not hold again (refused)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('409', () => pm.response.to.have.status(409));",
+                      "pm.test('VERSION_CONFLICT', () => pm.expect(pm.response.json().code).to.eql('VERSION_CONFLICT'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reservationId\": \"{{capacityReservationId}}\",\n  \"caseId\": \"{{capacityCaseId}}\",\n  \"bagTag\": \"{{capacityBagTag}}\",\n  \"legId\": \"{{capacityLegId}}\",\n  \"slots\": 1\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "4.7 Confirm a released hold (refused)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('409', () => pm.response.to.have.status(409));",
+                      "pm.test('ILLEGAL_TRANSITION', () => pm.expect(pm.response.json().code).to.eql('ILLEGAL_TRANSITION'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations/{{capacityReservationId}}/confirmation",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations",
+                    "{{capacityReservationId}}",
+                    "confirmation"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityDispatcherToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "4.8 Release an id that was never held (404, and the id is remembered as released)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.environment.set('capacityUnheldId', pm.variables.replaceIn('{{$guid}}'));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('404', () => pm.response.to.have.status(404));",
+                      "pm.test('NOT_FOUND', () => pm.expect(pm.response.json().code).to.eql('NOT_FOUND'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations/{{capacityUnheldId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations",
+                    "{{capacityUnheldId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "4.9 A hold with that id arrives late (refused, it never takes a slot)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('409', () => pm.response.to.have.status(409));",
+                      "pm.test('VERSION_CONFLICT', () => pm.expect(pm.response.json().code).to.eql('VERSION_CONFLICT'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reservationId\": \"{{capacityUnheldId}}\",\n  \"caseId\": \"{{capacityCaseId}}\",\n  \"bagTag\": \"{{capacityBagTag}}\",\n  \"legId\": \"{{capacityLegId}}\",\n  \"slots\": 1\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "4.10 Confirm a hold that does not exist",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('404', () => pm.response.to.have.status(404));",
+                      "pm.test('NOT_FOUND', () => pm.expect(pm.response.json().code).to.eql('NOT_FOUND'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations/{{$guid}}/confirmation",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations",
+                    "{{$guid}}",
+                    "confirmation"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityDispatcherToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "4.11 Release the second hold",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('204', () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations/{{capacityReservationId2}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations",
+                    "{{capacityReservationId2}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityDispatcherToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "4.12 All 3 slots are free again",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const d = pm.response.json().data;",
+                      "pm.test('the resource with its total and free slots', () => {",
+                      "  pm.expect(d.resourceId).to.eql(pm.environment.get('capacityLegId'));",
+                      "  pm.expect(d.totalSlots).to.eql(3);",
+                      "  pm.expect(d.remainingSlots).to.eql(3);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources/{{capacityLegId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources",
+                    "{{capacityLegId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "5 - Refused calls",
+          "description": "Who may call what (spec section 11).",
+          "item": [
+            {
+              "name": "5.1 List the resources as the passenger (403)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('403', () => pm.response.to.have.status(403));",
+                      "pm.test('ACCESS_DENIED', () => pm.expect(pm.response.json().code).to.eql('ACCESS_DENIED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityPassengerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "5.2 Create a resource as the dispatcher (403: only admins)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('403', () => pm.response.to.have.status(403));",
+                      "pm.test('ACCESS_DENIED', () => pm.expect(pm.response.json().code).to.eql('ACCESS_DENIED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources/{{capacityLegId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources",
+                    "{{capacityLegId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"totalSlots\": 1\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityDispatcherToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "5.3 Release without a token (401)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('401', () => pm.response.to.have.status(401));",
+                      "pm.test('UNAUTHENTICATED', () => pm.expect(pm.response.json().code).to.eql('UNAUTHENTICATED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations/{{$guid}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations",
+                    "{{$guid}}"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            },
+            {
+              "name": "5.4 A path that is not listed, as the admin (403: everything else is denied)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('403', () => pm.response.to.have.status(403));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/other",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "other"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAdminToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "6 - Service token (the recovery-service sweeper)",
+          "description": "The sweeper releases and confirms holds with no user token. It sends the shared secret in X-Service-Token directly to the capacity-service (port 1116). The secret allows release and confirmation only, and the gateway strips it from client requests. capacityServiceToken must equal CAPACITY_SERVICE_TOKEN of the stack (the Compose default is for local runs).",
+          "item": [
+            {
+              "name": "6.1 Hold a slot through the gateway (agent)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.environment.set('capacityServiceHoldId', pm.variables.replaceIn('{{$guid}}'));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('201', () => pm.response.to.have.status(201));",
+                      "const body = pm.response.json();",
+                      "pm.test('wrapped in the ApiResponse envelope', () => {",
+                      "  pm.expect(body.success).to.eql(true);",
+                      "  pm.expect(body.timestamp).to.be.a('string');",
+                      "});",
+                      "pm.test('HELD, with the id the caller chose', () => {",
+                      "  pm.expect(body.data.status).to.eql('HELD');",
+                      "  pm.expect(body.data.reservationId).to.eql(pm.environment.get('capacityServiceHoldId'));",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reservationId\": \"{{capacityServiceHoldId}}\",\n  \"caseId\": \"{{capacityCaseId}}\",\n  \"bagTag\": \"{{capacityBagTag}}\",\n  \"legId\": \"{{capacityLegId}}\",\n  \"slots\": 1\n}"
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "6.2 Confirm it with the service token, no user token",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.test('CONFIRMED', () => pm.expect(pm.response.json().data.status).to.eql('CONFIRMED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "X-Service-Token",
+                    "value": "{{capacityServiceToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{capacityUrl}}/api/v1/capacity/reservations/{{capacityServiceHoldId}}/confirmation",
+                  "host": [
+                    "{{capacityUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations",
+                    "{{capacityServiceHoldId}}",
+                    "confirmation"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            },
+            {
+              "name": "6.3 Release it with the service token",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('204', () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "X-Service-Token",
+                    "value": "{{capacityServiceToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{capacityUrl}}/api/v1/capacity/reservations/{{capacityServiceHoldId}}",
+                  "host": [
+                    "{{capacityUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations",
+                    "{{capacityServiceHoldId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            },
+            {
+              "name": "6.4 All 3 slots are free, and the audit shows the service",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const d = pm.response.json().data;",
+                      "pm.test('the resource with its total and free slots', () => {",
+                      "  pm.expect(d.resourceId).to.eql(pm.environment.get('capacityLegId'));",
+                      "  pm.expect(d.totalSlots).to.eql(3);",
+                      "  pm.expect(d.remainingSlots).to.eql(3);",
+                      "});",
+                      "pm.test('audit: last changed by the service that released the hold', () => pm.expect(d.updatedBy).to.eql('service'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/resources/{{capacityLegId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "resources",
+                    "{{capacityLegId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{capacityAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "6.5 The service token cannot hold slots (403)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('403', () => pm.response.to.have.status(403));",
+                      "pm.test('ACCESS_DENIED', () => pm.expect(pm.response.json().code).to.eql('ACCESS_DENIED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Service-Token",
+                    "value": "{{capacityServiceToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{capacityUrl}}/api/v1/capacity/reservations",
+                  "host": [
+                    "{{capacityUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reservationId\": \"{{$guid}}\",\n  \"caseId\": \"{{capacityCaseId}}\",\n  \"bagTag\": \"{{capacityBagTag}}\",\n  \"legId\": \"{{capacityLegId}}\",\n  \"slots\": 1\n}"
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            },
+            {
+              "name": "6.6 A wrong service token changes nothing (401)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('401', () => pm.response.to.have.status(401));",
+                      "pm.test('UNAUTHENTICATED', () => pm.expect(pm.response.json().code).to.eql('UNAUTHENTICATED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "X-Service-Token",
+                    "value": "not-the-secret"
+                  }
+                ],
+                "url": {
+                  "raw": "{{capacityUrl}}/api/v1/capacity/reservations/{{$guid}}",
+                  "host": [
+                    "{{capacityUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations",
+                    "{{$guid}}"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            },
+            {
+              "name": "6.7 Through the gateway the service token is ignored (401)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('401', () => pm.response.to.have.status(401));",
+                      "pm.test('UNAUTHENTICATED', () => pm.expect(pm.response.json().code).to.eql('UNAUTHENTICATED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "X-Service-Token",
+                    "value": "{{capacityServiceToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/capacity/reservations/{{$guid}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "capacity",
+                    "reservations",
+                    "{{$guid}}"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "7 - Service checks (direct, port 1116)",
+          "description": "Health and the OpenAPI definition via capacityUrl.",
+          "item": [
+            {
+              "name": "7.1 Health",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.test('UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{capacityUrl}}/actuator/health",
+                  "host": [
+                    "{{capacityUrl}}"
+                  ],
+                  "path": [
+                    "actuator",
+                    "health"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            },
+            {
+              "name": "7.2 OpenAPI definition (the 409 contract is documented)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const api = pm.response.json();",
+                      "pm.test('the capacity-service', () => pm.expect(api.info.title).to.eql('AeroTrace Capacity Service'));",
+                      "const hold = api.paths['/api/v1/capacity/reservations'].post.responses;",
+                      "pm.test('hold: 201, 400, 404 (not provisioned), 409 (capacity exceeded), 401 and 403', () =>",
+                      "  pm.expect(Object.keys(hold)).to.include.members(['201', '400', '401', '403', '404', '409']));",
+                      "pm.test('release: 204 and 404', () => {",
+                      "  const release = api.paths['/api/v1/capacity/reservations/{id}'].delete.responses;",
+                      "  pm.expect(Object.keys(release)).to.include.members(['204', '404']);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{capacityUrl}}/v3/api-docs",
+                  "host": [
+                    "{{capacityUrl}}"
                   ],
                   "path": [
                     "v3",

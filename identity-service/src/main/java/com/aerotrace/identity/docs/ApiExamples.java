@@ -75,7 +75,7 @@ public final class ApiExamples {
       """
       {"success":true,"data":{"id":"3f0c5e1e-8d1b-4b0e-9a55-0c7c1d1f6a10","username":"ayse.kaya",\
       "email":"ayse.kaya@example.com","fullName":"Ayse Kaya","roles":["PASSENGER"],\
-      "status":"ACTIVE","createdAt":"2026-11-12T10:15:30.123Z"},\
+      "status":"ACTIVE","createdAt":"2026-11-12T10:15:30.123Z","createdBy":"anonymous"},\
       "timestamp":"2026-11-12T10:15:30.123Z"}\
       """;
 

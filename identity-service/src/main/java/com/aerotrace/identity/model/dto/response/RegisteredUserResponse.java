@@ -22,4 +22,5 @@ public record RegisteredUserResponse(
     String fullName,
     List<String> roles,
     String status,
-    Instant createdAt) {}
+    Instant createdAt,
+    String createdBy) {}

@@ -287,8 +287,11 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       REDIS_HOST: redis
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redis}
-      # The capacity-service (issue #12); until it runs, moving a case to RESERVED answers 503.
+      # The capacity-service; while it is down, moving a case to RESERVED answers 503.
       CAPACITY_SERVICE_URL: ${CAPACITY_SERVICE_URL:-http://capacity-service:1116}
+      # Shared with the capacity-service: the sweeper releases holds with no user token. The default
+      # is for local runs only; set CAPACITY_SERVICE_TOKEN in .env for anything shared.
+      CAPACITY_SERVICE_TOKEN: ${CAPACITY_SERVICE_TOKEN:-aerotrace-local-service-token}
       # Empty: the identity-service development public key bundled in the image is used.
       IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
@@ -312,6 +315,52 @@ services:
       - "1115:1115"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:1115/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 40s
+    networks:
+      - aerotrace
+
+  # Finite recovery capacity with atomic reservations (PostgreSQL decides; Redis is not used).
+  # Publishes recovery.capacity.changed.v1 through its outbox.
+  capacity-service:
+    image: ${REGISTRY:-ghcr.io/rapter1990}/aerotrace-capacity-service:${TAG:-latest}
+    container_name: capacity-service
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+    environment:
+      EUREKA_URL: http://${EUREKA_USER:-eureka}:${EUREKA_PASSWORD:-eureka}@discovery-server:8761/eureka/
+      EUREKA_INSTANCE_HOSTNAME: capacity-service
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-aerotrace}
+      DB_USER: ${POSTGRES_USER:-aerotrace}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CAPACITY_SERVICE_TOKEN: ${CAPACITY_SERVICE_TOKEN:-aerotrace-local-service-token}
+      # Empty: the identity-service development public key bundled in the image is used.
+      IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-1.0}
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    # Clients reach it through the gateway (/api/v1/capacity/**); 1116 is its own port.
+    ports:
+      - "1116:1116"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:1116/actuator/health"]
       interval: 10s
       timeout: 3s
       retries: 5

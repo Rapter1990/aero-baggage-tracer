@@ -5,3 +5,5 @@ databaseChangeLog:
       file: db/changelog/changes/002-scan-audit.sql
   - include:
       file: db/changelog/changes/003-outbox-and-dedupe.sql
+  - include:
+      file: db/changelog/changes/004-audit-columns.sql
