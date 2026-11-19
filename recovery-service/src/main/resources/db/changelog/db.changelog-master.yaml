@@ -17,3 +17,5 @@ databaseChangeLog:
       file: db/changelog/changes/008-assignment-and-move-keys.sql
   - include:
       file: db/changelog/changes/009-outbox-sequence.sql
+  - include:
+      file: db/changelog/changes/010-hold-confirmation.sql

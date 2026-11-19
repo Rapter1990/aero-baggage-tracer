@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.service.annotation.DeleteExchange;
 import org.springframework.web.service.annotation.HttpExchange;
 import org.springframework.web.service.annotation.PostExchange;
+import org.springframework.web.service.annotation.PutExchange;
 
 /**
  * The typed HTTP client of the capacity-service (spec: POST /capacity/reservations and DELETE
@@ -23,6 +24,13 @@ public interface CapacityClient {
   /** Releases a hold; answers 404 when there is none (already released). */
   @DeleteExchange("/{id}")
   void release(@PathVariable("id") UUID id);
+
+  /**
+   * Says that the case kept the hold, so the capacity-service's expiry never takes it. 404 or 409
+   * when the hold is gone (released or expired).
+   */
+  @PutExchange("/{id}/confirmation")
+  void confirm(@PathVariable("id") UUID id);
 
   /** What the recovery-service asks for. */
   record ReservationRequest(

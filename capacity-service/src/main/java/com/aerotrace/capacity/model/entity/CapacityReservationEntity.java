@@ -23,17 +23,19 @@ public class CapacityReservationEntity {
 
   @Id private UUID id;
 
-  @Column(name = "resource_id", nullable = false, insertable = false, updatable = false)
+  // The next four are null only on a tombstone: a RELEASED row written when an unknown id was
+  // released, so that a late hold with that id is refused.
+  @Column(name = "resource_id", insertable = false, updatable = false)
   private String resourceId;
 
-  @Column(name = "case_id", nullable = false, insertable = false, updatable = false)
+  @Column(name = "case_id", insertable = false, updatable = false)
   private UUID caseId;
 
-  @Column(name = "bag_tag", nullable = false, insertable = false, updatable = false)
+  @Column(name = "bag_tag", insertable = false, updatable = false)
   private String bagTag;
 
-  @Column(nullable = false, insertable = false, updatable = false)
-  private int slots;
+  @Column(insertable = false, updatable = false)
+  private Integer slots;
 
   @Column(nullable = false, insertable = false, updatable = false)
   private String status;

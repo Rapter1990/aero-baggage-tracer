@@ -74,14 +74,14 @@ class SecurityMatrixTest extends AbstractCapacityTest {
                   .content("{\"totalSlots\":5}"))
           .andExpect(status().isForbidden());
       mockMvc.perform(get(RESOURCES).with(as(staff))).andExpect(status().isOk());
-      // Allowed to hold: an unknown leg is a business answer (409), not a permission one.
+      // Allowed to hold: an unknown leg is a business answer (404), not a permission one.
       mockMvc
           .perform(
               post(RESERVATIONS)
                   .with(as(staff))
                   .contentType(MediaType.APPLICATION_JSON)
                   .content(hold()))
-          .andExpect(status().isConflict());
+          .andExpect(status().isNotFound());
     }
     mockMvc
         .perform(
@@ -103,7 +103,8 @@ class SecurityMatrixTest extends AbstractCapacityTest {
         .andExpect(status().isNotFound());
     mockMvc
         .perform(
-            put(RESERVATIONS + "/{id}/confirmation", id)
+            // Another id: the release above left a tombstone under the first one (409, not 404).
+            put(RESERVATIONS + "/{id}/confirmation", UUID.randomUUID())
                 .header("X-Service-Token", "test-service-token"))
         .andExpect(status().isNotFound());
     // It cannot hold slots or manage resources.

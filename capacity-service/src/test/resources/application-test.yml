@@ -37,7 +37,9 @@ aerotrace:
       # Tests drive the relay by hand; the scheduler only fires once an hour.
       relay-delay: 1h
     hold:
-      # Tests call the expiry by hand, so a hold is "old" as soon as it exists.
+      # Tests call the expiry by hand, so a hold is "old" as soon as it exists; the scheduled job
+      # stays off (HoldExpiryJobTest switches it on).
+      expiry-enabled: false
       ttl: 0s
       sweep-delay: 1h
     service:

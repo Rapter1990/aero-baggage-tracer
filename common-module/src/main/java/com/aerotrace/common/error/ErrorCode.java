@@ -15,6 +15,8 @@ public enum ErrorCode {
   VERSION_CONFLICT(HttpStatus.CONFLICT),
   DUPLICATE_RECOVERY_CASE(HttpStatus.CONFLICT),
   CAPACITY_EXCEEDED(HttpStatus.CONFLICT),
+  /** The leg has no capacity resource (a set-up problem), as opposed to a full one. */
+  CAPACITY_NOT_PROVISIONED(HttpStatus.NOT_FOUND),
   /** A dependency (for example the capacity-service) did not answer in time; retry later. */
   CAPACITY_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE),
   RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS),

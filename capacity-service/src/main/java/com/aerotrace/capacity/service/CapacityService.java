@@ -27,6 +27,7 @@ import java.util.UUID;
 import java.util.function.IntSupplier;
 import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -111,7 +112,12 @@ public class CapacityService {
       if (original != null) {
         return replay(original, request, idempotencyKey);
       }
-      // Either the leg has no resource or fewer slots are left: for the caller both mean "no".
+      if (!resources.existsById(request.legId())) {
+        // A leg nobody provisioned is a set-up problem, not a full leg: say so, so it is not
+        // counted as capacity running out.
+        meters.counter(MetricNames.RESERVATION_NOT_PROVISIONED).increment();
+        throw new ApiException(ErrorCode.CAPACITY_NOT_PROVISIONED, CapacityRules.NOT_PROVISIONED);
+      }
       meters.counter(MetricNames.RESERVATION_CONFLICTS).increment();
       throw new ApiException(ErrorCode.CAPACITY_EXCEEDED, CapacityRules.NO_CAPACITY);
     }
@@ -123,12 +129,16 @@ public class CapacityService {
         request.slots(),
         idempotencyKey,
         now);
-    publishChange(request.legId(), now);
+    publishChange(request.legId());
     return new ReservationResponse(request.reservationId(), CapacityRules.HELD);
   }
 
   private static ReservationResponse replay(
       CapacityReservationEntity existing, ReservationRequest request, String idempotencyKey) {
+    if (existing.getResourceId() == null) {
+      // A tombstone: the id was released before this request got here, so it must never hold.
+      throw new ApiException(ErrorCode.VERSION_CONFLICT, CapacityRules.RESERVATION_CLOSED);
+    }
     boolean sameRequest =
         existing.getResourceId().equals(request.legId())
             && existing.getSlots() == request.slots()
@@ -151,17 +161,27 @@ public class CapacityService {
 
   /**
    * Releases a hold and returns its slots, once. Releasing a hold that is already closed changes
-   * nothing and answers true; false means there is no such hold (the caller treats that as
+   * nothing and answers true; false means there was no such hold (the caller treats that as
    * released).
+   *
+   * <p>A release of an unknown id records a RELEASED tombstone under that id. The caller releases
+   * after a timeout, when the hold it asked for may still be on its way; the late hold then meets
+   * the tombstone on the primary key and is refused, so it can never become a hold nobody owns.
    */
   public boolean release(UUID reservationId) {
     return Boolean.TRUE.equals(
         transaction.execute(
-            status ->
-                settle(
-                    reservationId,
-                    () -> reservations.release(reservationId, Instant.now(clock)),
-                    MetricNames.RESERVATIONS_RELEASED)));
+            status -> {
+              IntSupplier close = () -> reservations.release(reservationId, Instant.now(clock));
+              boolean known = settle(reservationId, close, MetricNames.RESERVATIONS_RELEASED);
+              if (!known && reservations.insertTombstone(reservationId, Instant.now(clock)) == 0) {
+                // The hold was inserted between the look-up and the tombstone (the insert waited
+                // for
+                // it to commit): it exists now, so close it.
+                known = settle(reservationId, close, MetricNames.RESERVATIONS_RELEASED);
+              }
+              return known;
+            }));
   }
 
   /** Says that a case move kept the hold, so the expiry job leaves it alone. */
@@ -218,7 +238,7 @@ public class CapacityService {
     if (close.getAsInt() == 1) {
       Instant now = Instant.now(clock);
       resources.giveBack(hold.getResourceId(), hold.getSlots(), now);
-      publishChange(hold.getResourceId(), now);
+      publishChange(hold.getResourceId());
       meters.counter(counter).increment();
     }
     return true;
@@ -251,7 +271,7 @@ public class CapacityService {
               && resources.resize(resourceId, totalSlots, now) == 0) {
             throw new ApiException(ErrorCode.CAPACITY_EXCEEDED, CapacityRules.SHRINK_BELOW_HELD);
           }
-          publishChange(resourceId, now);
+          publishChange(resourceId);
           return ResourceResponse.of(resources.findById(resourceId).orElseThrow());
         });
   }
@@ -263,14 +283,27 @@ public class CapacityService {
         .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, CapacityRules.NO_SUCH_RESOURCE));
   }
 
-  public List<ResourceResponse> listResources() {
-    return resources.findAll(Sort.by("id")).stream().map(ResourceResponse::of).toList();
+  /** One page of resources, ordered by id so a page never shifts between two requests. */
+  public List<ResourceResponse> listResources(int page, int size) {
+    int boundedSize = Math.min(Math.max(size, 1), CapacityRules.MAX_PAGE_SIZE);
+    return resources
+        .findAll(PageRequest.of(Math.max(page, 0), boundedSize, Sort.by("id")))
+        .map(ResourceResponse::of)
+        .getContent();
   }
 
   // ------------------------------------------------------------------ events
 
-  /** Stores the current counts of the resource as an event, in the caller's transaction. */
-  private void publishChange(String resourceId, Instant now) {
+  /**
+   * Stores the current counts of the resource as an event, in the caller's transaction. It is
+   * called after the guarded UPDATE has locked the resource row, and it takes the time only now:
+   * the consumer orders events of a resource by {@code occurredAt}, so a time taken before waiting
+   * for the lock could stamp a later change with an earlier time and make it look stale. The write
+   * that follows the lock is also what keeps the outbox order equal to the commit order per
+   * resource.
+   */
+  private void publishChange(String resourceId) {
+    Instant now = Instant.now(clock);
     CapacityResourceEntity resource = resources.findById(resourceId).orElseThrow();
     CapacityChangedPayload payload =
         new CapacityChangedPayload(

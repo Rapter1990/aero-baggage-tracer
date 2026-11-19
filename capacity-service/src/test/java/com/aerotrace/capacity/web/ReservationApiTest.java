@@ -171,12 +171,97 @@ class ReservationApiTest extends AbstractCapacityTest {
   }
 
   @Test
-  @DisplayName("BR-04 a leg without a resource answers 409 CAPACITY_EXCEEDED")
-  void unknownLegHasNoCapacity() throws Exception {
+  @DisplayName("BR-04 a leg without a resource answers 404 CAPACITY_NOT_PROVISIONED, not 'full'")
+  void unknownLegIsNotProvisioned() throws Exception {
+    double conflictsBefore = meters.counter("capacity.reservation.conflicts").count();
+
     ResultActions refused = reserve(UUID.randomUUID(), newLeg(), 1);
 
-    refused.andExpect(status().isConflict());
-    assertThat(code(refused)).isEqualTo("CAPACITY_EXCEEDED");
+    refused.andExpect(status().isNotFound());
+    assertThat(code(refused)).isEqualTo("CAPACITY_NOT_PROVISIONED");
+    // A set-up problem must not look like capacity running out.
+    assertThat(meters.counter("capacity.reservation.conflicts").count()).isEqualTo(conflictsBefore);
+  }
+
+  @Test
+  @DisplayName(
+      "a release that arrives before its hold leaves a tombstone: the late hold is refused")
+  void releaseBeforeHoldRefusesTheLateHold() throws Exception {
+    String leg = newLeg();
+    createResource(leg, 5);
+    Map<String, Object> request = body(UUID.randomUUID(), leg, 2);
+    UUID id = (UUID) request.get("reservationId");
+
+    // The caller timed out, released by id, and the hold had not arrived yet: 404, as before.
+    mockMvc
+        .perform(delete(RESERVATIONS + "/{id}", id).with(as(Role.AGENT)))
+        .andExpect(status().isNotFound());
+    ResultActions late = reserve(request, null, Role.AGENT);
+
+    late.andExpect(status().isConflict());
+    assertThat(code(late)).isEqualTo("VERSION_CONFLICT");
+    assertThat(remaining(leg)).isEqualTo(5);
+    // Releasing again is now a known, closed hold.
+    mockMvc
+        .perform(delete(RESERVATIONS + "/{id}", id).with(as(Role.AGENT)))
+        .andExpect(status().isNoContent());
+  }
+
+  @Test
+  @DisplayName("parallel release and hold of one id never leave a live hold behind")
+  void releaseRacingHoldLeavesNoOrphan() throws Exception {
+    for (int round = 0; round < 10; round++) {
+      String leg = newLeg();
+      createResource(leg, 3);
+      Map<String, Object> request = body(UUID.randomUUID(), leg, 1);
+      UUID id = (UUID) request.get("reservationId");
+      ExecutorService pool = Executors.newFixedThreadPool(2);
+      CountDownLatch go = new CountDownLatch(1);
+      try {
+        Future<Integer> hold =
+            pool.submit(
+                () -> {
+                  go.await();
+                  return reserve(request, null, Role.AGENT).andReturn().getResponse().getStatus();
+                });
+        Future<Integer> release =
+            pool.submit(
+                () -> {
+                  go.await();
+                  return mockMvc
+                      .perform(delete(RESERVATIONS + "/{id}", id).with(as(Role.AGENT)))
+                      .andReturn()
+                      .getResponse()
+                      .getStatus();
+                });
+        go.countDown();
+        hold.get(60, TimeUnit.SECONDS);
+        release.get(60, TimeUnit.SECONDS);
+      } finally {
+        pool.shutdownNow();
+      }
+
+      // Whatever the order, the release is the last word: no slot stays held.
+      mockMvc
+          .perform(delete(RESERVATIONS + "/{id}", id).with(as(Role.AGENT)))
+          .andExpect(status().isNoContent());
+      assertThat(remaining(leg)).isEqualTo(3);
+    }
+  }
+
+  @Test
+  @DisplayName("the resource list is paged and capped")
+  void resourceListIsPaged() throws Exception {
+    createResource(newLeg(), 1);
+    createResource(newLeg(), 1);
+
+    mockMvc
+        .perform(get(RESOURCES).param("size", "1").with(as(Role.AGENT)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1));
+    mockMvc
+        .perform(get(RESOURCES + "/{id}", "bad id!").with(as(Role.AGENT)))
+        .andExpect(status().isBadRequest());
   }
 
   // ------------------------------------------------------------------ the contract of the

@@ -121,7 +121,7 @@ Defaults marked "Compose" are for local use only.
 | `CAPACITY_READ_TIMEOUT` | recovery-service | A slower capacity-service counts as unavailable (503) | `5s` |
 | `CAPACITY_HOLD_TIMEOUT` | recovery-service | A case RESERVED longer than this is cancelled and its hold released | `15m` |
 | `CAPACITY_SERVICE_TOKEN` | recovery-service, capacity-service | Shared secret for calls without a user token (the sweeper's releases); set the same value in both | empty (Compose: a local-only default) |
-| `CAPACITY_HOLD_EXPIRY_ENABLED` | capacity-service | Whether unconfirmed holds expire; keep off until the recovery-service confirms its holds | `false` |
+| `CAPACITY_HOLD_EXPIRY_ENABLED` | capacity-service | Whether holds that nobody confirmed expire (the recovery-service confirms the holds of its cases) | `true` |
 | `CAPACITY_HOLD_TTL` | capacity-service | How long an unconfirmed hold lives when expiry is on | `1h` |
 | `CAPACITY_OUTBOX_RELAY_DELAY` | capacity-service | Pause between relay runs | `200ms` |
 | `RECOVERY_POLICY_CACHE_TTL` | recovery-service | How long Redis may serve the cached recovery policy | `5m` |

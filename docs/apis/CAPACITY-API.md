@@ -65,9 +65,11 @@ Answer: `201` with `{"reservationId": "...", "status": "HELD"}`.
 | `Idempotency-Key` | Optional. A repeat gets the same hold; the same key for a new reservation id is `409 VERSION_CONFLICT` |
 | Retry after release | A hold that was released does not hold again: `409 VERSION_CONFLICT` |
 | Release | Returns the slots once. Releasing twice is `204` both times; no such hold is `404` (the recovery-service treats that as released) |
+| Release before hold | A release of an unknown id answers `404` and records the id as released (a tombstone). A hold with that id that arrives later is refused with `409 VERSION_CONFLICT`, so a slow hold can never stay with no owner |
 | Service token | `X-Service-Token` with the shared secret gives the call the SERVICE role, allowed on release and confirmation only. A wrong secret changes nothing |
 | Confirmation | Marks a hold as kept by its case. A released or expired hold answers `409 ILLEGAL_TRANSITION` |
-| Expiry | Off by default (`CAPACITY_HOLD_EXPIRY_ENABLED`). When on, only a hold nobody confirmed within `CAPACITY_HOLD_TTL` (1 h) is given back. A confirmed hold is never expired |
+| Expiry | On by default (`CAPACITY_HOLD_EXPIRY_ENABLED`). Only a hold nobody confirmed within `CAPACITY_HOLD_TTL` (1 h) is given back. A confirmed hold is never expired: its owner releases it. See [ADR 0002](../adr/0002-capacity-hold-lifecycle.md) |
+| Listing | `GET /resources?page=0&size=50`, ordered by id, size capped at 200 |
 | Resize | The free slots move by the same difference. A total lower than the slots held is `409 CAPACITY_EXCEEDED` |
 
 ## The 409 contract
@@ -75,7 +77,7 @@ Answer: `201` with `{"reservationId": "...", "status": "HELD"}`.
 | Case | Answer |
 |---|---|
 | Not enough slots left | `409 CAPACITY_EXCEEDED` |
-| The leg has no resource | `409 CAPACITY_EXCEEDED` |
+| The leg has no resource | `404 CAPACITY_NOT_PROVISIONED` (a set-up problem, not a full leg; counted in `capacity_reservation_not_provisioned_total`) |
 | Reservation id or key reused for another request | `409 VERSION_CONFLICT` |
 | Hold already released or expired | `409 VERSION_CONFLICT` (hold), `409 ILLEGAL_TRANSITION` (confirm) |
 
@@ -88,7 +90,7 @@ The failed request takes nothing and stores no event. The counter `capacity_rese
 | 400 | `VALIDATION_ERROR` | A field or the `Idempotency-Key` breaks a rule |
 | 401 | `UNAUTHENTICATED` | No token, an invalid one, or a wrong service token |
 | 403 | `ACCESS_DENIED` | A valid token without the role |
-| 404 | `NOT_FOUND` | No such hold or resource |
+| 404 | `NOT_FOUND`, `CAPACITY_NOT_PROVISIONED` | No such hold or resource; a hold for a leg with no resource |
 | 409 | `CAPACITY_EXCEEDED`, `VERSION_CONFLICT`, `ILLEGAL_TRANSITION` | See the tables above |
 
 ## Events
@@ -109,8 +111,9 @@ The service does not use Redis. Nothing but PostgreSQL can grant a slot, so a Re
 
 | Topic | State |
 |---|---|
-| Confirmation by the recovery-service | The endpoint exists, but the recovery-service does not call it yet. That is why expiry is off: an unconfirmed hold may be a bag on its way |
-| Release before hold | If the recovery-service times out on a hold and releases it before the original request commits, the release answers 404 and the late hold has no owner. Nothing reclaims it while expiry is off. Fix: the recovery-service confirms its holds and expiry is turned on |
+| Confirmation window | The recovery-service confirms a hold right after the case move commits and repeats it every 30 s. If both services are down for longer than the TTL right after a move, the hold of that active case expires |
+| Tombstones | A release of an unknown id leaves a small row that is never deleted yet; a purge by age is a follow-up |
+| Status code of a replay | A repeated hold answers `201` again, with the same body |
 | Service token | A secret shorter than 16 characters is ignored. The gateway removes `X-Service-Token`, so only direct service calls can use it. Do not use the Compose default outside local runs |
 | Resource lifecycle | Resources are created and resized, never deleted |
 | Redis hint | Not built (optional in the issue) |

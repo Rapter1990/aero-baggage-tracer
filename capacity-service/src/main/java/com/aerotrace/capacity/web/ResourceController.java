@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -69,9 +70,7 @@ public class ResourceController {
   @PutMapping(ApiPaths.RESOURCE)
   public ApiResponse<ResourceResponse> put(
       @PathVariable("id") String id, @Valid @RequestBody ResourceRequest body) {
-    if (!RESOURCE_ID.matcher(id).matches()) {
-      throw new ApiException(ErrorCode.VALIDATION_ERROR, CapacityRules.NO_SUCH_RESOURCE);
-    }
+    requireValidId(id);
     return ApiResponse.success(service.setTotal(id, body.totalSlots()));
   }
 
@@ -87,12 +86,23 @@ public class ResourceController {
   })
   @GetMapping(ApiPaths.RESOURCE)
   public ApiResponse<ResourceResponse> get(@PathVariable("id") String id) {
+    requireValidId(id);
     return ApiResponse.success(service.getResource(id));
   }
 
-  @Operation(summary = "List the resources", description = "Staff only. Ordered by id.")
+  @Operation(
+      summary = "List the resources",
+      description = "Staff only. Ordered by id; size is capped at 200.")
   @GetMapping(ApiPaths.RESOURCES)
-  public ApiResponse<List<ResourceResponse>> list() {
-    return ApiResponse.success(service.listResources());
+  public ApiResponse<List<ResourceResponse>> list(
+      @RequestParam(value = "page", defaultValue = "0") int page,
+      @RequestParam(value = "size", defaultValue = "" + CapacityRules.DEFAULT_PAGE_SIZE) int size) {
+    return ApiResponse.success(service.listResources(page, size));
+  }
+
+  private static void requireValidId(String id) {
+    if (!RESOURCE_ID.matcher(id).matches()) {
+      throw new ApiException(ErrorCode.VALIDATION_ERROR, CapacityRules.INVALID_RESOURCE_ID);
+    }
   }
 }

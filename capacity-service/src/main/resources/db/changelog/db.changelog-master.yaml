@@ -3,3 +3,5 @@ databaseChangeLog:
       file: db/changelog/changes/001-capacity-resource-and-reservation.sql
   - include:
       file: db/changelog/changes/002-outbox.sql
+  - include:
+      file: db/changelog/changes/003-release-tombstone.sql

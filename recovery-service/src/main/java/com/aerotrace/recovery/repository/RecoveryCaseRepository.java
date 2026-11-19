@@ -48,7 +48,7 @@ public interface RecoveryCaseRepository extends JpaRepository<RecoveryCaseEntity
   @Query(
       "update RecoveryCaseEntity c set c.state = :to, c.version = c.version + 1,"
           + " c.reason = :reason, c.updatedAt = :now, c.reservationId = :reservationId,"
-          + " c.reservedAt = :now"
+          + " c.reservedAt = :now, c.holdConfirmedAt = null"
           + " where c.id = :id and c.version = :expectedVersion")
   int advanceAndHold(
       @Param("id") UUID id,
@@ -108,6 +108,18 @@ public interface RecoveryCaseRepository extends JpaRepository<RecoveryCaseEntity
       "update RecoveryCaseEntity c set c.reservationId = null"
           + " where c.id = :id and c.reservationId = :reservationId")
   int clearHold(@Param("id") UUID id, @Param("reservationId") UUID reservationId);
+
+  /** Records that the capacity-service confirmed the hold; does nothing for another hold. */
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query(
+      "update RecoveryCaseEntity c set c.holdConfirmedAt = :now"
+          + " where c.id = :id and c.reservationId = :reservationId and c.holdConfirmedAt is null")
+  int markHoldConfirmed(
+      @Param("id") UUID id, @Param("reservationId") UUID reservationId, @Param("now") Instant now);
+
+  /** Active cases whose hold the capacity-service has not been told about yet. */
+  List<RecoveryCaseEntity> findByStateInAndReservationIdIsNotNullAndHoldConfirmedAtIsNull(
+      Collection<RecoveryState> states);
 
   /** Cases in a state whose hold was taken before the given time. */
   List<RecoveryCaseEntity> findByStateAndReservedAtBefore(RecoveryState state, Instant before);

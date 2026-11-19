@@ -32,6 +32,13 @@ public final class ApiExamples {
       "timestamp":"2026-11-14T10:15:30.123Z","correlationId":"b6c1d1e0-3a4f-4f0e-9d2a-5d7f0c2f8a11"}\
       """;
 
+  public static final String CAPACITY_NOT_PROVISIONED =
+      """
+      {"code":"CAPACITY_NOT_PROVISIONED","message":"This leg has no capacity resource",\
+      "status":404,"path":"/api/v1/capacity/reservations","validationErrors":{},\
+      "timestamp":"2026-11-14T10:15:30.123Z","correlationId":"b6c1d1e0-3a4f-4f0e-9d2a-5d7f0c2f8a11"}\
+      """;
+
   public static final String RESERVATION_ID_REUSED =
       """
       {"code":"VERSION_CONFLICT","message":"This reservation id was used for a different request",\

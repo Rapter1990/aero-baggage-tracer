@@ -97,9 +97,11 @@ Opens recovery cases for bags at risk of missing a connection, moves them along 
 |---|---|
 | Moving to `RESERVED` | Holds one slot in the capacity-service first |
 | Full | `409 CAPACITY_EXCEEDED`, the case stays where it was |
-| No answer in time | `503 CAPACITY_UNAVAILABLE`, nothing stays held, try again |
+| Leg without a capacity resource | Also `409 CAPACITY_EXCEEDED` to the caller, but counted (`recovery_capacity_reserve_total{outcome="not_provisioned"}`) and logged apart: it is a set-up problem |
+| No answer in time, or any other answer | `503 CAPACITY_UNAVAILABLE`, nothing stays held, try again. Answers are told apart by the error `code`, not by the status alone |
+| After the move commits | The hold is confirmed to the capacity-service, which expires holds nobody confirmed |
 | Move fails after the hold | The hold is released again |
-| Cancelling, closing or resolving | Releases the hold; a release that fails is retried every 30 s. The hold stays while the case is `RESERVED` or `IN_TRANSIT`: the capacity-service must not expire it by itself while the case is active |
+| Cancelling, closing or resolving | Releases the hold; a release that fails is retried every 30 s. The hold stays while the case is `RESERVED` or `IN_TRANSIT`: it is confirmed, so the capacity-service never expires it while the case is active |
 | Timeout (AT-12) | A case `RESERVED` for more than 15 minutes is cancelled with reason `RESERVATION_TIMEOUT` and its hold released |
 
 **Policy**
@@ -162,7 +164,7 @@ Redis only caches the policy. See [ADR 0001](../adr/0001-redis-policy-cache.md).
 |---|---|
 | Capacity-service | See [Capacity Service API](CAPACITY-API.md). While it is down, moving to `RESERVED` answers 503 |
 | Hold release by the sweeper | Sends no user token; it sends the shared `CAPACITY_SERVICE_TOKEN` in `X-Service-Token`, which the capacity-service accepts for release only. Without the token the release fails and is retried |
-| Hold confirmation | The capacity-service has `PUT .../confirmation`, but this service does not call it yet; the capacity-service's hold expiry therefore stays off |
+| Hold confirmation | After a move to `RESERVED` commits, this service confirms the hold (`PUT .../confirmation`); the sweeper repeats a failed confirmation every 30 s for `RESERVED` and `IN_TRANSIT` cases. The capacity-service expires holds nobody confirmed, see [ADR 0002](../adr/0002-capacity-hold-lifecycle.md) |
 | Assignee check | The assignee is checked for shape only: the identity-service is not asked whether that person exists or is an agent, and any agent or dispatcher may assign any case to any id |
 | Redis policy entry | An entry outside 0 to 720 minutes is dropped; Redis is still trusted to hold only what this service wrote, so keep it private (ACL or own instance per service) |
 | Airline policy | One `DEFAULT` policy; the events carry no airline |

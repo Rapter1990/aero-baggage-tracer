@@ -29,13 +29,15 @@ public record CapacityProperties(
    * Provisional holds.
    *
    * @param expiryEnabled whether the expiry job runs. A hold counts as confirmed only after the
-   *     caller says so (PUT .../confirmation); until the recovery-service does, expiry must stay
-   *     off or it would take the slot of a bag that is on its way
-   * @param ttl how long an unconfirmed hold lives
+   *     caller says so (PUT .../confirmation): the recovery-service does it right after the case
+   *     move commits and the sweeper repeats it, so an unconfirmed hold is one whose owner died or
+   *     never finished. Switch it off only for a caller that does not confirm
+   * @param ttl how long an unconfirmed hold lives; keep it far above the caller's timeouts and
+   *     sweep time
    * @param sweepDelay how often the job looks for expired holds
    */
   public record Hold(
-      @DefaultValue("false") boolean expiryEnabled,
+      @DefaultValue("true") boolean expiryEnabled,
       @DefaultValue("1h") Duration ttl,
       @DefaultValue("30s") Duration sweepDelay) {}
 

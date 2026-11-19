@@ -69,9 +69,10 @@ aerotrace:
       # Published rows older than this are removed.
       retention: ${CAPACITY_OUTBOX_RETENTION:7d}
     hold:
-      # Off until the recovery-service confirms the holds of its cases: an unconfirmed hold may be a
-      # bag that is on its way, and expiry would take its slot.
-      expiry-enabled: ${CAPACITY_HOLD_EXPIRY_ENABLED:false}
+      # A hold the recovery-service never confirmed (it died between holding and committing its
+      # case) is given back after the ttl. Confirmed holds, those of cases that are RESERVED or
+      # IN_TRANSIT, are never expired: their owner releases them.
+      expiry-enabled: ${CAPACITY_HOLD_EXPIRY_ENABLED:true}
       ttl: ${CAPACITY_HOLD_TTL:1h}
       sweep-delay: ${CAPACITY_HOLD_SWEEP_DELAY:30s}
     service:

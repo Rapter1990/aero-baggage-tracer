@@ -33,6 +33,20 @@ public interface CapacityReservationRepository
       @Param("key") String idempotencyKey,
       @Param("now") Instant now);
 
+  /**
+   * Records that an id was released before it was ever held. A later hold with the same id meets
+   * this row on the primary key. 0 rows means a row with that id exists (it was inserted
+   * meanwhile); the insert waits for a concurrent insert of the same id to commit, so the caller
+   * can then close the real hold.
+   */
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query(
+      value =
+          "INSERT INTO capacity.capacity_reservation (id, status, created_at, released_at)"
+              + " VALUES (:id, 'RELEASED', :now, :now) ON CONFLICT (id) DO NOTHING",
+      nativeQuery = true)
+  int insertTombstone(@Param("id") UUID id, @Param("now") Instant now);
+
   /** HELD to RELEASED; 0 rows means it was already closed (or never existed). */
   @Modifying(flushAutomatically = true, clearAutomatically = true)
   @Query(

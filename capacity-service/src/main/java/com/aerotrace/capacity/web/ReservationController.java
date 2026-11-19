@@ -64,12 +64,20 @@ public class ReservationController {
                 schema = @Schema(ref = DocsConstants.API_ERROR_REF),
                 examples = @ExampleObject(value = ApiExamples.VALIDATION_ERROR))),
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
+        responseCode = "404",
+        description =
+            "The leg has no capacity resource (CAPACITY_NOT_PROVISIONED): a set-up problem, not"
+                + " a full leg; nothing was held",
+        content =
+            @Content(
+                schema = @Schema(ref = DocsConstants.API_ERROR_REF),
+                examples = @ExampleObject(value = ApiExamples.CAPACITY_NOT_PROVISIONED))),
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
         responseCode = "409",
         description =
-            "No capacity is left for the leg, or it has no resource (CAPACITY_EXCEEDED, the"
-                + " contract the recovery-service relies on); or the reservationId or"
-                + " Idempotency-Key was used for a different request or the hold is already"
-                + " released (VERSION_CONFLICT)",
+            "No capacity is left for the leg (CAPACITY_EXCEEDED, the contract the"
+                + " recovery-service relies on); or the reservationId or Idempotency-Key was used"
+                + " for a different request, or the hold is already released (VERSION_CONFLICT)",
         content =
             @Content(
                 schema = @Schema(ref = DocsConstants.API_ERROR_REF),

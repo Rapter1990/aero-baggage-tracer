@@ -382,11 +382,12 @@ public class RecoveryCaseService {
    * </ol>
    *
    * <p>A crash between steps 2 and 3 leaves a hold the case does not know. That window is closed by
-   * the capacity-service expiring provisional holds. The hold stays for as long as the case is
-   * active (RESERVED and IN_TRANSIT): the capacity-service must not expire a hold that was not
-   * released, or a bag that is on its way would lose its slot. A case that ends (RESOLVED,
-   * CANCELLED or CLOSED_AS_UNRECOVERABLE) releases its hold after the commit; a release that fails
-   * keeps the reservation id on the case for the sweeper.
+   * the capacity-service expiring provisional holds: a hold is provisional until this service
+   * confirms it, which it does right after step 3 commits (a confirmation that fails is repeated by
+   * the sweeper, see {@link #retryConfirms()}). A confirmed hold stays for as long as the case is
+   * active (RESERVED and IN_TRANSIT), so a bag that is on its way never loses its slot. A case that
+   * ends (RESOLVED, CANCELLED or CLOSED_AS_UNRECOVERABLE) releases its hold after the commit; a
+   * release that fails keeps the reservation id on the case for the sweeper.
    */
   private CaseResponse move(
       UUID caseId,
@@ -426,7 +427,8 @@ public class RecoveryCaseService {
         // Compensation: the case did not move, so the hold must not stay.
         if (!capacity.release(reservationId)) {
           // The id is the only handle on the hold: it is not stored anywhere else, so log it (it is
-          // an opaque id, no personal data) for an operator and rely on the hold expiring.
+          // an opaque id, no personal data) for an operator; the capacity-service expires the hold
+          // because it was never confirmed.
           LOG.warn(
               "Compensation failed: capacity hold {} of case {} could not be released",
               reservationId,
@@ -435,12 +437,42 @@ public class RecoveryCaseService {
       }
       throw failure;
     }
+    if (target == RecoveryState.RESERVED) {
+      try {
+        // The move is committed and must not fail because of this: a hold that could not be
+        // confirmed now is confirmed by the sweeper.
+        confirmHold(caseId);
+      } catch (RuntimeException failure) {
+        LOG.warn("Could not confirm a capacity hold: {}", failure.getClass().getSimpleName());
+      }
+    }
     if (target == RecoveryState.CANCELLED
         || target == RecoveryState.CLOSED_AS_UNRECOVERABLE
         || target == RecoveryState.RESOLVED) {
       releaseHold(caseId);
     }
     return moved;
+  }
+
+  /**
+   * Tells the capacity-service that the case kept its hold, and remembers it. True when done or
+   * when there is nothing to confirm; false to try again ({@link #retryConfirms()}).
+   */
+  public boolean confirmHold(UUID caseId) {
+    return cases
+        .findById(caseId)
+        .filter(c -> c.getReservationId() != null && c.getHoldConfirmedAt() == null)
+        .map(
+            c -> {
+              if (!capacity.confirm(c.getReservationId())) {
+                return false;
+              }
+              transaction.executeWithoutResult(
+                  status ->
+                      cases.markHoldConfirmed(caseId, c.getReservationId(), Instant.now(clock)));
+              return true;
+            })
+        .orElse(true);
   }
 
   /** The local transaction of a move: state, history and event together. */
@@ -544,6 +576,27 @@ public class RecoveryCaseService {
       }
     }
     return expired;
+  }
+
+  /**
+   * Confirms the holds of active cases that the capacity-service has not been told about (the first
+   * confirmation failed, or this service stopped right after the move); returns how many were
+   * confirmed. Without it the capacity-service would expire the hold of a bag that is on its way.
+   */
+  public int retryConfirms() {
+    int confirmed = 0;
+    for (RecoveryCaseEntity c :
+        cases.findByStateInAndReservationIdIsNotNullAndHoldConfirmedAtIsNull(
+            List.of(RecoveryState.RESERVED, RecoveryState.IN_TRANSIT))) {
+      try {
+        if (confirmHold(c.getId())) {
+          confirmed++;
+        }
+      } catch (RuntimeException failure) {
+        LOG.warn("Could not retry a confirmation: {}", failure.getClass().getSimpleName());
+      }
+    }
+    return confirmed;
   }
 
   /** Tries again to release holds of cases that are already final; returns how many were freed. */

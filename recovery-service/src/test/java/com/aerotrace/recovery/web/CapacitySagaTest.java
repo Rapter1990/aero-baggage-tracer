@@ -312,6 +312,58 @@ class CapacitySagaTest extends AbstractRecoveryTest {
   }
 
   @Test
+  @DisplayName("Saga the hold is confirmed after the move commits, so capacity never expires it")
+  void holdIsConfirmedAfterTheMove() throws Exception {
+    JsonNode reserved = data(move(assessingCase(), RecoveryState.RESERVED, null));
+
+    assertThat(CAPACITY.confirmed).hasSize(1);
+    assertThat(stored(reserved).getHoldConfirmedAt()).isNotNull();
+  }
+
+  @Test
+  @DisplayName(
+      "Saga a confirmation that fails does not fail the move and is retried by the sweeper")
+  void failedConfirmationIsRetried() throws Exception {
+    CAPACITY.confirmFails = true;
+
+    JsonNode reserved = data(move(assessingCase(), RecoveryState.RESERVED, null));
+
+    assertThat(stored(reserved).getState()).isEqualTo(RecoveryState.RESERVED);
+    assertThat(stored(reserved).getHoldConfirmedAt()).isNull();
+    assertThat(service.retryConfirms()).isZero();
+
+    CAPACITY.confirmFails = false;
+    assertThat(service.retryConfirms()).isGreaterThanOrEqualTo(1);
+    assertThat(stored(reserved).getHoldConfirmedAt()).isNotNull();
+    assertThat(CAPACITY.confirmed).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Saga a leg without a capacity resource is told apart but still answers 409")
+  void unprovisionedLegAnswersNoCapacity() throws Exception {
+    JsonNode assessing = assessingCase();
+    CAPACITY.mode = CapacityStub.Mode.UNPROVISIONED;
+
+    move(assessing, RecoveryState.RESERVED, null).andExpect(status().isConflict());
+
+    assertThat(stored(assessing).getState()).isEqualTo(RecoveryState.ASSESSING);
+    assertThat(CAPACITY.holds).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Saga a 409 that is not 'full' is not taken for no capacity: 503, nothing stays held")
+  void otherConflictIsNotNoCapacity() throws Exception {
+    JsonNode assessing = assessingCase();
+    CAPACITY.mode = CapacityStub.Mode.CONFLICT;
+
+    move(assessing, RecoveryState.RESERVED, null).andExpect(status().isServiceUnavailable());
+
+    assertThat(stored(assessing).getState()).isEqualTo(RecoveryState.ASSESSING);
+    assertThat(CAPACITY.holds).isEmpty();
+  }
+
+  @Test
   @DisplayName("Saga a release that fails is remembered on the case and retried")
   void failedReleaseIsRetried() throws Exception {
     JsonNode reserved = data(move(assessingCase(), RecoveryState.RESERVED, null));

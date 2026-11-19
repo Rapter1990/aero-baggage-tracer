@@ -24,6 +24,10 @@ public final class CapacityStub {
   public enum Mode {
     OK,
     FULL,
+    /** The leg has no capacity resource: 404 CAPACITY_NOT_PROVISIONED. */
+    UNPROVISIONED,
+    /** A 409 that is not "full" (for example a reservation id that was already used). */
+    CONFLICT,
     ERROR,
     /**
      * Keeps the hold but answers only after {@code delayMillis}: the answer is lost to the caller.
@@ -38,6 +42,11 @@ public final class CapacityStub {
 
   private final HttpServer server;
   public final Map<UUID, Boolean> holds = new ConcurrentHashMap<>();
+
+  /** The holds the recovery-service confirmed. */
+  public final Map<UUID, Boolean> confirmed = new ConcurrentHashMap<>();
+
+  public volatile boolean confirmFails = false;
   public final List<Call> calls = new CopyOnWriteArrayList<>();
   public volatile Mode mode = Mode.OK;
   public volatile boolean releaseFails = false;
@@ -69,7 +78,9 @@ public final class CapacityStub {
   public void reset() {
     mode = Mode.OK;
     releaseFails = false;
+    confirmFails = false;
     holds.clear();
+    confirmed.clear();
     calls.clear();
   }
 
@@ -90,6 +101,8 @@ public final class CapacityStub {
         reserve(exchange);
       } else if (exchange.getRequestMethod().equals("DELETE")) {
         release(exchange);
+      } else if (exchange.getRequestMethod().equals("PUT")) {
+        confirm(exchange);
       } else {
         send(exchange, 405, "");
       }
@@ -101,6 +114,8 @@ public final class CapacityStub {
     UUID id = UUID.fromString(EventJson.mapper().readTree(body).get("reservationId").asString());
     switch (mode) {
       case FULL -> send(exchange, 409, error("CAPACITY_EXCEEDED", 409));
+      case UNPROVISIONED -> send(exchange, 404, error("CAPACITY_NOT_PROVISIONED", 404));
+      case CONFLICT -> send(exchange, 409, error("VERSION_CONFLICT", 409));
       case ERROR -> send(exchange, 500, error("INTERNAL_ERROR", 500));
       case SLOW -> {
         holds.put(id, true);
@@ -121,6 +136,20 @@ public final class CapacityStub {
       send(exchange, 500, error("INTERNAL_ERROR", 500));
     } else if (holds.remove(id) != null) {
       send(exchange, 204, "");
+    } else {
+      send(exchange, 404, error("NOT_FOUND", 404));
+    }
+  }
+
+  /** PUT .../{id}/confirmation. */
+  private void confirm(HttpExchange exchange) throws IOException {
+    String[] parts = exchange.getRequestURI().getPath().split("/");
+    UUID id = UUID.fromString(parts[parts.length - 2]);
+    if (confirmFails) {
+      send(exchange, 500, error("INTERNAL_ERROR", 500));
+    } else if (holds.containsKey(id)) {
+      confirmed.put(id, true);
+      send(exchange, 200, held(id));
     } else {
       send(exchange, 404, error("NOT_FOUND", 404));
     }

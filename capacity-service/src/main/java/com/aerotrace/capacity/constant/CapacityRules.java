@@ -19,6 +19,12 @@ public final class CapacityRules {
   public static final String SERVICE_ROLE = "SERVICE";
 
   public static final String NO_CAPACITY = "No capacity is left for this leg";
+  public static final int MAX_PAGE_SIZE = 200;
+  public static final int DEFAULT_PAGE_SIZE = 50;
+
+  public static final String NOT_PROVISIONED = "This leg has no capacity resource";
+  public static final String INVALID_RESOURCE_ID =
+      "The resource id must be 1 to " + MAX_RESOURCE_ID_LENGTH + " of letters, digits, . _ -";
   public static final String NO_SUCH_RESERVATION = "No such reservation";
   public static final String NO_SUCH_RESOURCE = "No such capacity resource";
   public static final String RESERVATION_ID_REUSED =
