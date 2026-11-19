@@ -51,13 +51,17 @@ public record RecoveryProperties(
    * @param holdTimeout how long a case may stay RESERVED before its hold is released and the case
    *     cancelled
    * @param sweepDelay how often expired holds and unreleased holds are looked for
+   * @param serviceToken the shared secret the capacity-service accepts from a service caller. It is
+   *     sent as {@code X-Service-Token} only when no user token is present (the sweeper releases
+   *     holds long after the user's token expired); empty means none is sent
    */
   public record Capacity(
       @DefaultValue("http://localhost:1116") String baseUrl,
       @DefaultValue("2s") Duration connectTimeout,
       @DefaultValue("5s") Duration readTimeout,
       @DefaultValue("15m") Duration holdTimeout,
-      @DefaultValue("30s") Duration sweepDelay) {}
+      @DefaultValue("30s") Duration sweepDelay,
+      String serviceToken) {}
 
   /** Relay settings: how often it runs, rows per run and how long published rows are kept. */
   public record Outbox(

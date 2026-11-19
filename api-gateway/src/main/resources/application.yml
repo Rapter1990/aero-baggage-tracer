@@ -60,6 +60,10 @@ spring:
               uri: lb://capacity-service
               predicates:
                 - Path=/api/v1/capacity/**
+              filters:
+                # The service token is for service-to-service calls only; a client must never be
+                # able to present it through the public gateway.
+                - RemoveRequestHeader=X-Service-Token
             - id: reports
               uri: lb://search-service
               predicates:

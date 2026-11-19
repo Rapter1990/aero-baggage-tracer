@@ -1,0 +1,46 @@
+# Defaults for every Spring test.
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 0
+  cloud:
+    config:
+      enabled: false
+    discovery:
+      enabled: false
+  kafka:
+    producer:
+      properties:
+        max.block.ms: 1000
+        delivery.timeout.ms: 3000
+        request.timeout.ms: 1000
+eureka:
+  client:
+    enabled: false
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  tracing:
+    export:
+      otlp:
+        enabled: false
+  logging:
+    export:
+      otlp:
+        enabled: false
+aerotrace:
+  capacity:
+    outbox:
+      # Tests drive the relay by hand; the scheduler only fires once an hour.
+      relay-delay: 1h
+    hold:
+      # Tests call the expiry by hand, so a hold is "old" as soon as it exists.
+      ttl: 0s
+      sweep-delay: 1h
+    service:
+      token: test-service-token
+    jwt:
+      public-key-location: classpath:keys/public.pem

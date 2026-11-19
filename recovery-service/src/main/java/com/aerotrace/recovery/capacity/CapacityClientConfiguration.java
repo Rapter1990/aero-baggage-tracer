@@ -23,6 +23,8 @@ import org.springframework.web.service.invoker.HttpServiceProxyFactory;
 @Configuration(proxyBeanMethods = false)
 class CapacityClientConfiguration {
 
+  private static final String SERVICE_TOKEN_HEADER = "X-Service-Token";
+
   @Bean
   CapacityClient capacityClient(RecoveryProperties properties) {
     RecoveryProperties.Capacity settings = properties.capacity();
@@ -37,7 +39,7 @@ class CapacityClientConfiguration {
         RestClient.builder()
             .baseUrl(settings.baseUrl())
             .requestFactory(requests)
-            .requestInterceptor(propagateCallContext())
+            .requestInterceptor(propagateCallContext(settings.serviceToken()))
             .build();
     return HttpServiceProxyFactory.builderFor(RestClientAdapter.create(client))
         .build()
@@ -47,9 +49,10 @@ class CapacityClientConfiguration {
   /**
    * Carries the correlation id (a new one when the call has none, for example from the sweeper)
    * and, when a user is calling, the user's token. Neither is ever logged. Calls made by the
-   * sweeper have no token: see {@code CapacityGateway}.
+   * sweeper have no user token: they carry the shared service token instead (when one is set),
+   * which the capacity-service accepts only for release and confirmation.
    */
-  private static ClientHttpRequestInterceptor propagateCallContext() {
+  private static ClientHttpRequestInterceptor propagateCallContext(String serviceToken) {
     return (request, body, execution) -> {
       String correlationId = MDC.get(CorrelationId.MDC_KEY);
       request
@@ -62,6 +65,9 @@ class CapacityClientConfiguration {
         request.getHeaders().setBearerAuth(jwt.getTokenValue());
       } else {
         request.getHeaders().remove(HttpHeaders.AUTHORIZATION);
+        if (serviceToken != null && !serviceToken.isBlank()) {
+          request.getHeaders().set(SERVICE_TOKEN_HEADER, serviceToken);
+        }
       }
       return execution.execute(request, body);
     };

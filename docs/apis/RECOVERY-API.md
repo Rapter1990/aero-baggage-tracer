@@ -160,8 +160,9 @@ Redis only caches the policy. See [ADR 0001](../adr/0001-redis-policy-cache.md).
 
 | Topic | State |
 |---|---|
-| Capacity-service | Not built yet (issue #12): moving to `RESERVED` answers 503 until it runs |
-| Hold release by the sweeper | Sends no token; the capacity-service must accept it, or the hold stays |
+| Capacity-service | See [Capacity Service API](CAPACITY-API.md). While it is down, moving to `RESERVED` answers 503 |
+| Hold release by the sweeper | Sends no user token; it sends the shared `CAPACITY_SERVICE_TOKEN` in `X-Service-Token`, which the capacity-service accepts for release only. Without the token the release fails and is retried |
+| Hold confirmation | The capacity-service has `PUT .../confirmation`, but this service does not call it yet; the capacity-service's hold expiry therefore stays off |
 | Assignee check | The assignee is checked for shape only: the identity-service is not asked whether that person exists or is an agent, and any agent or dispatcher may assign any case to any id |
 | Redis policy entry | An entry outside 0 to 720 minutes is dropped; Redis is still trusted to hold only what this service wrote, so keep it private (ACL or own instance per service) |
 | Airline policy | One `DEFAULT` policy; the events carry no airline |

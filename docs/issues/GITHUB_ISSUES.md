@@ -283,9 +283,9 @@ Finite recovery cart / flight / bag-slot capacity with atomic reservations.
 - Metric `capacity_reservation_conflicts_total`; idempotent reservations via `Idempotency-Key`.
 
 **Acceptance criteria**
-- [ ] AT-11: 50 concurrent requests for 10 slots → exactly 10 succeed (race test).
-- [ ] AT-19: Redis offline → no overbooking.
-- [ ] 409 conflict contract documented in OpenAPI.
+- [x] AT-11: 50 concurrent requests for 10 slots → exactly 10 succeed (race test).
+- [x] AT-19: Redis offline → no overbooking (the service has no Redis dependency; PostgreSQL alone decides).
+- [x] 409 conflict contract documented in OpenAPI.
 
 ---
 

@@ -9,6 +9,7 @@ What the platform offers, how requests flow, how to try them in Postman.
 | [Identity Service API](IDENTITY-API.md) | Calls, tokens, flows, requests |
 | [Journey Service API](JOURNEY-API.md) | Calls, rules, scans, events, requests |
 | [Recovery Service API](RECOVERY-API.md) | Cases, moves, capacity, policy, events |
+| [Capacity Service API](CAPACITY-API.md) | Reservations, release, resources, the 409 contract, events |
 | [README](../../README.md) | Setup, variables, limits, observability |
 
 ## At a glance
@@ -19,6 +20,7 @@ What the platform offers, how requests flow, how to try them in Postman.
 | identity-service | `http://localhost:1112` | `/api/v1/auth/**` |
 | journey-service | `http://localhost:1113` | `/api/v1/bags/**`, `/api/v1/scans/**` |
 | recovery-service | `http://localhost:1115` | `/api/v1/recovery-cases/**`, `/api/v1/recovery-policy` |
+| capacity-service | `http://localhost:1116` | `/api/v1/capacity/**` |
 
 Success answers look like `{"success":true,"data":...,"timestamp":...}`. Errors use the shared shape, see [response format](../../README.md#api-response-format).
 

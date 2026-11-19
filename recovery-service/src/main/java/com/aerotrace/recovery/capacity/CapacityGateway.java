@@ -23,9 +23,9 @@ import org.springframework.web.client.RestClientException;
  *       so the sweeper can release it later.
  * </ul>
  *
- * <p>The sweeper has no user token. Until the identity-service issues service tokens, the
- * capacity-service must accept its release calls without one, or the hold of a timed-out case stays
- * until it is released by hand.
+ * <p>The sweeper has no user token. Its calls carry the shared service token ({@code
+ * X-Service-Token}, see {@code CapacityClientConfiguration}), which the capacity-service accepts
+ * for release; without it the hold of a timed-out case stays until it is released by hand.
  */
 @Component
 public class CapacityGateway {

@@ -333,5 +333,14 @@ class CapacitySagaTest extends AbstractRecoveryTest {
 
     assertThat(stored(reserved).getReservationId()).isNull();
     assertThat(CAPACITY.holds).isEmpty();
+
+    // The retry runs without a user token, so it proves itself with the shared service token.
+    CapacityStub.Call retry =
+        CAPACITY.calls.stream()
+            .filter(c -> c.method().equals("DELETE"))
+            .reduce((first, second) -> second)
+            .orElseThrow();
+    assertThat(retry.headers().get("x-service-token")).isEqualTo("test-service-token");
+    assertThat(retry.headers()).doesNotContainKey("authorization");
   }
 }

@@ -120,6 +120,10 @@ Defaults marked "Compose" are for local use only.
 | `CAPACITY_SERVICE_URL` | recovery-service | Where the capacity-service answers | `http://localhost:1116` |
 | `CAPACITY_READ_TIMEOUT` | recovery-service | A slower capacity-service counts as unavailable (503) | `5s` |
 | `CAPACITY_HOLD_TIMEOUT` | recovery-service | A case RESERVED longer than this is cancelled and its hold released | `15m` |
+| `CAPACITY_SERVICE_TOKEN` | recovery-service, capacity-service | Shared secret for calls without a user token (the sweeper's releases); set the same value in both | empty (Compose: a local-only default) |
+| `CAPACITY_HOLD_EXPIRY_ENABLED` | capacity-service | Whether unconfirmed holds expire; keep off until the recovery-service confirms its holds | `false` |
+| `CAPACITY_HOLD_TTL` | capacity-service | How long an unconfirmed hold lives when expiry is on | `1h` |
+| `CAPACITY_OUTBOX_RELAY_DELAY` | capacity-service | Pause between relay runs | `200ms` |
 | `RECOVERY_POLICY_CACHE_TTL` | recovery-service | How long Redis may serve the cached recovery policy | `5m` |
 | `RECOVERY_DEDUPE_RETENTION` | recovery-service | How long processed event ids are remembered (keep above the topics' retention) | `14d` |
 | `REDIS_TIMEOUT` | recovery-service | Redis command timeout; after it the database answers | `500ms` |
@@ -196,6 +200,7 @@ SELECT id, 'ADMIN' FROM identity.app_user WHERE username = 'your-username';
 | journey-service (direct) | `http://localhost:1113` |
 | risk-streams-service (actuator only, no public API) | `http://localhost:1114` |
 | recovery-service (direct) | `http://localhost:1115` |
+| capacity-service (direct) | `http://localhost:1116` |
 
 In Compose, the one-shot `kafka-init` job creates the Kafka topics before journey-service, risk-streams-service and recovery-service start (idempotent, `--if-not-exists`):
 
@@ -427,6 +432,7 @@ The script runs `mvn verify` and pushes numbers only if it succeeds. `mvn verify
 | identity, journey | Start a PostgreSQL container |
 | journey-service | Also starts Kafka for the relay |
 | recovery-service | Starts PostgreSQL, a password-protected Redis and Kafka, and a stand-in capacity-service on a real port; one class points Redis at a dead port |
+| capacity-service | Starts PostgreSQL only; the Kafka producer is a mock, events are read from the outbox. The 50-for-10 race (AT-11) and the Redis-offline run (AT-19) run against the real database |
 | No Docker | Tests are skipped, not failed |
 | No Docker with `CI` set | Identity and journey fail the build |
 | Coverage check | Includes integration tests |
