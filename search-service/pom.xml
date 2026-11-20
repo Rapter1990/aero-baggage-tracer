@@ -123,6 +123,21 @@
             <artifactId>testcontainers-kafka</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+            Test only: the end-to-end AT-18 test (RebuildAgainstRealOwnersTest) runs the real
+            journey- and recovery-service jars on a PostgreSQL container and reads their tables as
+            its oracle. The service itself has no datasource.
+        -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

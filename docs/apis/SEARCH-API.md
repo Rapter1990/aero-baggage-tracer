@@ -216,6 +216,7 @@ sequenceDiagram
 | One at a time | a lock document with a lease the job renews every `SEARCH_REINDEX_HEARTBEAT`; renewals and releases are conditional on the holder, so a job never extends or deletes another job's lock. A job that cannot renew its lock, or finds it taken over, stops and fails without swapping |
 | Dead instance | an expired lease can be taken over; the job that takes it marks the abandoned job `FAILED` and discards the indexes it left in the `-live` aliases |
 | Rebuilt `updatedAt` | the latest of the bag's leg departures, latest scan, case `openedAt`/`resolvedAt` and replayed risk events (the export has no event times); so it is never missing for a bag with legs, and two rebuilds give the same order |
+| Proof (AT-18) | end to end against the real journey- and recovery-service: `RebuildAgainstRealOwnersTest` (see [TRACEABILITY](../requirements/TRACEABILITY.md)) |
 | Not rebuilt | the support indexes `search-legs` (leg lookup) and `search-risk-hours` are only written to, never cleared: legs are reloaded from the bag export, risk hours from the risk topic replay; documents of legs or risk events that no longer exist at the source stay (the report would count risk hours whose events were since removed from the topic) |
 
 The export answer of the recovery-service (#29, `GET /internal/v1/export/cases`) and the journey-service (#28, `GET /internal/v1/export/bags`), see [RECOVERY-API](RECOVERY-API.md#internal-export) and [JOURNEY-API](JOURNEY-API.md#internal-export) (`ApiResponse` envelope):
