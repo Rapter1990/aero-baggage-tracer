@@ -79,8 +79,16 @@ class OutboxMetricsTest extends AbstractApiTest {
     while (relay.publishPending() > 0) {}
   }
 
-  private void scanOnce() throws Exception {
-    String bag = registeredBag(newPassengerRef());
+  /** Registers bags; each registration queues its own event (#28), drained by the caller. */
+  private List<String> registeredBags(int count) throws Exception {
+    List<String> bags = new java.util.ArrayList<>();
+    for (int i = 0; i < count; i++) {
+      bags.add(registeredBag(newPassengerRef()));
+    }
+    return bags;
+  }
+
+  private void scanOnce(String bag) throws Exception {
     scan(barcodeScan(bag, "IST", "CHECK_IN", 1, minutesAgo(1)), newKey(), as(Role.AGENT))
         .andReturn();
   }
@@ -88,12 +96,13 @@ class OutboxMetricsTest extends AbstractApiTest {
   @Test
   void theGaugesShowTheBacklogAndItsAge() throws Exception {
     OutboxRelay relay = relay(ObservationRegistry.NOOP);
+    List<String> bags = registeredBags(2);
     drain(relay);
     assertThat(gauge(MetricNames.OUTBOX_PENDING)).isZero();
     assertThat(gauge(MetricNames.OUTBOX_OLDEST_PENDING_AGE)).isZero();
 
-    scanOnce();
-    scanOnce();
+    scanOnce(bags.get(0));
+    scanOnce(bags.get(1));
 
     assertThat(gauge(MetricNames.OUTBOX_PENDING)).isEqualTo(2);
     assertThat(gauge(MetricNames.OUTBOX_OLDEST_PENDING_AGE)).isGreaterThanOrEqualTo(0);
@@ -106,6 +115,7 @@ class OutboxMetricsTest extends AbstractApiTest {
 
   @Test
   void everyPublishedEventRecordsItsDelayAndTheRunGetsASpan() throws Exception {
+    List<String> bags = registeredBags(3);
     drain(relay(ObservationRegistry.NOOP));
     Recorder recorder = new Recorder();
     ObservationRegistry observations = ObservationRegistry.create();
@@ -113,9 +123,9 @@ class OutboxMetricsTest extends AbstractApiTest {
     OutboxRelay relay = relay(observations);
     Timer delay = meters.get(MetricNames.OUTBOX_PUBLISH_DELAY).timer();
     long before = delay.count();
-    scanOnce();
-    scanOnce();
-    scanOnce();
+    for (String bag : bags) {
+      scanOnce(bag);
+    }
 
     int sent = relay.publishPending();
 

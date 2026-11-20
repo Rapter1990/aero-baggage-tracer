@@ -23,9 +23,21 @@ public final class Topics {
   /** Key: eventId. Producer: failed-event handler. */
   public static final String DEAD_LETTER = "baggage.dead-letter.v1";
 
+  /**
+   * Key: bagTag. Producer: journey-service, once per registered bag, with the itinerary snapshot
+   * ({@link BagRegisteredPayload}).
+   */
+  public static final String BAG_REGISTERED = "baggage.bag.registered.v1";
+
   public static final List<String> ALL =
       List.of(
-          SCAN_RECEIVED, SCAN_ANOMALY, RISK_CHANGED, CASE_CHANGED, CAPACITY_CHANGED, DEAD_LETTER);
+          SCAN_RECEIVED,
+          SCAN_ANOMALY,
+          RISK_CHANGED,
+          CASE_CHANGED,
+          CAPACITY_CHANGED,
+          DEAD_LETTER,
+          BAG_REGISTERED);
 
   private Topics() {}
 }

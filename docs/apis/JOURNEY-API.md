@@ -13,7 +13,8 @@ Registers bags, takes in device scans, shows each bag's journey.
 | [Rules](#rules) | Registering, reading, scanning |
 | [Scan formats](#scan-formats) | Payload fields per protocol |
 | [Errors](#errors) | Status and code per case |
-| [How events are published](#how-events-are-published) | Outbox and Kafka relay |
+| [How events are published](#how-events-are-published) | Outbox and Kafka relay, the scan and registration events |
+| [Internal export](#internal-export) | The read-only bag export for the search-service's rebuild |
 | [Risk Streams Service (Kafka Streams)](#risk-streams-service-kafka-streams) | Who reads the scan event, what it publishes |
 | [Metrics and traces](#metrics-and-traces) | What the dashboards read |
 | [Known limitations](#known-limitations) | What is not done yet |
@@ -28,7 +29,7 @@ Registers bags, takes in device scans, shows each bag's journey.
 | Through the gateway | `http://localhost:8080/api/v1/bags` and `/api/v1/scans` |
 | Directly | `http://localhost:1113` |
 | Database | PostgreSQL, schema `journey` |
-| Messages | Topic `baggage.scan.received.v1`, key = bag tag |
+| Messages | Topics `baggage.scan.received.v1` and `baggage.bag.registered.v1`, key = bag tag |
 | Token | Bearer token from [Identity Service](IDENTITY-API.md) |
 | Success answer | `{"success":true,"data":...,"timestamp":...}` |
 | Errors | Shared shape, see [response format](../../README.md#api-response-format) |
@@ -40,6 +41,7 @@ Registers bags, takes in device scans, shows each bag's journey.
 | `POST /api/v1/bags` | AGENT, ADMIN | Registers a bag (201) |
 | `GET /api/v1/bags/{bagTag}/journey` | all roles | Returns latest state and scan history |
 | `POST /api/v1/scans` | AGENT, DISPATCHER, ADMIN | Accepts a scan (202 `QUEUED`) |
+| `GET /internal/v1/export/bags?after=&size=` | service token only, not routed by the gateway | Every bag with its legs and latest scan, for the search-service's rebuild ([below](#internal-export)) |
 
 | Call | Body |
 |---|---|
@@ -163,6 +165,73 @@ Envelope `eventType` is `baggage.scan.received`, `schemaVersion` is `2`, `aggreg
 | Readers | Ignore unknown fields |
 | Needs the leg | Require `schemaVersion` 2 or more |
 
+**The registration event** (`baggage.bag.registered.v1`, #28)
+
+Stored in the outbox in the same transaction as the bag, so it is queued exactly once per bag: a refused or duplicate registration (also under parallel requests) queues nothing. Envelope `eventType` is `baggage.bag.registered`, `schemaVersion` is `1`, `aggregateId` and the message key are the bag tag, `occurredAt` is the registration time, `correlationId` is the request's. Additive: the scan event and its topic are unchanged.
+
+| Payload field | Meaning |
+|---|---|
+| `bagTag` | The bag |
+| `legs[]` | Every leg of the itinerary, in leg order |
+| `legs[].legId` | Id of the leg (the same id the scan events carry) |
+| `legs[].flightNumber` | As registered, for example `TK1981` |
+| `legs[].airline` | The carrier prefix of the flight number (rule below) |
+| `legs[].origin`, `legs[].destination` | IATA airport codes |
+| `legs[].departureAt` | Scheduled departure, UTC |
+
+No passenger data: `passengerRef` stays in this service.
+
+**Airline rule.** The airline of a leg is the two-character IATA airline designator its validated flight number starts with. The flight number must match `^[A-Z0-9]{2}[0-9]{1,4}[A-Z]?$` (two letters or digits, one to four digits, an optional suffix letter), so the first two characters are always the designator: `TK1981` is `TK`, `LH902A` is `LH`, `4U8` is `4U`. It is decided here, once, at registration (`JourneyRules.airlineOf`); consumers take it from the event or the export and never derive it. A three-letter ICAO code is not supported by the flight number format.
+
+## Internal export
+
+`GET /internal/v1/export/bags?after={bagTag}&size={1..500}` (#28, [ADR 0004](../adr/0004-search-read-models-and-rebuild.md)) lets the search-service rebuild its `journeys` index and its leg lookup from this service's own state, without reading its database.
+
+| Topic | Value |
+|---|---|
+| Who | A service caller with the shared secret in `X-Service-Token` (`SEARCH_EXPORT_SERVICE_TOKEN`, at least 16 characters). A user token is never accepted here, an admin's neither |
+| Routing | Inside the network only: the gateway has no route to `/internal/**` and strips `X-Service-Token` from every request it forwards |
+| Without a token configured | Fail closed: every call is `401`. Only the `local` and `dev` profiles open the export instead, for local runs (logged at start-up) |
+| Paging | Keyset by `bagTag` (unique, never changed), ascending. The first page has no `after`; the next one asks `after=<nextAfter>`. `nextAfter` is `null` on the last page |
+| Size | Default 100, maximum 500; `0`, more than 500 or an `after` that is not a 10-digit bag tag is `400 VALIDATION_ERROR` |
+| Consistency | Every bag that exists for the whole run is returned exactly once, whatever is registered meanwhile; a bag registered meanwhile at most once |
+| Read-only | A read-only transaction; nothing is written. Two queries per page |
+| Personal data | None: no `passengerRef`, nothing the events do not already carry |
+| Not in | The public OpenAPI document |
+
+| Status | Code | When |
+|---|---|---|
+| 200 | | A page |
+| 400 | `VALIDATION_ERROR` | `size` out of range, or `after` not a bag tag |
+| 401 | `UNAUTHENTICATED` | No token, a wrong one, a user token, or no token configured |
+| 403 | `ACCESS_DENIED` | The token on any other method or `/internal/**` path |
+
+Each item is the bag, its legs as the registration event carries them, and its latest accepted scan (the newest by event time, then device sequence; `null` when the bag was never scanned). The scan's `legId` follows the same rule as the scan event (`null` when it fits no leg):
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "bagTag": "0123456789",
+        "legs": [
+          { "legId": "6f1c2a7e-0d4b-4a39-9b8e-3c2f1e0a9d11", "flightNumber": "TK1234", "airline": "TK",
+            "origin": "IST", "destination": "FRA", "departureAt": "2026-11-04T08:00:00Z" },
+          { "legId": "0a2b3c4d-0d4b-4a39-9b8e-3c2f1e0a9d12", "flightNumber": "LH902", "airline": "LH",
+            "origin": "FRA", "destination": "LHR", "departureAt": "2026-11-04T13:00:00Z" }
+        ],
+        "latestScan": { "airport": "FRA", "checkpoint": "TRANSFER",
+          "legId": "0a2b3c4d-0d4b-4a39-9b8e-3c2f1e0a9d12",
+          "occurredAt": "2026-11-04T11:40:00Z", "deviceSequence": 7 }
+      }
+    ],
+    "nextAfter": null
+  },
+  "timestamp": "2026-11-04T12:00:00Z"
+}
+```
+
 ## Risk Streams Service (Kafka Streams)
 
 The scan event above is read by the Risk Streams Service (`risk-streams-service`, a Kafka Streams application). It has no REST API of its own; its actuator health is on port `1114`.
@@ -271,8 +340,9 @@ sequenceDiagram
     J->>DB: insert baggage, itinerary and legs in one transaction
     alt the tag already exists (also under parallel requests)
         DB-->>J: unique constraint on bag_tag
-        J-->>AG: 409 BAG_TAG_DUPLICATE
+        J-->>AG: 409 BAG_TAG_DUPLICATE (no event)
     else
+        J->>DB: insert outbox_event (baggage.bag.registered.v1, legs with airline), same transaction
         J-->>AG: 201 bagTag and legs
     end
 ```

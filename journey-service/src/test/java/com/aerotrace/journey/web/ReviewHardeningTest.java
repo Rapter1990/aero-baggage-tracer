@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.aerotrace.common.event.Topics;
 import com.aerotrace.common.security.Role;
 import com.aerotrace.journey.base.AbstractApiTest;
 import com.aerotrace.journey.config.JourneyProperties;
@@ -142,9 +143,12 @@ class ReviewHardeningTest extends AbstractApiTest {
 
   @Test
   void anEventTheBrokerRefusesForGoodIsSetAsideAndTheOnesBehindItAreStillSent() throws Exception {
+    String poison = registeredBag(newPassengerRef());
+    String healthy = registeredBag(newPassengerRef());
+    // Their registration events (#28) go first; the scans are the events under test.
     drain();
-    String poison = bagWithOneScan();
-    String healthy = bagWithOneScan();
+    scanOnce(poison);
+    scanOnce(healthy);
 
     int sent =
         relayWith(kafkaFailingFor(poison, new RecordTooLargeException("too large")))
@@ -160,8 +164,9 @@ class ReviewHardeningTest extends AbstractApiTest {
     assertThat(
             count(
                 "SELECT count(*) FROM journey.outbox_event WHERE message_key = ?"
-                    + " AND published_at IS NOT NULL",
-                healthy))
+                    + " AND published_at IS NOT NULL AND topic = ?",
+                healthy,
+                Topics.SCAN_RECEIVED))
         .isEqualTo(1);
     // The parked row is never claimed again.
     assertThat(relayWith(kafkaFailingFor("none", new IllegalStateException())).publishPending())
@@ -170,9 +175,11 @@ class ReviewHardeningTest extends AbstractApiTest {
 
   @Test
   void aTemporaryBrokerProblemKeepsTheEventAndStopsTheRun() throws Exception {
+    String first = registeredBag(newPassengerRef());
+    String second = registeredBag(newPassengerRef());
     drain();
-    String first = bagWithOneScan();
-    String second = bagWithOneScan();
+    scanOnce(first);
+    scanOnce(second);
 
     int sent =
         relayWith(kafkaFailingFor(first, new TimeoutException("broker slow"))).publishPending();
@@ -188,16 +195,18 @@ class ReviewHardeningTest extends AbstractApiTest {
     assertThat(
             count(
                 "SELECT count(*) FROM journey.outbox_event WHERE message_key = ?"
-                    + " AND published_at IS NOT NULL",
-                second))
+                    + " AND published_at IS NOT NULL AND topic = ?",
+                second,
+                Topics.SCAN_RECEIVED))
         .isZero();
     drain();
   }
 
   @Test
   void onlyOneRelayRunsAtATimeSoReplicasKeepTheOrder() throws Exception {
+    String bag = registeredBag(newPassengerRef());
     drain();
-    String bag = bagWithOneScan();
+    scanOnce(bag);
 
     try (Connection other = dataSource.getConnection();
         Statement statement = other.createStatement()) {
@@ -220,10 +229,8 @@ class ReviewHardeningTest extends AbstractApiTest {
         .isEqualTo(1);
   }
 
-  private String bagWithOneScan() throws Exception {
-    String bag = registeredBag(newPassengerRef());
+  private void scanOnce(String bag) throws Exception {
     scan(barcodeScan(bag, "IST", "CHECK_IN", 1, minutesAgo(1)), newKey(), as(Role.AGENT))
         .andExpect(status().isAccepted());
-    return bag;
   }
 }

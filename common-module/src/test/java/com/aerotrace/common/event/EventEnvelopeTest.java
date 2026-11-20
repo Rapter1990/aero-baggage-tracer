@@ -121,7 +121,8 @@ class EventEnvelopeTest {
             "baggage.risk.changed.v1",
             "recovery.case.changed.v1",
             "recovery.capacity.changed.v1",
-            "baggage.dead-letter.v1");
+            "baggage.dead-letter.v1",
+            "baggage.bag.registered.v1");
     assertThat(Topics.ALL).allMatch(t -> t.endsWith(".v1"));
   }
 

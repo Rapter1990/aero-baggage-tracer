@@ -195,11 +195,18 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
                     .bind("spring.cloud.gateway.server.webmvc.routes", Bindable.listOf(Map.class))
                     .get();
 
-    // The search-service sends X-Service-Token to the export endpoints of the recovery-service
-    // (and the journey-service); capacity accepts it from the recovery-service.
+    // The search-service sends X-Service-Token to the export endpoints of the recovery-service and
+    // the journey-service; capacity accepts it from the recovery-service.
     for (String id :
         List.of(
-            "capacity", "reports", "search", "search-admin", "recovery-cases", "recovery-policy")) {
+            "capacity",
+            "reports",
+            "search",
+            "search-admin",
+            "recovery-cases",
+            "recovery-policy",
+            "journey-bags",
+            "journey-scans")) {
       Map<String, Object> route =
           routes.stream().filter(r -> id.equals(r.get("id"))).findFirst().orElseThrow();
       assertThat(String.valueOf(route.get("filters")))
