@@ -22,12 +22,16 @@ import com.aerotrace.search.indexer.BulkExecutor.Op;
 import com.aerotrace.search.indexer.model.CaseChange;
 import com.aerotrace.search.indexer.model.LegSnapshot;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -56,12 +60,32 @@ public class ReadModelWriter {
   /** What became of one input: an outcome, or the reason Elasticsearch refused it for good. */
   public record ItemResult(Outcome outcome, String rejection) {
 
-    static ItemResult rejected(String reason) {
+    public static ItemResult rejected(String reason) {
       return new ItemResult(null, reason);
     }
 
     public boolean rejected() {
       return outcome == null;
+    }
+
+    /**
+     * One input that took several writes: refused when any of them was refused (the first refusal
+     * wins), otherwise the primary write's outcome.
+     */
+    public static ItemResult merge(ItemResult primary, ItemResult secondary) {
+      if (primary.rejected() || secondary == null || !secondary.rejected()) {
+        return primary;
+      }
+      return secondary;
+    }
+
+    /** {@link #merge} item by item; {@code secondary} may be shorter (or empty) than primary. */
+    public static List<ItemResult> merge(List<ItemResult> primary, List<ItemResult> secondary) {
+      List<ItemResult> merged = new ArrayList<>(primary.size());
+      for (int i = 0; i < primary.size(); i++) {
+        merged.add(merge(primary.get(i), i < secondary.size() ? secondary.get(i) : null));
+      }
+      return merged;
     }
   }
 
@@ -76,6 +100,7 @@ public class ReadModelWriter {
           "current version \\[(\\d+)] is higher or equal to the one provided \\[(\\d+)]");
   private static final int RETRY_ON_CONFLICT = 5;
   private static final int COMPLETION_PAGE = 1_000;
+  private static final int MAX_ID_BYTES = 512;
 
   private final ElasticsearchClient client;
   private final BulkExecutor bulk;
@@ -311,19 +336,23 @@ public class ReadModelWriter {
 
   /**
    * Stores legs in the lookup and completes what was indexed before they were known: the cases and
-   * risk hours of these legs that have no airport yet.
+   * risk hours of these legs that have no airport yet. A leg Elasticsearch refuses for good is
+   * returned (never thrown), so the caller can dead-letter the events that carried it; the other
+   * legs are stored and completed.
    *
    * @param legs the legs by id
    * @param bagOfLeg the bag of each leg
+   * @return the refused legs: legId to the reason Elasticsearch gave (its error type)
    */
-  public void writeLegs(Map<String, LegSnapshot> legs, Map<String, String> bagOfLeg)
+  public Map<String, String> writeLegs(Map<String, LegSnapshot> legs, Map<String, String> bagOfLeg)
       throws IOException {
     if (legs.isEmpty()) {
-      return;
+      return Map.of();
     }
     List<Op> ops = new ArrayList<>();
-    int i = 0;
-    for (LegSnapshot leg : legs.values()) {
+    List<String> ids = new ArrayList<>(legs.keySet());
+    for (int i = 0; i < ids.size(); i++) {
+      LegSnapshot leg = legs.get(ids.get(i));
       Map<String, Object> doc = new LinkedHashMap<>();
       doc.put("legId", leg.legId());
       doc.put("bagTag", bagOfLeg.get(leg.legId()));
@@ -335,18 +364,24 @@ public class ReadModelWriter {
       doc.values().removeIf(Objects::isNull);
       ops.add(
           new Op(
-              i++,
+              i,
               BulkOperation.of(
                   b ->
                       b.index(
                           x -> x.index(SupportIndex.LEGS.index()).id(leg.legId()).document(doc)))));
     }
+    Map<String, String> refused = new LinkedHashMap<>();
     for (Ack ack : bulk.execute(ops)) {
       if (!ack.ok()) {
-        throw new PoisonEventException("leg refused: " + ack.errorType());
+        refused.put(ids.get(ack.item()), ack.errorType() == null ? "rejected" : ack.errorType());
       }
     }
-    completeLegs(legs);
+    Map<String, LegSnapshot> stored = new LinkedHashMap<>(legs);
+    stored.keySet().removeAll(refused.keySet());
+    if (!stored.isEmpty()) {
+      completeLegs(stored);
+    }
+    return refused;
   }
 
   private void completeLegs(Map<String, LegSnapshot> legs) throws IOException {
@@ -437,10 +472,32 @@ public class ReadModelWriter {
     bulk.execute(ops);
   }
 
-  /** Records HIGH risk hours: one document per bag, leg and UTC hour. */
-  public void writeRiskHours(List<RiskHour> hours) throws IOException {
+  /**
+   * {@code bag:leg:hourMillis}; Elasticsearch refuses a whole bulk request (not just the item) when
+   * an {@code _id} is longer than 512 bytes, so an id that long (multi-byte bag tags or leg ids at
+   * the length limit) is replaced by its SHA-256, which is just as deterministic.
+   */
+  static String riskHourId(String bagTag, String legId, Instant hour) {
+    String id = bagTag + ":" + legId + ":" + hour.toEpochMilli();
+    byte[] bytes = id.getBytes(StandardCharsets.UTF_8);
+    if (bytes.length <= MAX_ID_BYTES) {
+      return id;
+    }
+    try {
+      return "sha256:"
+          + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+    } catch (NoSuchAlgorithmException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  /**
+   * Records HIGH risk hours: one document per bag, leg and UTC hour. One result per hour; a refused
+   * hour is returned, never thrown.
+   */
+  public List<ItemResult> writeRiskHours(List<RiskHour> hours) throws IOException {
     if (hours.isEmpty()) {
-      return;
+      return List.of();
     }
     Map<String, LegSnapshot> legs = legsById(hours.stream().map(RiskHour::legId).toList());
     List<Op> ops = new ArrayList<>();
@@ -455,7 +512,7 @@ public class ReadModelWriter {
       doc.put("hour", Elastic.millis(start));
       doc.put("occurredAt", Elastic.millis(hour.occurredAt()));
       doc.values().removeIf(Objects::isNull);
-      String id = hour.bagTag() + ":" + hour.legId() + ":" + start.toEpochMilli();
+      String id = riskHourId(hour.bagTag(), hour.legId(), start);
       ops.add(
           new Op(
               i++,
@@ -464,10 +521,6 @@ public class ReadModelWriter {
                       b.index(
                           x -> x.index(SupportIndex.RISK_HOURS.index()).id(id).document(doc)))));
     }
-    for (Ack ack : bulk.execute(ops)) {
-      if (!ack.ok()) {
-        throw new PoisonEventException("risk hour refused: " + ack.errorType());
-      }
-    }
+    return combine(hours.size(), bulk.execute(ops));
   }
 }

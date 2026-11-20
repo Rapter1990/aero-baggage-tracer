@@ -196,7 +196,15 @@ public class ReindexService implements DisposableBean {
       String journeys = created.get(IndexFamily.JOURNEYS);
       if (journeys != null) {
         bags = loadBags(journeys);
-        risks = riskReplay.replay(batch -> indexer.applyRisks(batch, List.of(journeys)));
+        risks =
+            riskReplay.replay(
+                batch -> {
+                  if (indexer.applyRisks(batch, List.of(journeys)).stream()
+                      .anyMatch(ItemResult::rejected)) {
+                    throw new RebuildCheckFailed(
+                        "journeys: the index refused replayed risk events");
+                  }
+                });
       }
 
       String casesIndex = created.get(IndexFamily.CASES);
@@ -399,7 +407,9 @@ public class ReindexService implements DisposableBean {
         }
         count++;
       }
-      writer.writeLegs(legs, bagOfLeg);
+      if (!writer.writeLegs(legs, bagOfLeg).isEmpty()) {
+        throw new RebuildCheckFailed("journeys: the index refused exported legs");
+      }
       List<ItemResult> written = writer.applyJourneys(changes, List.of(journeysIndex));
       if (written.stream().anyMatch(ItemResult::rejected)) {
         throw new RebuildCheckFailed("journeys: the index refused exported bags");

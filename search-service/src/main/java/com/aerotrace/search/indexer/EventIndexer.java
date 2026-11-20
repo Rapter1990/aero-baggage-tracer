@@ -4,6 +4,7 @@ import com.aerotrace.common.event.EventEnvelope;
 import com.aerotrace.common.event.RiskChangedPayload;
 import com.aerotrace.common.event.ScanReceivedPayload;
 import com.aerotrace.common.model.RiskLevel;
+import com.aerotrace.search.constant.SearchRules;
 import com.aerotrace.search.constant.SearchTopics;
 import com.aerotrace.search.elastic.IndexAdmin;
 import com.aerotrace.search.elastic.IndexFamily;
@@ -26,11 +27,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Indexes one batch of events of a topic. A batch is read, its poison events are dead-lettered, the
- * rest goes to Elasticsearch in bulk, and every item's answer is checked. The method returns only
- * when Elasticsearch has acknowledged every event (or the event was dead-lettered); the listener
- * container commits the batch's offsets after that. A failure that may pass (Elasticsearch down or
- * overloaded) is thrown, so the batch is retried and nothing is committed.
+ * Indexes one batch of events of a topic. A batch is read, its valid events go to Elasticsearch in
+ * bulk and every item's answer is checked; only then are its poison events and the events
+ * Elasticsearch refused for good dead-lettered (once per batch, not once per retry). The method
+ * returns only when Elasticsearch has acknowledged every event (or the event was dead-lettered);
+ * the listener container commits the batch's offsets after that. A failure that may pass
+ * (Elasticsearch down or overloaded) is thrown before anything is dead-lettered, so the batch is
+ * retried and nothing is committed or published.
  *
  * <p>Each event's {@code correlationId} is put into the logging context while it is handled; none
  * is ever generated.
@@ -39,6 +42,7 @@ import org.springframework.stereotype.Component;
 public class EventIndexer {
 
   private static final Logger LOG = LoggerFactory.getLogger(EventIndexer.class);
+  private static final int MAX_LEGS = 32;
 
   private final ReadModelWriter writer;
   private final IndexAdmin admin;
@@ -59,26 +63,45 @@ public class EventIndexer {
   /** A readable event of the batch and the record it came from. */
   private record Read<T>(ConsumerRecord<String, String> record, EventEnvelope<T> event) {}
 
-  private <T> List<Read<T>> read(
+  /** A record that can never be indexed, and why. */
+  private record Poison(ConsumerRecord<String, String> record, String reason) {}
+
+  /**
+   * A read batch: its valid events, and its poison records, which are dead-lettered only once the
+   * write of the valid events has succeeded. Were they dead-lettered first, a batch retried while
+   * Elasticsearch is down would publish the same dead letters again on every attempt.
+   */
+  private record Batch<T>(List<Read<T>> events, List<Poison> poison) {}
+
+  private <T> Batch<T> read(
       List<ConsumerRecord<String, String>> records,
       String eventType,
       Class<T> payloadType,
       Function<EventEnvelope<T>, EventEnvelope<T>> validate) {
     List<Read<T>> valid = new ArrayList<>();
+    List<Poison> poison = new ArrayList<>();
     for (ConsumerRecord<String, String> record : records) {
       try {
         EventEnvelope<T> event =
             validate.apply(EventReader.read(record.value(), eventType, payloadType));
         valid.add(new Read<>(record, event));
-      } catch (PoisonEventException poison) {
-        deadLetters.publish(record, poison.getMessage());
-        metrics.count(record.topic(), Outcome.FAILED);
+      } catch (PoisonEventException e) {
+        poison.add(new Poison(record, e.getMessage()));
       }
     }
-    return valid;
+    return new Batch<>(valid, poison);
   }
 
-  private <T> void settle(List<Read<T>> events, List<ItemResult> results) {
+  /**
+   * Called once the batch was written (or had nothing to write): dead-letters its poison records
+   * and the events Elasticsearch refused for good, and counts the rest.
+   */
+  private <T> void settle(Batch<T> batch, List<ItemResult> results) {
+    for (Poison poison : batch.poison()) {
+      deadLetters.publish(poison.record(), poison.reason());
+      metrics.count(poison.record().topic(), Outcome.FAILED);
+    }
+    List<Read<T>> events = batch.events();
     for (int i = 0; i < events.size(); i++) {
       Read<T> read = events.get(i);
       ItemResult result = results.get(i);
@@ -103,13 +126,15 @@ public class EventIndexer {
   // ------------------------------------------------------------------ cases
 
   public void indexCases(List<ConsumerRecord<String, String>> records) throws IOException {
-    List<Read<CaseChange>> events =
+    Batch<CaseChange> batch =
         read(
             records,
             SearchTopics.EVENT_TYPE_CASE_CHANGED,
             CaseChange.class,
             EventIndexer::validCase);
+    List<Read<CaseChange>> events = batch.events();
     if (events.isEmpty()) {
+      settle(batch, List.of());
       return;
     }
     List<CaseWrite> writes =
@@ -121,8 +146,11 @@ public class EventIndexer {
     for (Read<CaseChange> read : events) {
       journeys.add(caseOnJourney(read.event().payload(), read.event().occurredAt()));
     }
-    writer.applyJourneys(journeys, admin.liveIndexes(IndexFamily.JOURNEYS));
-    settle(events, results);
+    // A case event writes two documents; a refusal of either dead-letters the event.
+    settle(
+        batch,
+        ItemResult.merge(
+            results, writer.applyJourneys(journeys, admin.liveIndexes(IndexFamily.JOURNEYS))));
   }
 
   public static JourneyChange caseOnJourney(CaseChange c, Instant eventAt) {
@@ -154,13 +182,15 @@ public class EventIndexer {
   // ------------------------------------------------------------------ scans
 
   public void indexScans(List<ConsumerRecord<String, String>> records) throws IOException {
-    List<Read<ScanReceivedPayload>> events =
+    Batch<ScanReceivedPayload> batch =
         read(
             records,
             SearchTopics.EVENT_TYPE_SCAN_RECEIVED,
             ScanReceivedPayload.class,
             EventIndexer::validScan);
+    List<Read<ScanReceivedPayload>> events = batch.events();
     if (events.isEmpty()) {
+      settle(batch, List.of());
       return;
     }
     List<JourneyChange> changes = new ArrayList<>();
@@ -177,7 +207,7 @@ public class EventIndexer {
               s.flightNumber(),
               s.departureAt()));
     }
-    settle(events, writer.applyJourneys(changes, admin.liveIndexes(IndexFamily.JOURNEYS)));
+    settle(batch, writer.applyJourneys(changes, admin.liveIndexes(IndexFamily.JOURNEYS)));
   }
 
   private static EventEnvelope<ScanReceivedPayload> validScan(
@@ -194,38 +224,53 @@ public class EventIndexer {
   // ------------------------------------------------------------------ risk
 
   public void indexRisks(List<ConsumerRecord<String, String>> records) throws IOException {
-    List<Read<RiskChangedPayload>> events =
+    Batch<RiskChangedPayload> batch =
         read(
             records,
             SearchTopics.EVENT_TYPE_RISK_CHANGED,
             RiskChangedPayload.class,
             EventIndexer::validRisk);
+    List<Read<RiskChangedPayload>> events = batch.events();
     if (events.isEmpty()) {
+      settle(batch, List.of());
       return;
     }
     settle(
-        events,
+        batch,
         applyRisks(
             events.stream().map(Read::event).toList(), admin.liveIndexes(IndexFamily.JOURNEYS)));
   }
 
-  /** Applies risk events to the given journey indexes; also used by the rebuild's replay. */
+  /**
+   * Applies risk events to the given journey indexes and records their HIGH risk hours; also used
+   * by the rebuild's replay. One result per event: refused when its journey or its risk hour was.
+   */
   public List<ItemResult> applyRisks(
       List<EventEnvelope<RiskChangedPayload>> events, List<String> journeyIndexes)
       throws IOException {
     List<JourneyChange> changes = new ArrayList<>();
     List<RiskHour> hours = new ArrayList<>();
-    for (EventEnvelope<RiskChangedPayload> event : events) {
+    int[] hourOf = new int[events.size()];
+    for (int i = 0; i < events.size(); i++) {
+      EventEnvelope<RiskChangedPayload> event = events.get(i);
       RiskChangedPayload r = event.payload();
       changes.add(
           JourneyChange.risk(
               r.bagTag(), r.legId(), r.current().name(), event.occurredAt(), r.departureAt()));
+      hourOf[i] = -1;
       if (r.current() == RiskLevel.HIGH) {
+        hourOf[i] = hours.size();
         hours.add(new RiskHour(r.bagTag(), r.legId(), event.occurredAt()));
       }
     }
-    writer.writeRiskHours(hours);
-    return writer.applyJourneys(changes, journeyIndexes);
+    List<ItemResult> hourResults = writer.writeRiskHours(hours);
+    List<ItemResult> journeys = writer.applyJourneys(changes, journeyIndexes);
+    List<ItemResult> results = new ArrayList<>(events.size());
+    for (int i = 0; i < events.size(); i++) {
+      results.add(
+          ItemResult.merge(journeys.get(i), hourOf[i] < 0 ? null : hourResults.get(hourOf[i])));
+    }
+    return results;
   }
 
   static EventEnvelope<RiskChangedPayload> validRisk(EventEnvelope<RiskChangedPayload> event) {
@@ -241,13 +286,15 @@ public class EventIndexer {
   // ------------------------------------------------------------------ bag registration
 
   public void indexRegistrations(List<ConsumerRecord<String, String>> records) throws IOException {
-    List<Read<BagRegistered>> events =
+    Batch<BagRegistered> batch =
         read(
             records,
             SearchTopics.EVENT_TYPE_BAG_REGISTERED,
             BagRegistered.class,
             EventIndexer::validRegistration);
+    List<Read<BagRegistered>> events = batch.events();
     if (events.isEmpty()) {
+      settle(batch, List.of());
       return;
     }
     Map<String, LegSnapshot> legs = new LinkedHashMap<>();
@@ -261,8 +308,22 @@ public class EventIndexer {
       }
       changes.add(JourneyChange.itinerary(bag.bagTag(), bag.legs(), read.event().occurredAt()));
     }
-    writer.writeLegs(legs, bagOfLeg);
-    settle(events, writer.applyJourneys(changes, admin.liveIndexes(IndexFamily.JOURNEYS)));
+    Map<String, String> refusedLegs = writer.writeLegs(legs, bagOfLeg);
+    List<ItemResult> journeys =
+        writer.applyJourneys(changes, admin.liveIndexes(IndexFamily.JOURNEYS));
+    List<ItemResult> results = new ArrayList<>(events.size());
+    for (int i = 0; i < events.size(); i++) {
+      ItemResult legResult = null;
+      for (LegSnapshot leg : events.get(i).event().payload().legs()) {
+        String refused = refusedLegs.get(leg.legId());
+        if (refused != null) {
+          legResult = ItemResult.rejected("leg " + refused);
+          break;
+        }
+      }
+      results.add(ItemResult.merge(journeys.get(i), legResult));
+    }
+    settle(batch, results);
   }
 
   private static EventEnvelope<BagRegistered> validRegistration(
@@ -272,12 +333,34 @@ public class EventIndexer {
     if (bag.legs() == null || bag.legs().isEmpty()) {
       throw new PoisonEventException("legs are missing");
     }
+    if (bag.legs().size() > MAX_LEGS) {
+      throw new PoisonEventException("too many legs");
+    }
     for (LegSnapshot leg : bag.legs()) {
-      if (leg == null) {
-        throw new PoisonEventException("a leg is missing");
-      }
-      EventReader.required(leg.legId(), "legId");
+      validLeg(leg);
     }
     return event;
+  }
+
+  /**
+   * A leg as the journey-service validates it (its own formats, {@link SearchRules}): the id is
+   * required, the other fields may be missing but must have their format when present. Checked up
+   * front, so a leg the strict mapping or the keyword limits would refuse never reaches the bulk.
+   */
+  public static void validLeg(LegSnapshot leg) {
+    if (leg == null) {
+      throw new PoisonEventException("a leg is missing");
+    }
+    EventReader.required(leg.legId(), "legId");
+    format(leg.flightNumber(), SearchRules.FLIGHT_PATTERN, "flightNumber");
+    format(leg.airline(), SearchRules.AIRLINE_PATTERN, "airline");
+    format(leg.origin(), SearchRules.AIRPORT_PATTERN, "origin");
+    format(leg.destination(), SearchRules.AIRPORT_PATTERN, "destination");
+  }
+
+  private static void format(String value, String pattern, String field) {
+    if (value != null && (value.length() > 16 || !value.matches(pattern))) {
+      throw new PoisonEventException(field + " has an invalid format");
+    }
   }
 }
