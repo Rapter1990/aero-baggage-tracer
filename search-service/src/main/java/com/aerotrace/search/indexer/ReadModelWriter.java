@@ -4,6 +4,7 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.Conflicts;
 import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.Script;
+import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.VersionType;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch.core.MgetResponse;
@@ -139,7 +140,7 @@ public class ReadModelWriter {
    * A case written without its leg (the leg was not known yet) is written again, with the same
    * version, if the leg became known while it was being written. Together with {@link
    * #completeLegs} this closes the race between the two topics: either the leg writer finds the
-   * case, or this check finds the leg.
+   * waiting mark of the case, or this check finds the leg.
    */
   private void completeCasesWhoseLegArrivedMeanwhile(
       List<CaseWrite> cases,
@@ -157,6 +158,9 @@ public class ReadModelWriter {
     if (missing.isEmpty()) {
       return;
     }
+    // Marked first, checked second: a leg written before the mark is found below; a leg written
+    // after it finds the mark (see completeLegs).
+    markWaiting(missing);
     Map<String, LegSnapshot> now = legsById(missing);
     if (now.isEmpty()) {
       return;
@@ -384,7 +388,66 @@ public class ReadModelWriter {
     return refused;
   }
 
-  private void completeLegs(Map<String, LegSnapshot> legs) throws IOException {
+  /** The marker that something (a case or a risk hour) was indexed before its leg was known. */
+  static String waitingId(String legId) {
+    return safeId("waiting:" + legId);
+  }
+
+  /**
+   * Marks legs as awaited, in the leg lookup (realtime reads, unlike a search): a document {@code
+   * waiting:<legId>} that holds only the leg id. Nothing searches the leg lookup, so the marks are
+   * invisible to everything but {@link #completeLegs}.
+   */
+  private void markWaiting(Collection<String> legIds) throws IOException {
+    List<Op> ops = new ArrayList<>();
+    int i = 0;
+    for (String legId : legIds) {
+      ops.add(
+          new Op(
+              i++,
+              BulkOperation.of(
+                  b ->
+                      b.index(
+                          x ->
+                              x.index(SupportIndex.LEGS.index())
+                                  .id(waitingId(legId))
+                                  .document(Map.of("legId", legId))))));
+    }
+    bulk.execute(ops);
+  }
+
+  /** The legs among these that something waits for: one realtime multi-get, no refresh. */
+  @SuppressWarnings("rawtypes")
+  private Set<String> waitedFor(Collection<String> legIds) throws IOException {
+    List<String> legs = new ArrayList<>(legIds);
+    List<String> ids = legs.stream().map(ReadModelWriter::waitingId).toList();
+    MgetResponse<Map> response =
+        client.mget(
+            m -> m.index(SupportIndex.LEGS.index()).ids(ids).source(x -> x.fetch(false)),
+            Map.class);
+    Set<String> waiting = new LinkedHashSet<>();
+    for (int i = 0; i < response.docs().size(); i++) {
+      MultiGetResponseItem<Map> item = response.docs().get(i);
+      if (item.isResult() && item.result().found()) {
+        waiting.add(legs.get(i));
+      }
+    }
+    return waiting;
+  }
+
+  /**
+   * Completes the cases and risk hours that were indexed before these legs were known. Usually
+   * nothing waits for a new leg (its bag registers before any case or risk event), and then this
+   * costs one realtime multi-get: the refresh, searches and update by query only run for legs that
+   * carry a waiting mark.
+   */
+  private void completeLegs(Map<String, LegSnapshot> all) throws IOException {
+    Set<String> waiting = waitedFor(all.keySet());
+    if (waiting.isEmpty()) {
+      return;
+    }
+    Map<String, LegSnapshot> legs = new LinkedHashMap<>(all);
+    legs.keySet().retainAll(waiting);
     List<FieldValue> ids = legs.keySet().stream().map(FieldValue::of).toList();
     Query withoutAirport =
         Query.of(
@@ -425,6 +488,17 @@ public class ReadModelWriter {
                                               + " else { ctx._source.airport = a; }"))
                               .params("airports", JsonData.of(toPlain(airports)))));
     }
+    // The leg is stored now, so whatever is indexed from here on finds it by itself.
+    List<Op> done = new ArrayList<>();
+    int i = 0;
+    for (String legId : legs.keySet()) {
+      done.add(
+          new Op(
+              i++,
+              BulkOperation.of(
+                  b -> b.delete(d -> d.index(SupportIndex.LEGS.index()).id(waitingId(legId))))));
+    }
+    bulk.execute(done);
   }
 
   private static Map<String, Object> toPlain(Map<String, JsonData> values) {
@@ -433,43 +507,63 @@ public class ReadModelWriter {
     return plain;
   }
 
+  /** Every case of these legs without an airport, page after page (sorted by the stored docId). */
   @SuppressWarnings({"rawtypes", "unchecked"})
   private void completeCases(String index, Query withoutAirport, Map<String, LegSnapshot> legs)
       throws IOException {
-    SearchResponse<Map> page =
-        client.search(
-            s -> s.index(index).query(withoutAirport).size(COMPLETION_PAGE).version(true),
-            Map.class);
-    List<Op> ops = new ArrayList<>();
-    int i = 0;
-    for (Hit<Map> hit : page.hits().hits()) {
-      Map<String, Object> doc = new LinkedHashMap<>(hit.source());
-      LegSnapshot leg = legs.get((String) doc.get("legId"));
-      if (leg == null || leg.origin() == null) {
-        continue;
+    List<FieldValue> after = null;
+    while (true) {
+      List<FieldValue> current = after;
+      SearchResponse<Map> page =
+          client.search(
+              s -> {
+                s.index(index)
+                    .query(withoutAirport)
+                    .size(COMPLETION_PAGE)
+                    .version(true)
+                    .sort(o -> o.field(f -> f.field("docId").order(SortOrder.Asc)));
+                if (current != null) {
+                  s.searchAfter(current);
+                }
+                return s;
+              },
+              Map.class);
+      List<Hit<Map>> hits = page.hits().hits();
+      List<Op> ops = new ArrayList<>();
+      int i = 0;
+      for (Hit<Map> hit : hits) {
+        Map<String, Object> doc = new LinkedHashMap<>(hit.source());
+        LegSnapshot leg = legs.get((String) doc.get("legId"));
+        if (leg == null || leg.origin() == null) {
+          continue;
+        }
+        doc.put("airport", leg.origin());
+        if (leg.airline() != null) {
+          doc.put("airline", leg.airline());
+        }
+        if (leg.flightNumber() != null) {
+          doc.put("flightNumber", leg.flightNumber());
+        }
+        long version = hit.version();
+        ops.add(
+            new Op(
+                i++,
+                BulkOperation.of(
+                    b ->
+                        b.index(
+                            x ->
+                                x.index(index)
+                                    .id(hit.id())
+                                    .version(version)
+                                    .versionType(VersionType.ExternalGte)
+                                    .document(doc)))));
       }
-      doc.put("airport", leg.origin());
-      if (leg.airline() != null) {
-        doc.put("airline", leg.airline());
+      bulk.execute(ops);
+      if (hits.size() < COMPLETION_PAGE) {
+        return;
       }
-      if (leg.flightNumber() != null) {
-        doc.put("flightNumber", leg.flightNumber());
-      }
-      long version = hit.version();
-      ops.add(
-          new Op(
-              i++,
-              BulkOperation.of(
-                  b ->
-                      b.index(
-                          x ->
-                              x.index(index)
-                                  .id(hit.id())
-                                  .version(version)
-                                  .versionType(VersionType.ExternalGte)
-                                  .document(doc)))));
+      after = hits.getLast().sort();
     }
-    bulk.execute(ops);
   }
 
   /**
@@ -478,7 +572,11 @@ public class ReadModelWriter {
    * the length limit) is replaced by its SHA-256, which is just as deterministic.
    */
   static String riskHourId(String bagTag, String legId, Instant hour) {
-    String id = bagTag + ":" + legId + ":" + hour.toEpochMilli();
+    return safeId(bagTag + ":" + legId + ":" + hour.toEpochMilli());
+  }
+
+  /** The id as it is, or its SHA-256 when it is longer than Elasticsearch allows. */
+  static String safeId(String id) {
     byte[] bytes = id.getBytes(StandardCharsets.UTF_8);
     if (bytes.length <= MAX_ID_BYTES) {
       return id;
@@ -512,15 +610,49 @@ public class ReadModelWriter {
       doc.put("hour", Elastic.millis(start));
       doc.put("occurredAt", Elastic.millis(hour.occurredAt()));
       doc.values().removeIf(Objects::isNull);
-      String id = riskHourId(hour.bagTag(), hour.legId(), start);
-      ops.add(
-          new Op(
-              i++,
-              BulkOperation.of(
-                  b ->
-                      b.index(
-                          x -> x.index(SupportIndex.RISK_HOURS.index()).id(id).document(doc)))));
+      ops.add(new Op(i++, riskHour(hour, doc)));
     }
-    return combine(hours.size(), bulk.execute(ops));
+    List<ItemResult> results = combine(hours.size(), bulk.execute(ops));
+    completeHoursWhoseLegArrivedMeanwhile(hours, legs, results);
+    return results;
+  }
+
+  private static BulkOperation riskHour(RiskHour hour, Map<String, Object> doc) {
+    String id =
+        riskHourId(hour.bagTag(), hour.legId(), hour.occurredAt().truncatedTo(ChronoUnit.HOURS));
+    return BulkOperation.of(
+        b -> b.index(x -> x.index(SupportIndex.RISK_HOURS.index()).id(id).document(doc)));
+  }
+
+  /** Like {@link #completeCasesWhoseLegArrivedMeanwhile}, for risk hours written without a leg. */
+  private void completeHoursWhoseLegArrivedMeanwhile(
+      List<RiskHour> hours, Map<String, LegSnapshot> knownBefore, List<ItemResult> results)
+      throws IOException {
+    Set<String> missing = new LinkedHashSet<>();
+    for (int i = 0; i < hours.size(); i++) {
+      if (!results.get(i).rejected() && !knownBefore.containsKey(hours.get(i).legId())) {
+        missing.add(hours.get(i).legId());
+      }
+    }
+    if (missing.isEmpty()) {
+      return;
+    }
+    markWaiting(missing);
+    Map<String, LegSnapshot> now = legsById(missing);
+    List<Op> ops = new ArrayList<>();
+    for (int i = 0; i < hours.size(); i++) {
+      RiskHour hour = hours.get(i);
+      LegSnapshot leg = now.get(hour.legId());
+      if (leg != null && leg.origin() != null && !results.get(i).rejected()) {
+        Map<String, Object> doc = new LinkedHashMap<>();
+        doc.put("bagTag", hour.bagTag());
+        doc.put("legId", hour.legId());
+        doc.put("airport", leg.origin());
+        doc.put("hour", Elastic.millis(hour.occurredAt().truncatedTo(ChronoUnit.HOURS)));
+        doc.put("occurredAt", Elastic.millis(hour.occurredAt()));
+        ops.add(new Op(i, riskHour(hour, doc)));
+      }
+    }
+    bulk.execute(ops);
   }
 }
