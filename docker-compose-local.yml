@@ -64,9 +64,10 @@ services:
     networks:
       - aerotrace
 
-  # The search-service's read models. Same pinned image and security as docker-compose.yml;
-  # ELASTIC_PASSWORD has no default (set it in .env). Bound to loopback only, for the
-  # search-service run from the IDE (http://localhost:9200, user elastic).
+  # The search-service's read models. Same image and security as docker-compose.yml. The tag is
+  # latest at the user's request, but Elastic publishes no latest tag, so the pull fails until a
+  # concrete tag (e.g. 9.5.3) is set (README). ELASTIC_PASSWORD has a dev-only default here. Bound
+  # to loopback only, for the search-service run from the IDE (http://localhost:9200, user elastic).
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:latest
     container_name: elasticsearch
@@ -76,7 +77,9 @@ services:
       xpack.security.http.ssl.enabled: "false"
       xpack.security.transport.ssl.enabled: "false"
       xpack.ml.enabled: "false"
-      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?set ELASTIC_PASSWORD in .env (see README)}
+      # DEV ONLY default, so `docker compose -f docker-compose-local.yml up` works without a .env
+      # for developers who do not use search. Never use it anywhere else: set ELASTIC_PASSWORD.
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-dev-only-elastic-password}
       ES_JAVA_OPTS: ${ELASTICSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
     ports:
       - "127.0.0.1:9200:9200"

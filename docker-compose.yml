@@ -65,8 +65,9 @@ services:
     networks:
       - aerotrace
 
-  # The search read models (search-service only). Single node, security on, the image pinned to
-  # the Java client's version. ELASTIC_PASSWORD has no default: set it in .env. Port 9200 is not
+  # The search read models (search-service only). Single node, security on. The tag is latest at
+  # the user's request, but Elastic publishes no latest tag, so the pull fails until a concrete tag
+  # (e.g. 9.5.3) is set (README). ELASTIC_PASSWORD has no default: set it in .env. Port 9200 is not
   # published; only containers on the network reach it. TLS is off on this internal network.
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:latest
@@ -431,15 +432,22 @@ services:
       EUREKA_INSTANCE_HOSTNAME: search-service
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       ELASTICSEARCH_URIS: http://elasticsearch:9200
+      # The service needs a named user outside the dev profiles. This development stack uses the
+      # elastic superuser; give it a least-privilege user anywhere else (docs/apis/SEARCH-API.md).
+      ELASTICSEARCH_USERNAME: ${ELASTICSEARCH_USERNAME:-elastic}
       ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?set ELASTIC_PASSWORD in .env (see README)}
-      # HMAC key of the paging cursors, the same for every instance. Empty: a random key per start.
-      SEARCH_CURSOR_SECRET: ${SEARCH_CURSOR_SECRET:-}
-      # The internal export endpoints of the owners (#28, #29) and the token they accept.
+      # HMAC key of the paging cursors, the same for every instance, at least 32 bytes. Required:
+      # the service does not start without it (see README).
+      SEARCH_CURSOR_SECRET: ${SEARCH_CURSOR_SECRET:?set SEARCH_CURSOR_SECRET (at least 32 bytes) in .env (see README)}
+      # The internal export endpoints of the owners (#28, #29) and the token they accept. Empty: a
+      # rebuild fails with "export unauthorized" before calling them.
       JOURNEY_SERVICE_URL: ${JOURNEY_SERVICE_URL:-http://journey-service:1113}
       RECOVERY_SERVICE_URL: ${RECOVERY_SERVICE_URL:-http://recovery-service:1115}
       SEARCH_EXPORT_SERVICE_TOKEN: ${SEARCH_EXPORT_SERVICE_TOKEN:-}
-      # Empty: the identity-service development public key bundled in the image is used.
-      IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-}
+      # The identity-service public key. The service refuses to start without one; this
+      # development stack names, explicitly, the development key bundled in the image (the pair
+      # identity-service signs with here). Set your own key pair wherever tokens matter.
+      IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-classpath:keys/public.pem}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
@@ -454,9 +462,10 @@ services:
       kafka-init:
         condition: service_completed_successfully
     # Clients reach it through the gateway (/api/v1/search/**, /api/v1/reports/**,
-    # /api/v1/admin/search/**); 1117 is its own port.
+    # /api/v1/admin/search/**), which finds it over the Compose network. 1117 is published on
+    # loopback only, for local debugging; it is never reachable from other hosts.
     ports:
-      - "1117:1117"
+      - "127.0.0.1:1117:1117"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:1117/actuator/health"]
       interval: 10s

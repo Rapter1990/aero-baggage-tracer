@@ -132,10 +132,12 @@ Defaults marked "Compose" are for local use only.
 | `AUTH_RATE_LIMIT_REPLENISH_RATE` | api-gateway | Auth tokens refilled per second | `0.2` (12 a minute) |
 | `AUTH_RATE_LIMIT_BURST_CAPACITY` | api-gateway | Auth burst size | `10` |
 | `DOCS_ENABLED` | gateway, identity, journey | Serve OpenAPI and Swagger UI | `true` |
-| `ELASTIC_PASSWORD` | Elasticsearch, search-service | Password of the `elastic` user. No default: both compose files refuse to start without it, so put it in `.env` | none, required |
+| `ELASTIC_PASSWORD` | Elasticsearch, search-service | Password of the `elastic` user. `docker-compose.yml` refuses to start without it, so put it in `.env`; `docker-compose-local.yml` has a clearly marked dev-only default so it starts for developers who do not use search | `docker-compose.yml`: none, required; `docker-compose-local.yml`: `dev-only-elastic-password` |
+| `ELASTICSEARCH_USERNAME` | search-service | The Elasticsearch user. Required outside the `local`/`dev`/`test` profiles; use a least-privilege user ([SEARCH-API.md](docs/apis/SEARCH-API.md#a-least-privilege-elasticsearch-user)) | `elastic` under the dev profiles; Compose: `elastic` |
 | `ELASTICSEARCH_URIS` | search-service | Where Elasticsearch answers | `http://localhost:9200` (Compose: `http://elasticsearch:9200`) |
-| `SEARCH_CURSOR_SECRET` | search-service | HMAC key of the paging cursors, the same on every instance | empty = a random key per start |
-| `SEARCH_EXPORT_SERVICE_TOKEN` | search-service | Token sent to the export endpoints of #28 and #29 | empty = none sent |
+| `SEARCH_CURSOR_SECRET` | search-service | HMAC key of the paging cursors, the same on every instance, at least 32 bytes (e.g. `openssl rand -base64 48`). Required by `docker-compose.yml` and outside the `local`/`dev`/`test` profiles | none; under the dev profiles a random key per start |
+| `SEARCH_EXPORT_SERVICE_TOKEN` | search-service | Token sent to the export endpoints of #28 and #29; without it a rebuild fails with `export unauthorized` (outside the dev profiles) | empty = none sent |
+| `IDENTITY_JWT_PUBLIC_KEY_LOCATION` | search-service | The identity-service public key. Required outside the `local`/`dev`/`test` profiles | Compose: the development key bundled in the image (`classpath:keys/public.pem`) |
 | `JOURNEY_SERVICE_URL`, `RECOVERY_SERVICE_URL` | search-service | Where the export endpoints answer | `http://localhost:1113`, `http://localhost:1115` |
 
 Notes on keys:
@@ -161,7 +163,7 @@ docker compose up -d
 | Staff accounts | Only an ADMIN token can create them |
 | API docs | On by default. `DOCS_ENABLED=false` turns them off |
 | Kafka UI | Port 8090, cluster `local` |
-| Elasticsearch | Set `ELASTIC_PASSWORD` in `.env` first: it has no default, so both compose files refuse to start without it. Port 9200 is not published (loopback only in `docker-compose-local.yml`) |
+| Elasticsearch | Set `ELASTIC_PASSWORD` and `SEARCH_CURSOR_SECRET` in `.env` first: `docker-compose.yml` refuses to start without them (`docker-compose-local.yml` has a dev-only `ELASTIC_PASSWORD` default). Port 9200 is not published (loopback only in `docker-compose-local.yml`). Both files use the image tag `latest` at the user's request, but **Elastic publishes no `latest` tag**, so the pull currently fails with `manifest unknown`: put a concrete tag such as `9.5.3` in the two `image:` lines (see [SEARCH-API.md](docs/apis/SEARCH-API.md#the-elasticsearch-image-tag)) |
 
 ### Dev accounts
 
@@ -210,7 +212,7 @@ SELECT id, 'ADMIN' FROM identity.app_user WHERE username = 'your-username';
 | risk-streams-service (actuator only, no public API) | `http://localhost:1114` |
 | recovery-service (direct) | `http://localhost:1115` |
 | capacity-service (direct) | `http://localhost:1116` |
-| search-service (direct) | `http://localhost:1117` |
+| search-service (direct) | `http://localhost:1117` (loopback only) |
 
 In Compose, the one-shot `kafka-init` job creates the Kafka topics before journey-service, risk-streams-service and recovery-service start (idempotent, `--if-not-exists`):
 
