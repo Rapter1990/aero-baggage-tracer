@@ -3,11 +3,16 @@ package com.aerotrace.search.reindex;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.aerotrace.common.api.ApiResponse;
+import com.aerotrace.common.event.CaseChangedPayload;
+import com.aerotrace.common.event.EventJson;
+import com.aerotrace.common.event.LegSnapshot;
+import com.aerotrace.common.export.BagExport;
+import com.aerotrace.common.export.ExportApi;
+import com.aerotrace.common.export.ExportPage;
+import com.aerotrace.common.model.CaseTrigger;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.search.config.SearchProperties;
-import com.aerotrace.search.indexer.model.CaseChange;
-import com.aerotrace.search.reindex.SourceExportClient.BagExport;
-import com.aerotrace.search.reindex.SourceExportClient.ExportPage;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -24,12 +29,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 import org.springframework.mock.env.MockEnvironment;
-import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The HTTP client of the export endpoints against a stand-in server: it only sends {@code GET}s,
- * with the service token, pages by {@code after}, and reads the {@code ApiResponse} envelope. The
- * real endpoints are #28 and #29.
+ * with the service token, pages by {@code after}, and reads the {@code ApiResponse} envelope with
+ * the shared contract types of common-module. The real endpoints (#28, #29) are exercised end to
+ * end by {@code RebuildAgainstRealOwnersTest}.
  */
 class HttpSourceExportClientTest {
 
@@ -88,7 +93,7 @@ class HttpSourceExportClientTest {
             .bindOrCreate("aerotrace.search", SearchProperties.class);
     MockEnvironment environment = new MockEnvironment();
     environment.setActiveProfiles(profile);
-    return new HttpSourceExportClient(properties, JsonMapper.builder().build(), environment);
+    return new HttpSourceExportClient(properties, environment);
   }
 
   @Test
@@ -103,7 +108,7 @@ class HttpSourceExportClientTest {
         ],"nextAfter":"c1"},"timestamp":"2026-01-01T12:00:00Z"}
         """;
 
-    ExportPage<CaseChange> page = client("secret-token").cases("c0", 50);
+    ExportPage<CaseChangedPayload> page = client("secret-token").cases("c0", 50);
 
     assertThat(page.nextAfter()).isEqualTo("c1");
     assertThat(page.items())
@@ -142,7 +147,7 @@ class HttpSourceExportClientTest {
   }
 
   @Test
-  @DisplayName("an endpoint that is not there yet (404 until #28/#29) fails the call")
+  @DisplayName("an endpoint that is not there (404) fails the call")
   void missingEndpoint() {
     status = 404;
     casesBody = "{\"code\":\"NOT_FOUND\"}";
@@ -184,6 +189,75 @@ class HttpSourceExportClientTest {
 
     assertThat(calls.getFirst().uri())
         .isEqualTo("/internal/v1/export/cases?size=10&after=a%26size%3D100000%2Bb%2Fc%3Fd%23e");
+  }
+
+  @Test
+  @DisplayName(
+      "the client reads the owners' shared contract: a case and a bag exactly as the recovery- and"
+          + " journey-services write them")
+  void readsTheSharedContract() {
+    Instant opened = Instant.parse("2026-01-01T10:00:00Z");
+    CaseChangedPayload written =
+        new CaseChangedPayload(
+            "0b6f9c1e-3a52-4d0e-9a59-2b8f6b1d7c11",
+            "0123456789",
+            "LEG-2",
+            RecoveryState.RESOLVED,
+            6,
+            "delivered",
+            opened,
+            opened.plusSeconds(5400),
+            CaseTrigger.MANUAL,
+            "agent-7");
+    LegSnapshot leg =
+        new LegSnapshot(
+            "6f1c2a7e-0d4b-4a39-9b8e-3c2f1e0a9d11", "TK1981", "TK", "IST", "FRA", opened);
+    BagExport bag =
+        new BagExport(
+            "0123456789",
+            List.of(leg),
+            new BagExport.LatestScan("IST", "LOADED", leg.legId(), opened.minusSeconds(60), 3));
+    casesBody =
+        EventJson.mapper()
+            .writeValueAsString(
+                ApiResponse.success(new ExportPage<>(List.of(written), written.caseId())));
+    bagsBody =
+        EventJson.mapper()
+            .writeValueAsString(ApiResponse.success(new ExportPage<>(List.of(bag), null)));
+
+    assertThat(client("secret-token").cases(null, 10))
+        .isEqualTo(new ExportPage<>(List.of(written), written.caseId()));
+    assertThat(client("secret-token").bags(null, 10))
+        .isEqualTo(new ExportPage<>(List.of(bag), null));
+    assertThat(calls)
+        .extracting(Call::uri)
+        .containsExactly(ExportApi.CASES + "?size=10", ExportApi.BAGS + "?size=10");
+  }
+
+  @Test
+  @DisplayName(
+      "a newer owner does not break the rebuild: an unknown trigger reads as null, unknown fields"
+          + " are ignored")
+  void toleratesANewerOwner() {
+    casesBody =
+        """
+        {"success":true,"data":{"items":[
+          {"caseId":"c1","bagTag":"0000000001","legId":"L1","state":"OPEN","version":1,
+           "openedAt":"2026-01-01T10:00:00Z","trigger":"SATELLITE","newField":{"a":1}}
+        ],"nextAfter":null}}
+        """;
+
+    ExportPage<CaseChangedPayload> page = client("t").cases(null, 10);
+
+    assertThat(page.items())
+        .singleElement()
+        .satisfies(
+            c -> {
+              assertThat(c.trigger()).isNull();
+              assertThat(c.state()).isEqualTo(RecoveryState.OPEN);
+              assertThat(c.openedAt()).isEqualTo(Instant.parse("2026-01-01T10:00:00Z"));
+            });
+    assertThat(page.nextAfter()).isNull();
   }
 
   @Test

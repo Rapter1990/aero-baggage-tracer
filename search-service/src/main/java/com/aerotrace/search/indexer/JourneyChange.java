@@ -1,7 +1,7 @@
 package com.aerotrace.search.indexer;
 
+import com.aerotrace.common.event.LegSnapshot;
 import com.aerotrace.search.elastic.Elastic;
-import com.aerotrace.search.indexer.model.LegSnapshot;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;

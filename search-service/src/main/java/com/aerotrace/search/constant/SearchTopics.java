@@ -3,18 +3,8 @@ package com.aerotrace.search.constant;
 import com.aerotrace.common.event.Topics;
 import java.util.List;
 
-/**
- * The topics the indexer reads and the event types it accepts.
- *
- * <p>{@link #BAG_REGISTERED} is defined here and not in {@code common-module} {@link Topics}: the
- * journey-service does not publish it yet (#28 adds it, to {@code Topics.ALL}, together with its
- * payload). Until then the listener simply finds the topic empty. Replace this constant with the
- * shared one when #28 lands.
- */
+/** The topics the indexer reads and the event types it accepts (all names from {@link Topics}). */
 public final class SearchTopics {
-
-  /** Key: bagTag. Producer: journey-service (#28). The itinerary snapshot of a new bag. */
-  public static final String BAG_REGISTERED = "baggage.bag.registered.v1";
 
   public static final String EVENT_TYPE_CASE_CHANGED = "recovery.case.changed";
   public static final String EVENT_TYPE_SCAN_RECEIVED = "baggage.scan.received";
@@ -25,7 +15,8 @@ public final class SearchTopics {
 
   /** Every topic the indexer consumes (and whose consumer-group lag is measured). */
   public static final List<String> CONSUMED =
-      List.of(Topics.CASE_CHANGED, Topics.SCAN_RECEIVED, Topics.RISK_CHANGED, BAG_REGISTERED);
+      List.of(
+          Topics.CASE_CHANGED, Topics.SCAN_RECEIVED, Topics.RISK_CHANGED, Topics.BAG_REGISTERED);
 
   private SearchTopics() {}
 }

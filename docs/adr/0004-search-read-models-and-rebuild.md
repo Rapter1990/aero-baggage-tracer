@@ -1,6 +1,6 @@
 # ADR 0004: Search read models and rebuild
 
-Status: proposed (search-service, issue #13; follow-ups #28 and #29, and a bullet in #15)
+Status: proposed (search-service, issue #13; follow-ups #28 and #29, built, and a bullet in #15)
 
 ## Context
 
@@ -55,6 +55,18 @@ The build differs from the decisions above where review or the code showed a bet
 - **Compose image tag.** At the user's request both Compose files name `docker.elastic.co/elasticsearch/elasticsearch:latest`, instead of the pinned tag of decision 10. Elastic publishes no `latest` tag for this image, so the pull fails until a concrete tag (for example `9.5.3`) is set; the Java client and the Testcontainers image stay pinned to 9.2.8.
 - **Safety additions to decision 6:** lock renewals and releases are conditional on the holder; a job that loses its lock stops without swapping; the job taking over an expired lease fails the abandoned job and discards its unread indexes; exports must advance, have a page cap, a body-size cap and a job deadline.
 
+## What #28 and #29 changed
+
+The owners' side was built after the search-service, in the same branch; these points refine decisions 1 to 3 and the deviations above:
+
+- **One source of truth for the export and the events.** `common-module` holds the contract: `ExportApi` (paths, `after`/`size`, `size` 1 to 500, a larger or smaller one is `400`), `ExportPage {items, nextAfter}`, `CaseChangedPayload` (a case is exported in exactly the shape of its revision 2 event), `LegSnapshot`, `BagRegisteredPayload` and `BagExport`, and `Topics.BAG_REGISTERED` (in `Topics.ALL`). The search-service's own readers (`CaseChange`, `BagRegistered`, `LegSnapshot`, `SearchTopics.BAG_REGISTERED`) were removed; it reads the export with the tolerant event reader, so a newer owner's enum value reads as `null`.
+- **Keyset paging by the owner's own key**: the case id (primary key, PostgreSQL `uuid` order, which is the order of the lowercase text form) and the bag tag (unique, ten digits). `nextAfter` is `null` exactly on the last page (one row more than asked is read to know). Every record that exists for the whole run is returned once whatever is inserted meanwhile; one inserted meanwhile at most once. Both run in a read-only transaction.
+- **The service token** is shared code (`ServiceToken`, `ServiceTokenFilter`) and the same header as the capacity-service's. Each owner has a security chain of its own for `/internal/**` that accepts only the token, never a user token (an admin's neither): a missing or wrong one is `401`, the token on another method or internal path `403`. Fail closed: without a token of at least 16 characters every call is `401`, except in the `local` and `dev` profiles, which open the export for local runs (logged at start-up; `test` is not one of them). One setting name for both sides, `SEARCH_EXPORT_SERVICE_TOKEN`. The gateway has no route to `/internal/**` (a test checks every route) and strips `X-Service-Token` on every route to a service that accepts it, journey and recovery included. Compose does not pass the token to the owners yet (left to the Compose task).
+- **Revision 2 of `CaseChangedPayload`**: `trigger` is `RISK` (opened from a risk event), `MANUAL` (opened by staff) or `SCANNER_ANOMALY`; no case has `SCANNER_ANOMALY` today, because an anomaly only flags the cases a bag already has. `resolvedAt` is written once, with the move to `RESOLVED`, and is `null` for the other final states. Liquibase `011` adds both columns and backfills existing cases (opened by the system means `RISK`; `resolvedAt` from the history).
+- **`baggage.bag.registered.v1`** is queued in the registration's transaction (none for a refused or duplicate one, also under parallel requests). The airline rule is the first two characters of the validated flight number (`^[A-Z0-9]{2}[0-9]{1,4}[A-Z]?$`), decided by the journey-service (`JourneyRules.airlineOf`). Registration times are kept at microseconds, as PostgreSQL stores them, so the event, the row and the export say the same instant.
+- **Correlation**: the recovery consumers now restore the envelope `correlationId` (shared `CorrelationScope`, also used by the search indexer), so a case opened from a risk event carries the risk event's id. The gap noted under Consequences is closed.
+- **Open**: the recovery-service accepts leg ids of at most 32 characters, the journey-service's are 36-character UUIDs, so a risk event for a journey leg is refused there and cases cannot get their leg's airport and airline yet. It needs a decision and a migration of `leg_id` in the recovery-service.
+
 ## Consequences
 
 - #13 can pass AT-18 for more than the last 7 days and prove "no duplicates" with a Testcontainer; its text is rewritten accordingly.
@@ -62,7 +74,7 @@ The build differs from the decisions above where review or the code showed a bet
 - Journey and case events grow by a few fields; old events read the new fields as `null`, so consumers must tolerate that.
 - Hourly risk history older than the compacted topic's retention cannot be rebuilt.
 - A search outage never affects the services that own the data: the index is derived and can be dropped and rebuilt.
-- Recovery's consumers drop the correlation id (they never set it in the logging context); the search-service does not repeat that, and the gap is noted for #11 and #19.
+- Recovery's consumers dropped the correlation id (they never set it in the logging context); the search-service does not repeat that, and #29 closed the gap in the recovery-service.
 
 ## Alternatives considered
 

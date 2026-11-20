@@ -10,6 +10,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import com.aerotrace.common.event.CaseChangedPayload;
+import com.aerotrace.common.event.LegSnapshot;
+import com.aerotrace.common.export.BagExport;
+import com.aerotrace.common.model.CaseTrigger;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.common.security.JwtClaims;
 import com.aerotrace.common.security.Role;
@@ -18,11 +22,8 @@ import com.aerotrace.search.base.InMemorySource;
 import com.aerotrace.search.elastic.IndexAdmin;
 import com.aerotrace.search.elastic.IndexFamily;
 import com.aerotrace.search.elastic.SupportIndex;
-import com.aerotrace.search.indexer.model.CaseChange;
-import com.aerotrace.search.indexer.model.LegSnapshot;
 import com.aerotrace.search.reindex.ReindexJob.Scope;
 import com.aerotrace.search.reindex.ReindexJob.Status;
-import com.aerotrace.search.reindex.SourceExportClient.BagExport;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -74,7 +75,7 @@ class ReindexSafetyTest extends AbstractSearchTest {
       String caseId = "safety-" + run + "-" + String.format("%04d", i);
       source.cases.put(
           caseId,
-          new CaseChange(
+          new CaseChangedPayload(
               caseId,
               newBagTag(),
               newId("leg"),
@@ -83,7 +84,7 @@ class ReindexSafetyTest extends AbstractSearchTest {
               null,
               Instant.parse("2026-04-01T00:00:00Z"),
               null,
-              "RISK",
+              CaseTrigger.RISK,
               null));
     }
   }

@@ -8,7 +8,6 @@ import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.common.model.RiskLevel;
 import com.aerotrace.search.base.AbstractSearchTest;
 import com.aerotrace.search.base.Events;
-import com.aerotrace.search.constant.SearchTopics;
 import com.aerotrace.search.elastic.IndexFamily;
 import com.aerotrace.search.elastic.SupportIndex;
 import java.time.Instant;
@@ -140,7 +139,7 @@ class JourneyIndexerTest extends AbstractSearchTest {
     indexer.indexRegistrations(
         List.of(
             Events.record(
-                SearchTopics.BAG_REGISTERED,
+                Topics.BAG_REGISTERED,
                 bag,
                 Events.registered(
                     bag,

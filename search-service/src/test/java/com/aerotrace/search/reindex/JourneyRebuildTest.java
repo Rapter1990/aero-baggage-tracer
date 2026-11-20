@@ -7,21 +7,21 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import com.aerotrace.common.event.CaseChangedPayload;
+import com.aerotrace.common.event.LegSnapshot;
 import com.aerotrace.common.event.Topics;
+import com.aerotrace.common.export.BagExport;
+import com.aerotrace.common.export.BagExport.LatestScan;
+import com.aerotrace.common.model.CaseTrigger;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.common.model.RiskLevel;
 import com.aerotrace.common.security.Role;
 import com.aerotrace.search.base.AbstractSearchTest;
 import com.aerotrace.search.base.Events;
 import com.aerotrace.search.base.InMemorySource;
-import com.aerotrace.search.constant.SearchTopics;
 import com.aerotrace.search.elastic.IndexAdmin;
 import com.aerotrace.search.elastic.IndexFamily;
 import com.aerotrace.search.indexer.EventIndexer;
-import com.aerotrace.search.indexer.model.CaseChange;
-import com.aerotrace.search.indexer.model.LegSnapshot;
-import com.aerotrace.search.reindex.SourceExportClient.BagExport;
-import com.aerotrace.search.reindex.SourceExportClient.LatestScan;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -159,8 +159,17 @@ class JourneyRebuildTest extends AbstractSearchTest {
         String caseId = newId("case");
         source.cases.put(
             caseId,
-            new CaseChange(
-                caseId, bag, leg, RecoveryState.ASSESSING, 2, null, at, null, "RISK", null));
+            new CaseChangedPayload(
+                caseId,
+                bag,
+                leg,
+                RecoveryState.ASSESSING,
+                2,
+                null,
+                at,
+                null,
+                CaseTrigger.RISK,
+                null));
       }
     }
     String casesBefore = admin.readIndex(IndexFamily.CASES);
@@ -211,7 +220,7 @@ class JourneyRebuildTest extends AbstractSearchTest {
       indexer.indexRegistrations(
           List.of(
               Events.record(
-                  SearchTopics.BAG_REGISTERED,
+                  Topics.BAG_REGISTERED,
                   bag,
                   Events.registered(
                       bag, List.of(snapshot), departure.minus(Duration.ofHours(2))))));

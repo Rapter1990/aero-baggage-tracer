@@ -5,6 +5,10 @@ import co.elastic.clients.elasticsearch.core.MgetResponse;
 import co.elastic.clients.elasticsearch.core.mget.MultiGetResponseItem;
 import com.aerotrace.common.error.ApiException;
 import com.aerotrace.common.error.ErrorCode;
+import com.aerotrace.common.event.CaseChangedPayload;
+import com.aerotrace.common.event.LegSnapshot;
+import com.aerotrace.common.export.BagExport;
+import com.aerotrace.common.export.ExportPage;
 import com.aerotrace.search.config.SearchProperties;
 import com.aerotrace.search.constant.MetricNames;
 import com.aerotrace.search.elastic.Elastic;
@@ -15,13 +19,9 @@ import com.aerotrace.search.indexer.JourneyChange;
 import com.aerotrace.search.indexer.ReadModelWriter;
 import com.aerotrace.search.indexer.ReadModelWriter.CaseWrite;
 import com.aerotrace.search.indexer.ReadModelWriter.ItemResult;
-import com.aerotrace.search.indexer.model.CaseChange;
-import com.aerotrace.search.indexer.model.LegSnapshot;
 import com.aerotrace.search.reindex.ReindexJob.Scope;
 import com.aerotrace.search.reindex.ReindexJob.Status;
 import com.aerotrace.search.reindex.ReindexJobStore.KeyBinding;
-import com.aerotrace.search.reindex.SourceExportClient.BagExport;
-import com.aerotrace.search.reindex.SourceExportClient.ExportPage;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -505,20 +505,20 @@ public class ReindexService implements DisposableBean {
     int pages = 0;
     do {
       running.check();
-      ExportPage<CaseChange> page = source.cases(after, properties.reindex().pageSize());
+      ExportPage<CaseChangedPayload> page = source.cases(after, properties.reindex().pageSize());
       pages++;
-      List<CaseChange> items = page.items();
+      List<CaseChangedPayload> items = page.items();
       if (casesIndex != null && !items.isEmpty()) {
         List<CaseWrite> writes = items.stream().map(c -> new CaseWrite(c, null)).toList();
         List<ItemResult> written = writer.writeCases(writes, List.of(casesIndex));
         if (written.stream().anyMatch(ItemResult::rejected)) {
           throw new RebuildCheckFailed("cases: the index refused exported cases");
         }
-        verify(casesIndex, items, CaseChange::caseId, CaseChange::version, load);
+        verify(casesIndex, items, CaseChangedPayload::caseId, CaseChangedPayload::version, load);
       }
       if (journeysIndex != null && !items.isEmpty()) {
         List<JourneyChange> changes = new ArrayList<>();
-        for (CaseChange c : items) {
+        for (CaseChangedPayload c : items) {
           // The case's own latest time: a rebuilt journey's updatedAt is deterministic.
           changes.add(EventIndexer.caseOnJourney(c, latest(c.openedAt(), c.resolvedAt())));
         }
@@ -561,7 +561,7 @@ public class ReindexService implements DisposableBean {
         }
         changes.add(JourneyChange.itinerary(bag.bagTag(), itinerary, departure));
         if (bag.latestScan() != null) {
-          SourceExportClient.LatestScan scan = bag.latestScan();
+          BagExport.LatestScan scan = bag.latestScan();
           changes.add(
               JourneyChange.scan(
                   bag.bagTag(),

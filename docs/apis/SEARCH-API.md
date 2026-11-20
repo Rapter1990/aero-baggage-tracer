@@ -179,7 +179,7 @@ Failure reasons a job can show (`error`, a fixed text):
 | `...: the export did not advance`, `...: the export has more pages than the maximum` | a source whose paging does not end (`SEARCH_REINDEX_MAX_PAGES`, 100000) |
 | `the rebuild took longer than its maximum duration` | `SEARCH_REINDEX_MAX_DURATION` (2h) |
 | `export unauthorized` | the owner answered 401/403, or no `SEARCH_EXPORT_SERVICE_TOKEN` is set (outside the dev profiles the job fails before calling) |
-| `export endpoint not found`, `export page larger than the maximum` | 404 (until #28/#29), an answer over `SEARCH_EXPORT_MAX_PAGE_BYTES` (16 MiB) |
+| `export endpoint not found`, `export page larger than the maximum` | 404 (an owner without the export), an answer over `SEARCH_EXPORT_MAX_PAGE_BYTES` (16 MiB) |
 | `rebuild lock lost: another job took it over`, `rebuild lock not renewed: ...` | the job could not keep its lock and stopped |
 | `abandoned: its instance stopped renewing the rebuild lock` | set by the next job on a job whose instance died |
 | `failed: <exception class>` | anything else |
@@ -218,13 +218,13 @@ sequenceDiagram
 | Rebuilt `updatedAt` | the latest of the bag's leg departures, latest scan, case `openedAt`/`resolvedAt` and replayed risk events (the export has no event times); so it is never missing for a bag with legs, and two rebuilds give the same order |
 | Not rebuilt | the support indexes `search-legs` (leg lookup) and `search-risk-hours` are only written to, never cleared: legs are reloaded from the bag export, risk hours from the risk topic replay; documents of legs or risk events that no longer exist at the source stay (the report would count risk hours whose events were since removed from the topic) |
 
-The export answer the search-service expects from #28 and #29 (`ApiResponse` envelope):
+The export answer of the recovery-service (#29, `GET /internal/v1/export/cases`) and the journey-service (#28, `GET /internal/v1/export/bags`), see [RECOVERY-API](RECOVERY-API.md#internal-export) and [JOURNEY-API](JOURNEY-API.md#internal-export) (`ApiResponse` envelope):
 
 ```json
 {"success": true, "data": {"items": [ ... ], "nextAfter": "<last key or null>"}, "timestamp": "..."}
 ```
 
-Cases carry `caseId, bagTag, legId, state, version, reason, openedAt, resolvedAt, trigger`; bags carry `bagTag`, `legs[] {legId, flightNumber, airline, origin, destination, departureAt}` and `latestScan {airport, checkpoint, legId, occurredAt, deviceSequence}`. Unknown fields are ignored.
+One source of truth: both sides use the common-module types, `ExportApi` (paths, `size` 1 to 500), `ExportPage`, `CaseChangedPayload` (a case is exported exactly as its revision 2 event carries it: `caseId, bagTag, legId, state, version, reason, openedAt, resolvedAt, trigger, assignedTo`) and `BagExport` (`bagTag`, `legs[] {legId, flightNumber, airline, origin, destination, departureAt}`, `latestScan {airport, checkpoint, legId, occurredAt, deviceSequence}` or `null`). The answer is read with the tolerant event reader: unknown fields are ignored, an enum value a newer owner adds (a new `trigger`) reads as `null`. `reason` and `assignedTo` are read but never indexed.
 
 ## Indexer
 
@@ -243,7 +243,8 @@ Cases carry `caseId, bagTag, legId, state, version, reason, openedAt, resolvedAt
 | Poison events | to `baggage.dead-letter.v1`, like the recovery-service's consumers, once the batch's write succeeded (a batch retried during an outage publishes no duplicates) |
 | Refused by Elasticsearch | an item refused for good (mapping, keyword length) dead-letters its event; never retried forever |
 | Correlation | the envelope's `correlationId` is put into the logging context; none is generated |
-| Revision 2 of case events (#29) | `openedAt`, `resolvedAt`, `trigger` are read when present, `null` otherwise |
+| Revision 2 of case events (#29) | the recovery-service writes revision 2: `openedAt`, `resolvedAt` and `trigger` are indexed and feed the report (resolved recoveries, mean resolution time, retries). A revision 1 event (written before #29) still indexes, with them `null` |
+| Registration events (#28) | `baggage.bag.registered.v1` (`Topics.BAG_REGISTERED`, payload `BagRegisteredPayload`), published by the journey-service once per bag with every leg and its airline |
 
 ## Errors
 
@@ -315,9 +316,9 @@ Variables: `searchAdminUsername`, `searchDispatcherUsername`, `searchAgentUserna
 
 | Area | Limitation |
 |---|---|
-| Rebuild source | The export endpoints are #28 (journey) and #29 (recovery) and do not exist yet: a rebuild against the real stack ends `FAILED` (404) and changes nothing. AT-18 is proven against an in-memory stand-in only |
-| Itinerary data | `airline`, `origin`, `destination` (and so the `airport` of cases and the report) need `baggage.bag.registered.v1` (#28); until then only the scan airport and flight are known |
-| Case times | `openedAt`, `resolvedAt` and `trigger` come with case events revision 2 (#29); revision 1 cases have no resolution time and are not in the report's resolved counts |
+| Rebuild source | The export endpoints of the journey-service (#28) and the recovery-service (#29), with the shared secret `SEARCH_EXPORT_SERVICE_TOKEN` on both sides (the owners refuse every call without one outside the `local` and `dev` profiles). The Compose files do not pass that secret to the journey- and recovery-service yet (left to the Compose task): until they do, a rebuild in Compose ends `FAILED` (`export unauthorized`) and changes nothing |
+| Itinerary data | `airline`, `origin`, `destination` (and so the `airport` of cases and the report) come from `baggage.bag.registered.v1` and the bag export (#28). A case gets them only when its `legId` is a journey leg id; the recovery-service accepts leg ids of at most 32 characters, the journey-service's are 36-character UUIDs, so today cases opened from journey legs are refused there (open, see [RECOVERY-API](RECOVERY-API.md#known-limitations)) |
+| Case times | `openedAt`, `resolvedAt` and `trigger` come from case events revision 2 and the case export (#29). A case indexed from a revision 1 event has none until its next event or a rebuild, and is not in the report's resolved counts or mean until then. `resolvedAt` exists only for `RESOLVED` cases |
 | Risk history | replayed from `baggage.risk.changed.v1`; history older than its retention cannot be rebuilt (it becomes compacted with #15) |
 | Watermark | `indexedThrough` and `lagSeconds` use the newest event this instance indexed; with several instances each reports its own partitions |
 | Cursor secret | required outside the dev profiles; under `local`, `dev` or `test` without it each instance signs with a random key, so a cursor only works on the instance that issued it |

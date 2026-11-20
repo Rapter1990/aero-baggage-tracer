@@ -1,6 +1,8 @@
 package com.aerotrace.search.base;
 
-import com.aerotrace.search.indexer.model.CaseChange;
+import com.aerotrace.common.event.CaseChangedPayload;
+import com.aerotrace.common.export.BagExport;
+import com.aerotrace.common.export.ExportPage;
 import com.aerotrace.search.reindex.SourceExportClient;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,12 +19,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 
 /**
- * A stand-in for the export endpoints of #28 and #29, which do not exist yet: the owners' state in
- * memory, keyset-paged exactly as {@link SourceExportClient} specifies. It records every call, so a
- * test can show the rebuild only read, and it can block, fail or misbehave on a page.
+ * A stand-in for the export endpoints of #28 and #29: the owners' state in memory, keyset-paged
+ * exactly as {@link SourceExportClient} specifies, with the shared contract types. It records every
+ * call, so a test can show the rebuild only read, and it can block, fail or misbehave on a page,
+ * which the real owners cannot be made to do.
  *
  * <p>What it cannot show: that the real journey- and recovery-services page and answer like this.
- * That is proven by #28 and #29 and, end to end, once they are merged.
+ * Their own tests prove their side; the rebuild against them is proven end to end separately.
  */
 public final class InMemorySource implements SourceExportClient {
 
@@ -36,7 +39,7 @@ public final class InMemorySource implements SourceExportClient {
     }
   }
 
-  public final NavigableMap<String, CaseChange> cases = new ConcurrentSkipListMap<>();
+  public final NavigableMap<String, CaseChangedPayload> cases = new ConcurrentSkipListMap<>();
   public final NavigableMap<String, BagExport> bags = new ConcurrentSkipListMap<>();
   public final List<String> calls = new CopyOnWriteArrayList<>();
 
@@ -70,7 +73,7 @@ public final class InMemorySource implements SourceExportClient {
   }
 
   @Override
-  public synchronized ExportPage<CaseChange> cases(String after, int size) {
+  public synchronized ExportPage<CaseChangedPayload> cases(String after, int size) {
     calls.add("GET cases after=" + after + " size=" + size);
     casePage = after == null ? 1 : casePage + 1;
     CountDownLatch wait = gate;
@@ -85,12 +88,13 @@ public final class InMemorySource implements SourceExportClient {
     if (casePage == failOnCasePage) {
       throw new IllegalStateException("source unreachable");
     }
-    List<CaseChange> page = new ArrayList<>();
+    List<CaseChangedPayload> page = new ArrayList<>();
     if (repeatAcrossPages && after != null) {
       page.add(cases.get(after));
     }
-    NavigableMap<String, CaseChange> rest = after == null ? cases : cases.tailMap(after, false);
-    for (CaseChange c : rest.values()) {
+    NavigableMap<String, CaseChangedPayload> rest =
+        after == null ? cases : cases.tailMap(after, false);
+    for (CaseChangedPayload c : rest.values()) {
       if (page.size() >= size) {
         break;
       }
@@ -116,7 +120,7 @@ public final class InMemorySource implements SourceExportClient {
   /** An order-independent checksum of the source's rows: equal before and after a rebuild. */
   public long checksum() {
     long sum = 0;
-    for (Map.Entry<String, CaseChange> e : cases.entrySet()) {
+    for (Map.Entry<String, CaseChangedPayload> e : cases.entrySet()) {
       sum += Objects.hash(e.getKey(), e.getValue());
     }
     for (Map.Entry<String, BagExport> e : bags.entrySet()) {

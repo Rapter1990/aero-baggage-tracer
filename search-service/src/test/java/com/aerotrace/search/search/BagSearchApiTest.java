@@ -12,16 +12,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.OpenPointInTimeRequest;
+import com.aerotrace.common.event.LegSnapshot;
 import com.aerotrace.common.event.Topics;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.common.model.RiskLevel;
 import com.aerotrace.common.security.Role;
 import com.aerotrace.search.base.AbstractSearchTest;
 import com.aerotrace.search.base.Events;
-import com.aerotrace.search.constant.SearchTopics;
 import com.aerotrace.search.elastic.IndexFamily;
 import com.aerotrace.search.indexer.EventIndexer;
-import com.aerotrace.search.indexer.model.LegSnapshot;
 import com.aerotrace.search.search.CursorCodec.Cursor;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -93,7 +92,7 @@ class BagSearchApiTest extends AbstractSearchTest {
       indexer.indexRegistrations(
           List.of(
               Events.record(
-                  SearchTopics.BAG_REGISTERED,
+                  Topics.BAG_REGISTERED,
                   bag,
                   Events.registered(
                       bag,

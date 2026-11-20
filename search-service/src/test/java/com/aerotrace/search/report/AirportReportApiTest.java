@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import com.aerotrace.common.error.ApiException;
 import com.aerotrace.common.error.ErrorCode;
+import com.aerotrace.common.event.LegSnapshot;
 import com.aerotrace.common.event.Topics;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.common.model.RiskLevel;
@@ -16,11 +17,9 @@ import com.aerotrace.common.security.Role;
 import com.aerotrace.search.base.AbstractSearchTest;
 import com.aerotrace.search.base.Events;
 import com.aerotrace.search.config.SearchProperties;
-import com.aerotrace.search.constant.SearchTopics;
 import com.aerotrace.search.elastic.IndexFamily;
 import com.aerotrace.search.elastic.SupportIndex;
 import com.aerotrace.search.indexer.EventIndexer;
-import com.aerotrace.search.indexer.model.LegSnapshot;
 import com.aerotrace.search.status.LagMonitor;
 import java.time.Clock;
 import java.time.Instant;
@@ -64,7 +63,7 @@ class AirportReportApiTest extends AbstractSearchTest {
     indexer.indexRegistrations(
         List.of(
             Events.record(
-                SearchTopics.BAG_REGISTERED,
+                Topics.BAG_REGISTERED,
                 bag,
                 Events.registered(
                     bag, List.of(new LegSnapshot(leg, "TK1", "TK", origin, "IST", H0)), H0))));
@@ -161,7 +160,7 @@ class AirportReportApiTest extends AbstractSearchTest {
     indexer.indexRegistrations(
         List.of(
             Events.record(
-                SearchTopics.BAG_REGISTERED,
+                Topics.BAG_REGISTERED,
                 late,
                 Events.registered(
                     late,

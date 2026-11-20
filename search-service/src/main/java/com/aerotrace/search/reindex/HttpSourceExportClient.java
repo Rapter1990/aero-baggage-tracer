@@ -1,9 +1,13 @@
 package com.aerotrace.search.reindex;
 
+import com.aerotrace.common.event.CaseChangedPayload;
+import com.aerotrace.common.event.EventJson;
+import com.aerotrace.common.export.BagExport;
+import com.aerotrace.common.export.ExportApi;
+import com.aerotrace.common.export.ExportPage;
+import com.aerotrace.common.security.ServiceToken;
 import com.aerotrace.search.config.Profiles;
 import com.aerotrace.search.config.SearchProperties;
-import com.aerotrace.search.constant.ApiPaths;
-import com.aerotrace.search.indexer.model.CaseChange;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.http.HttpClient;
@@ -22,7 +26,6 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.JavaType;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Reads the internal export endpoints of the owning services with plain {@code GET}s and the
@@ -33,11 +36,12 @@ import tools.jackson.databind.json.JsonMapper;
  *   <li>{@code GET {journey}/internal/v1/export/bags?after=&size=} (#28)
  * </ul>
  *
- * Expected answer: the shared {@code ApiResponse} envelope with {@code data = {items, nextAfter}}
- * ({@code nextAfter} null on the last page). Should an endpoint leave {@code nextAfter} out, a full
- * page continues after its last key and a short page is the last. Unknown fields are ignored. Until
- * #28 and #29 are merged these endpoints answer 404 and a rebuild fails without changing the
- * indexes.
+ * The answer is the shared {@code ApiResponse} envelope with {@code data} an {@link ExportPage}
+ * ({@code nextAfter} null on the last page) of the shared items ({@link CaseChangedPayload}, {@link
+ * BagExport}), read with the tolerant event reader ({@link EventJson}): unknown fields are ignored
+ * and an enum value added by a newer owner (a new {@code trigger}) reads as null. Should an
+ * endpoint leave {@code nextAfter} out, a full page continues after its last key and a short page
+ * is the last.
  *
  * <p>The {@code after} key is sent as a URI variable, so every reserved character in it is encoded
  * and it can never add or change a query parameter. An answer larger than {@code max-page-bytes} is
@@ -47,22 +51,16 @@ import tools.jackson.databind.json.JsonMapper;
 @Component
 public class HttpSourceExportClient implements SourceExportClient {
 
-  public static final String CASES_PATH = "/internal/v1/export/cases";
-  public static final String BAGS_PATH = "/internal/v1/export/bags";
-
   static final String UNAUTHORIZED = "export unauthorized";
   static final String NO_TOKEN = UNAUTHORIZED + ": no SEARCH_EXPORT_SERVICE_TOKEN configured";
 
   private final RestClient recovery;
   private final RestClient journey;
-  private final JsonMapper json;
   private final int maxPageBytes;
   private final boolean tokenMissing;
 
-  public HttpSourceExportClient(
-      SearchProperties properties, JsonMapper json, Environment environment) {
+  public HttpSourceExportClient(SearchProperties properties, Environment environment) {
     SearchProperties.Export export = properties.export();
-    this.json = json;
     this.maxPageBytes = export.maxPageBytes();
     boolean noToken = export.serviceToken() == null || export.serviceToken().isBlank();
     this.tokenMissing = noToken && !Profiles.development(environment);
@@ -80,19 +78,25 @@ public class HttpSourceExportClient implements SourceExportClient {
     requests.setReadTimeout(export.readTimeout());
     RestClient.Builder builder = RestClient.builder().baseUrl(baseUrl).requestFactory(requests);
     if (export.serviceToken() != null && !export.serviceToken().isBlank()) {
-      builder.defaultHeader(ApiPaths.SERVICE_TOKEN, export.serviceToken());
+      builder.defaultHeader(ServiceToken.HEADER, export.serviceToken());
     }
     return builder.build();
   }
 
   @Override
-  public ExportPage<CaseChange> cases(String after, int size) {
-    return page(recovery, CASES_PATH, after, size, CaseChange.class, CaseChange::caseId);
+  public ExportPage<CaseChangedPayload> cases(String after, int size) {
+    return page(
+        recovery,
+        ExportApi.CASES,
+        after,
+        size,
+        CaseChangedPayload.class,
+        CaseChangedPayload::caseId);
   }
 
   @Override
   public ExportPage<BagExport> bags(String after, int size) {
-    return page(journey, BAGS_PATH, after, size, BagExport.class, BagExport::bagTag);
+    return page(journey, ExportApi.BAGS, after, size, BagExport.class, BagExport::bagTag);
   }
 
   private <T> ExportPage<T> page(
@@ -125,10 +129,13 @@ public class HttpSourceExportClient implements SourceExportClient {
     } catch (RestClientResponseException e) {
       throw failure(e.getStatusCode().value(), e);
     }
-    JsonNode data = json.readTree(body == null ? "{}" : body).path("data");
-    JavaType listType = json.getTypeFactory().constructCollectionType(List.class, type);
+    JsonNode data = EventJson.mapper().readTree(body == null ? "{}" : body).path("data");
+    JavaType listType =
+        EventJson.mapper().getTypeFactory().constructCollectionType(List.class, type);
     List<T> items =
-        data.path("items").isArray() ? json.treeToValue(data.path("items"), listType) : List.of();
+        data.path("items").isArray()
+            ? EventJson.mapper().treeToValue(data.path("items"), listType)
+            : List.of();
     String next;
     if (data.has("nextAfter")) {
       next = data.get("nextAfter").isNull() ? null : data.get("nextAfter").asString();

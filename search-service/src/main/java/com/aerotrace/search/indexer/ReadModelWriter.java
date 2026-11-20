@@ -13,6 +13,8 @@ import co.elastic.clients.elasticsearch.core.bulk.BulkOperation;
 import co.elastic.clients.elasticsearch.core.mget.MultiGetResponseItem;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.json.JsonData;
+import com.aerotrace.common.event.CaseChangedPayload;
+import com.aerotrace.common.event.LegSnapshot;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.search.elastic.Elastic;
 import com.aerotrace.search.elastic.IndexAdmin;
@@ -20,8 +22,6 @@ import com.aerotrace.search.elastic.IndexFamily;
 import com.aerotrace.search.elastic.SupportIndex;
 import com.aerotrace.search.indexer.BulkExecutor.Ack;
 import com.aerotrace.search.indexer.BulkExecutor.Op;
-import com.aerotrace.search.indexer.model.CaseChange;
-import com.aerotrace.search.indexer.model.LegSnapshot;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -91,7 +91,7 @@ public class ReadModelWriter {
   }
 
   /** A case and the time of the change (the event time, or null for an export snapshot). */
-  public record CaseWrite(CaseChange change, Instant changedAt) {}
+  public record CaseWrite(CaseChangedPayload change, Instant changedAt) {}
 
   /** A HIGH risk of a leg at a moment. */
   public record RiskHour(String bagTag, String legId, Instant occurredAt) {}
@@ -181,7 +181,7 @@ public class ReadModelWriter {
   }
 
   private static BulkOperation indexCase(
-      String target, CaseChange change, Map<String, Object> doc, VersionType type) {
+      String target, CaseChangedPayload change, Map<String, Object> doc, VersionType type) {
     return BulkOperation.of(
         b ->
             b.index(
@@ -193,14 +193,15 @@ public class ReadModelWriter {
                         .document(doc)));
   }
 
-  static Map<String, Object> caseDocument(CaseChange c, Instant changedAt, LegSnapshot leg) {
+  static Map<String, Object> caseDocument(
+      CaseChangedPayload c, Instant changedAt, LegSnapshot leg) {
     Map<String, Object> doc = new LinkedHashMap<>();
     doc.put("docId", c.caseId());
     doc.put("caseId", c.caseId());
     doc.put("bagTag", c.bagTag());
     doc.put("legId", c.legId());
     doc.put("state", c.state().name());
-    doc.put("trigger", c.trigger());
+    doc.put("trigger", c.trigger() == null ? null : c.trigger().name());
     doc.put("version", c.version());
     doc.put("openedAt", Elastic.millis(c.openedAt()));
     doc.put("resolvedAt", Elastic.millis(c.resolvedAt()));

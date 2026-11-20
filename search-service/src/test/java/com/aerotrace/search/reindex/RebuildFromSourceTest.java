@@ -11,6 +11,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import com.aerotrace.common.event.CaseChangedPayload;
+import com.aerotrace.common.model.CaseTrigger;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.common.security.Role;
 import com.aerotrace.search.base.AbstractSearchTest;
@@ -19,7 +21,6 @@ import com.aerotrace.search.base.InMemorySource;
 import com.aerotrace.search.elastic.IndexAdmin;
 import com.aerotrace.search.elastic.IndexFamily;
 import com.aerotrace.search.indexer.EventIndexer;
-import com.aerotrace.search.indexer.model.CaseChange;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -46,10 +47,11 @@ import tools.jackson.databind.json.JsonMapper;
  * model, against a real Elasticsearch.
  *
  * <p>The source is {@link InMemorySource}, a stand-in for the recovery-service's export endpoint
- * (#29), which does not exist yet. So this proves the search-service's side: paging through more
- * than one export page, external versions, the dual-alias swap, a racing stale event, a second run,
- * and that the rebuild only read the source. It does not prove that the real recovery-service
- * exports every case: the end-to-end proof waits for #28 and #29.
+ * (#29) that a test can steer (a race at a chosen page, a failing or misbehaving page). So this
+ * proves the search-service's side: paging through more than one export page, external versions,
+ * the dual-alias swap, a racing stale event, a second run, and that the rebuild only read the
+ * source. That the real recovery-service exports every case is proven by its own tests and, end to
+ * end, by a rebuild against the real owners.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -73,7 +75,7 @@ class RebuildFromSourceTest extends AbstractSearchTest {
     source.reset();
   }
 
-  private Map<String, CaseChange> seed(int count) {
+  private Map<String, CaseChangedPayload> seed(int count) {
     String run = UUID.randomUUID().toString().substring(0, 6);
     RecoveryState[] states = RecoveryState.values();
     for (int i = 0; i < count; i++) {
@@ -82,7 +84,7 @@ class RebuildFromSourceTest extends AbstractSearchTest {
       RecoveryState state = states[random.nextInt(states.length)];
       source.cases.put(
           caseId,
-          new CaseChange(
+          new CaseChangedPayload(
               caseId,
               newBagTag(),
               newId("leg"),
@@ -91,7 +93,7 @@ class RebuildFromSourceTest extends AbstractSearchTest {
               "seeded",
               opened,
               state == RecoveryState.RESOLVED ? opened.plusSeconds(1800) : null,
-              "RISK",
+              CaseTrigger.RISK,
               "agent-1"));
     }
     return new HashMap<>(source.cases);
@@ -142,8 +144,8 @@ class RebuildFromSourceTest extends AbstractSearchTest {
   }
 
   @SuppressWarnings("rawtypes")
-  private void assertIndexEqualsSource(Map<String, CaseChange> expected, Map<String, Long> newer)
-      throws Exception {
+  private void assertIndexEqualsSource(
+      Map<String, CaseChangedPayload> expected, Map<String, Long> newer) throws Exception {
     List<Hit<Map>> hits = everything();
     List<String> ids = hits.stream().map(Hit::id).toList();
     // _count == N, the ids are the source's ids, and no id appears twice.
@@ -180,13 +182,13 @@ class RebuildFromSourceTest extends AbstractSearchTest {
         List.of(
             Events.caseRecord(
                 Events.caseV1(orphan, newBagTag(), newId("leg"), RecoveryState.OPEN, 1))));
-    Map<String, CaseChange> expected = seed(N);
+    Map<String, CaseChangedPayload> expected = seed(N);
     String before = admin.readIndex(IndexFamily.CASES);
 
     // Both targets are on the first export page, which is already loaded when they race.
     List<String> ids = new ArrayList<>(new java.util.TreeSet<>(expected.keySet()));
-    CaseChange staleTarget = expected.get(ids.get(10));
-    CaseChange newerTarget = expected.get(ids.get(50));
+    CaseChangedPayload staleTarget = expected.get(ids.get(10));
+    CaseChangedPayload newerTarget = expected.get(ids.get(50));
     List<Integer> searchStatuses = new ArrayList<>();
     List<String> readDuringBuild = new ArrayList<>();
     source.beforeCasePage =
@@ -197,7 +199,7 @@ class RebuildFromSourceTest extends AbstractSearchTest {
           try {
             // The owner moves one exported case on by itself (its own write, not the rebuild's)
             // and publishes it; and a stale event (one version older) of another one arrives late.
-            CaseChange moved = withVersion(newerTarget, newerTarget.version() + 1);
+            CaseChangedPayload moved = withVersion(newerTarget, newerTarget.version() + 1);
             source.cases.put(moved.caseId(), moved);
             indexer.indexCases(
                 List.of(
@@ -240,7 +242,7 @@ class RebuildFromSourceTest extends AbstractSearchTest {
     assertThat(results.get("missing").asLong()).isZero();
     // The live event of the moved case is newer than its exported page: the newest version wins;
     // the stale event lost (its case is at the exported version).
-    Map<String, CaseChange> current = new HashMap<>(source.cases);
+    Map<String, CaseChangedPayload> current = new HashMap<>(source.cases);
     assertIndexEqualsSource(current, Map.of());
     assertThat(client.exists(e -> e.index(IndexFamily.CASES.readAlias()).id(orphan)).value())
         .isFalse();
@@ -269,8 +271,8 @@ class RebuildFromSourceTest extends AbstractSearchTest {
     assertThat(source.cases).isEqualTo(current);
   }
 
-  private static CaseChange withVersion(CaseChange c, long version) {
-    return new CaseChange(
+  private static CaseChangedPayload withVersion(CaseChangedPayload c, long version) {
+    return new CaseChangedPayload(
         c.caseId(),
         c.bagTag(),
         c.legId(),

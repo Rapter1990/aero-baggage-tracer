@@ -1,16 +1,17 @@
 package com.aerotrace.search.base;
 
+import com.aerotrace.common.event.BagRegisteredPayload;
+import com.aerotrace.common.event.CaseChangedPayload;
 import com.aerotrace.common.event.EventEnvelope;
 import com.aerotrace.common.event.EventJson;
+import com.aerotrace.common.event.LegSnapshot;
 import com.aerotrace.common.event.RiskChangedPayload;
 import com.aerotrace.common.event.ScanReceivedPayload;
 import com.aerotrace.common.event.Topics;
+import com.aerotrace.common.model.CaseTrigger;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.common.model.RiskLevel;
 import com.aerotrace.search.constant.SearchTopics;
-import com.aerotrace.search.indexer.model.BagRegistered;
-import com.aerotrace.search.indexer.model.CaseChange;
-import com.aerotrace.search.indexer.model.LegSnapshot;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -62,7 +63,7 @@ public final class Events {
   }
 
   /** A revision 2 case event (#29): with openedAt, resolvedAt and trigger. */
-  public static String caseV2(CaseChange change, Instant occurredAt, String correlationId) {
+  public static String caseV2(CaseChangedPayload change, Instant occurredAt, String correlationId) {
     return envelope(
         SearchTopics.EVENT_TYPE_CASE_CHANGED,
         2,
@@ -72,7 +73,7 @@ public final class Events {
         change);
   }
 
-  public static CaseChange change(
+  public static CaseChangedPayload change(
       String caseId,
       String bagTag,
       String legId,
@@ -80,8 +81,17 @@ public final class Events {
       long version,
       Instant openedAt,
       Instant resolvedAt) {
-    return new CaseChange(
-        caseId, bagTag, legId, state, version, "risk HIGH", openedAt, resolvedAt, "RISK", null);
+    return new CaseChangedPayload(
+        caseId,
+        bagTag,
+        legId,
+        state,
+        version,
+        "risk HIGH",
+        openedAt,
+        resolvedAt,
+        CaseTrigger.RISK,
+        null);
   }
 
   public static ConsumerRecord<String, String> caseRecord(String json) {
@@ -129,7 +139,7 @@ public final class Events {
         bagTag,
         occurredAt,
         "corr-reg",
-        new BagRegistered(bagTag, legs));
+        new BagRegisteredPayload(bagTag, legs));
   }
 
   public static LegSnapshot leg(String legId, String flight, String origin, String destination) {

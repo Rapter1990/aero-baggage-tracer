@@ -1,6 +1,10 @@
 package com.aerotrace.search.indexer;
 
+import com.aerotrace.common.correlation.CorrelationScope;
+import com.aerotrace.common.event.BagRegisteredPayload;
+import com.aerotrace.common.event.CaseChangedPayload;
 import com.aerotrace.common.event.EventEnvelope;
+import com.aerotrace.common.event.LegSnapshot;
 import com.aerotrace.common.event.RiskChangedPayload;
 import com.aerotrace.common.event.ScanReceivedPayload;
 import com.aerotrace.common.model.RiskLevel;
@@ -11,9 +15,6 @@ import com.aerotrace.search.elastic.IndexFamily;
 import com.aerotrace.search.indexer.ReadModelWriter.CaseWrite;
 import com.aerotrace.search.indexer.ReadModelWriter.ItemResult;
 import com.aerotrace.search.indexer.ReadModelWriter.RiskHour;
-import com.aerotrace.search.indexer.model.BagRegistered;
-import com.aerotrace.search.indexer.model.CaseChange;
-import com.aerotrace.search.indexer.model.LegSnapshot;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -126,13 +127,13 @@ public class EventIndexer {
   // ------------------------------------------------------------------ cases
 
   public void indexCases(List<ConsumerRecord<String, String>> records) throws IOException {
-    Batch<CaseChange> batch =
+    Batch<CaseChangedPayload> batch =
         read(
             records,
             SearchTopics.EVENT_TYPE_CASE_CHANGED,
-            CaseChange.class,
+            CaseChangedPayload.class,
             EventIndexer::validCase);
-    List<Read<CaseChange>> events = batch.events();
+    List<Read<CaseChangedPayload>> events = batch.events();
     if (events.isEmpty()) {
       settle(batch, List.of());
       return;
@@ -143,7 +144,7 @@ public class EventIndexer {
             .toList();
     List<ItemResult> results = writer.writeCases(writes, admin.liveIndexes(IndexFamily.CASES));
     List<JourneyChange> journeys = new ArrayList<>();
-    for (Read<CaseChange> read : events) {
+    for (Read<CaseChangedPayload> read : events) {
       journeys.add(caseOnJourney(read.event().payload(), read.event().occurredAt()));
     }
     // A case event writes two documents; a refusal of either dead-letters the event.
@@ -153,7 +154,7 @@ public class EventIndexer {
             results, writer.applyJourneys(journeys, admin.liveIndexes(IndexFamily.JOURNEYS))));
   }
 
-  public static JourneyChange caseOnJourney(CaseChange c, Instant eventAt) {
+  public static JourneyChange caseOnJourney(CaseChangedPayload c, Instant eventAt) {
     Instant caseAt = c.openedAt() != null ? c.openedAt() : eventAt;
     return JourneyChange.caseState(
         c.bagTag(),
@@ -165,8 +166,9 @@ public class EventIndexer {
         eventAt);
   }
 
-  private static EventEnvelope<CaseChange> validCase(EventEnvelope<CaseChange> event) {
-    CaseChange c = event.payload();
+  private static EventEnvelope<CaseChangedPayload> validCase(
+      EventEnvelope<CaseChangedPayload> event) {
+    CaseChangedPayload c = event.payload();
     EventReader.required(c.caseId(), "caseId");
     EventReader.required(c.bagTag(), "bagTag");
     EventReader.required(c.legId(), "legId");
@@ -286,13 +288,13 @@ public class EventIndexer {
   // ------------------------------------------------------------------ bag registration
 
   public void indexRegistrations(List<ConsumerRecord<String, String>> records) throws IOException {
-    Batch<BagRegistered> batch =
+    Batch<BagRegisteredPayload> batch =
         read(
             records,
             SearchTopics.EVENT_TYPE_BAG_REGISTERED,
-            BagRegistered.class,
+            BagRegisteredPayload.class,
             EventIndexer::validRegistration);
-    List<Read<BagRegistered>> events = batch.events();
+    List<Read<BagRegisteredPayload>> events = batch.events();
     if (events.isEmpty()) {
       settle(batch, List.of());
       return;
@@ -300,8 +302,8 @@ public class EventIndexer {
     Map<String, LegSnapshot> legs = new LinkedHashMap<>();
     Map<String, String> bagOfLeg = new LinkedHashMap<>();
     List<JourneyChange> changes = new ArrayList<>();
-    for (Read<BagRegistered> read : events) {
-      BagRegistered bag = read.event().payload();
+    for (Read<BagRegisteredPayload> read : events) {
+      BagRegisteredPayload bag = read.event().payload();
       for (LegSnapshot leg : bag.legs()) {
         legs.put(leg.legId(), leg);
         bagOfLeg.put(leg.legId(), bag.bagTag());
@@ -326,9 +328,9 @@ public class EventIndexer {
     settle(batch, results);
   }
 
-  private static EventEnvelope<BagRegistered> validRegistration(
-      EventEnvelope<BagRegistered> event) {
-    BagRegistered bag = event.payload();
+  private static EventEnvelope<BagRegisteredPayload> validRegistration(
+      EventEnvelope<BagRegisteredPayload> event) {
+    BagRegisteredPayload bag = event.payload();
     EventReader.required(bag.bagTag(), "bagTag");
     if (bag.legs() == null || bag.legs().isEmpty()) {
       throw new PoisonEventException("legs are missing");

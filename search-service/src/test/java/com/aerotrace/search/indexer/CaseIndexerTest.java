@@ -150,7 +150,7 @@ class CaseIndexerTest extends AbstractSearchTest {
     indexer.indexRegistrations(
         List.of(
             Events.record(
-                com.aerotrace.search.constant.SearchTopics.BAG_REGISTERED,
+                Topics.BAG_REGISTERED,
                 bag,
                 Events.registered(
                     bag, List.of(Events.leg(leg, "TK1981", "IST", "LHR")), Instant.now()))));
@@ -176,7 +176,7 @@ class CaseIndexerTest extends AbstractSearchTest {
     indexer.indexRegistrations(
         List.of(
             Events.record(
-                com.aerotrace.search.constant.SearchTopics.BAG_REGISTERED,
+                Topics.BAG_REGISTERED,
                 bag,
                 Events.registered(
                     bag, List.of(Events.leg(leg, "PC2001", "SAW", "ESB")), Instant.now()))));

@@ -1,7 +1,6 @@
 package com.aerotrace.search.indexer;
 
 import com.aerotrace.common.event.Topics;
-import com.aerotrace.search.constant.SearchTopics;
 import java.io.IOException;
 import java.util.List;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -53,7 +52,7 @@ class IndexerListeners {
 
   @KafkaListener(
       id = "search-bag-registered",
-      topics = SearchTopics.BAG_REGISTERED,
+      topics = Topics.BAG_REGISTERED,
       groupId = "${aerotrace.search.consumers.group-id}",
       autoStartup = "${aerotrace.search.consumers.enabled:true}")
   void onRegistrations(List<ConsumerRecord<String, String>> records) throws IOException {

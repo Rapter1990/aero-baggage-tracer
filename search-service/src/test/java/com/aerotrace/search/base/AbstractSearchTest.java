@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import com.aerotrace.common.event.Topics;
 import com.aerotrace.common.security.JwtClaims;
 import com.aerotrace.common.security.Role;
-import com.aerotrace.search.constant.SearchTopics;
 import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
@@ -105,7 +104,7 @@ public abstract class AbstractSearchTest {
                   new NewTopic(Topics.CASE_CHANGED, 2, (short) 1),
                   new NewTopic(Topics.SCAN_RECEIVED, 2, (short) 1),
                   new NewTopic(Topics.RISK_CHANGED, 2, (short) 1),
-                  new NewTopic(SearchTopics.BAG_REGISTERED, 2, (short) 1),
+                  new NewTopic(Topics.BAG_REGISTERED, 2, (short) 1),
                   new NewTopic(Topics.DEAD_LETTER, 1, (short) 1)))
           .all()
           .get();

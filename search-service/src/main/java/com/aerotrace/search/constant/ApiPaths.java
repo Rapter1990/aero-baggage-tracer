@@ -25,8 +25,5 @@ public final class ApiPaths {
   /** The header that makes a reindex request safe to repeat. */
   public static final String IDEMPOTENCY_KEY = "Idempotency-Key";
 
-  /** The header with the shared secret the export endpoints of the owning services accept. */
-  public static final String SERVICE_TOKEN = "X-Service-Token";
-
   private ApiPaths() {}
 }

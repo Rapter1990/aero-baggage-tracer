@@ -7,17 +7,16 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import com.aerotrace.common.event.CaseChangedPayload;
 import com.aerotrace.common.event.Topics;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.common.model.RiskLevel;
 import com.aerotrace.search.base.AbstractSearchTest;
 import com.aerotrace.search.base.Events;
-import com.aerotrace.search.constant.SearchTopics;
 import com.aerotrace.search.elastic.IndexAdmin;
 import com.aerotrace.search.elastic.IndexFamily;
 import com.aerotrace.search.elastic.SupportIndex;
 import com.aerotrace.search.indexer.ReadModelWriter.CaseWrite;
-import com.aerotrace.search.indexer.model.CaseChange;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,7 +42,7 @@ class LegCompletionTest extends AbstractSearchTest {
     indexer.indexRegistrations(
         List.of(
             Events.record(
-                SearchTopics.BAG_REGISTERED,
+                Topics.BAG_REGISTERED,
                 bag,
                 Events.registered(
                     bag, List.of(Events.leg(leg, "TK1981", origin, "LHR")), Instant.now()))));
@@ -83,7 +82,7 @@ class LegCompletionTest extends AbstractSearchTest {
     for (int i = 0; i < 1_050; i++) {
       cases.add(
           new CaseWrite(
-              new CaseChange(
+              new CaseChangedPayload(
                   newId("case"), bag, leg, RecoveryState.OPEN, 1, null, null, null, null, null),
               Instant.now()));
     }

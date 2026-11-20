@@ -3,14 +3,14 @@ package com.aerotrace.search.indexer;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import com.aerotrace.common.event.LegSnapshot;
+import com.aerotrace.common.event.Topics;
 import com.aerotrace.search.base.AbstractSearchTest;
 import com.aerotrace.search.base.Events;
-import com.aerotrace.search.constant.SearchTopics;
 import com.aerotrace.search.elastic.IndexFamily;
 import com.aerotrace.search.elastic.SupportIndex;
 import com.aerotrace.search.indexer.ReadModelWriter.ItemResult;
 import com.aerotrace.search.indexer.ReadModelWriter.RiskHour;
-import com.aerotrace.search.indexer.model.LegSnapshot;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -78,28 +78,26 @@ class RefusedItemsTest extends AbstractSearchTest {
   void malformedLegIsDeadLettered() throws Exception {
     String bag = newBagTag();
     String goodBag = newBagTag();
-    double before = failed(SearchTopics.BAG_REGISTERED);
+    double before = failed(Topics.BAG_REGISTERED);
     LegSnapshot tooLong =
         new LegSnapshot(newId("leg"), "TK" + "1".repeat(5_000), "TK", "IST", "LHR", Instant.now());
 
     indexer.indexRegistrations(
         List.of(
             Events.record(
-                SearchTopics.BAG_REGISTERED,
+                Topics.BAG_REGISTERED,
                 bag,
                 Events.registered(bag, List.of(tooLong), Instant.now())),
             Events.record(
-                SearchTopics.BAG_REGISTERED,
+                Topics.BAG_REGISTERED,
                 goodBag,
                 Events.registered(
                     goodBag,
                     List.of(Events.leg(newId("leg"), "TK1981", "IST", "LHR")),
                     Instant.now()))));
 
-    assertThat(failed(SearchTopics.BAG_REGISTERED)).isEqualTo(before + 1);
-    assertThat(
-            CaseIndexerTest.DeadLetters.read(
-                kafkaBootstrapServers(), 1, SearchTopics.BAG_REGISTERED))
+    assertThat(failed(Topics.BAG_REGISTERED)).isEqualTo(before + 1);
+    assertThat(CaseIndexerTest.DeadLetters.read(kafkaBootstrapServers(), 1, Topics.BAG_REGISTERED))
         .contains("flightNumber has an invalid format");
     assertThat(client.exists(e -> e.index(IndexFamily.JOURNEYS.readAlias()).id(goodBag)).value())
         .isTrue();
