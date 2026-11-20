@@ -77,4 +77,19 @@ class IndexBootstrapTest extends AbstractSearchTest {
         .isEqualTo(1_700_000_000_000L);
     assertThat(IndexAdmin.createdAt("cases-vX")).isEqualTo(java.time.Instant.EPOCH);
   }
+
+  @Test
+  @DisplayName("an index that already exists is brought to the template's fields, idempotently")
+  void existingSupportIndexKeepsTheAuditFields() throws Exception {
+    // A second start takes the "index exists" path: it adds the template's fields (a no-op here).
+    admin.bootstrap();
+    admin.bootstrap();
+    var mappings =
+        client
+            .indices()
+            .getMapping(m -> m.index(SupportIndex.JOBS.index()))
+            .get(SupportIndex.JOBS.index());
+    assertThat(mappings.mappings().properties())
+        .containsKeys("createdAt", "lastModifiedAt", "createdBy", "lastModifiedBy");
+  }
 }

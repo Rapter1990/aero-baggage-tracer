@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -69,16 +70,19 @@ public class ReindexJobStore {
 
   private final ElasticsearchClient client;
   private final ReindexJobRepository jobs;
+  private final ElasticsearchOperations operations;
   private final Clock clock;
   private final Duration keyTtl;
 
   public ReindexJobStore(
       ElasticsearchClient client,
       ReindexJobRepository jobs,
+      ElasticsearchOperations operations,
       Clock clock,
       SearchProperties properties) {
     this.client = client;
     this.jobs = jobs;
+    this.operations = operations;
     this.clock = clock;
     this.keyTtl = properties.reindex().keyTtl();
   }
@@ -262,10 +266,19 @@ public class ReindexJobStore {
     }
   }
 
+  /**
+   * Saves the job. The document is built anew on every save, so the creation fields of the saved
+   * one are carried over (a document without them is "new" and gets them from the auditing); the
+   * modification fields are always set by the auditing.
+   */
   public void save(ReindexJob job) {
-    jobs.save(
+    String id = JobDocument.ID_PREFIX + job.jobId();
+    Optional<JobDocument> saved = jobs.findById(id);
+    // Not jobs.save: a repository's save refreshes the index every time, which a job that changes
+    // state this often does not need; the auditing callbacks run all the same.
+    operations.save(
         new JobDocument(
-            JobDocument.ID_PREFIX + job.jobId(),
+            id,
             JobDocument.KIND,
             job.jobId(),
             job.status().name(),
@@ -274,7 +287,11 @@ public class ReindexJobStore {
             job.startedAt(),
             job.finishedAt(),
             job.error(),
-            job.results()));
+            job.results(),
+            saved.map(JobDocument::createdAt).orElse(null),
+            null,
+            saved.map(JobDocument::createdBy).orElse(null),
+            null));
   }
 
   public Optional<ReindexJob> find(String jobId) {

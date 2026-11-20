@@ -1,6 +1,6 @@
 # ADR 0003: Spring Data auditing for who and when
 
-Status: accepted (audit-module; identity, journey and capacity services)
+Status: accepted (audit-module; identity, journey and capacity services; the rebuild jobs of the search-service)
 
 ## Context
 
@@ -57,6 +57,17 @@ use it), so a shared JPA base class cannot live there.
      recording a hold, confirming it, flagging a scanner anomaly. A column `updated_by` on the case
      would have to be written by eight bulk updates for little gain, so it is left out until
      someone needs "who touched the case last" apart from its history.
+   - **Search-service (Elasticsearch):** the rebuild job documents in `search-jobs` are saved through
+     a Spring Data repository, so `@EnableElasticsearchAuditing` fills `createdAt`, `createdBy`,
+     `lastModifiedAt` and `lastModifiedBy` with the same `SecurityAuditorAware` (the module is used
+     without its JPA dependencies) and the service `Clock`. `createdBy` is the admin's token
+     subject (the job is created on the request thread); the worker thread that finishes the job
+     is `system`. The document is rebuilt on every save, so the store carries the creation fields
+     over, and the document counts as new while it has no `createdAt` (an assigned id would
+     otherwise make Spring Data take it for existing). **The read models carry no audit fields:**
+     they are written by bulk scripted upserts, which fire no auditing callbacks, and a rebuild
+     recreates every document (ADR 0004). The rebuild lock and the idempotency keys are
+     bookkeeping and are not audited.
    - **Not audited:** token, outbox, dedupe, throttle, snapshot and audit-log tables are system
      bookkeeping or already an audit trail (`auth_audit`, `scan_audit`, `state_transition`).
      `itinerary_leg` is part of the itinerary snapshot and is never changed after it is created.

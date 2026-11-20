@@ -170,6 +170,8 @@ Answer: `202` with the job and `Location: /api/v1/admin/search/reindex/{jobId}`.
 
 With scope `ALL` or `JOURNEYS`, `results.journeys` has `index`, `previousIndex`, `sourceCount`, `indexedCount`, `missing` (exported bags without a journey in the new index), `sourceChecksum`, `indexChecksum` (sums of a fingerprint of each bag tag) and `riskEventsReplayed`.
 
+A job is stored in the `search-jobs` index with audit fields (not part of the API view): `createdAt` and `createdBy` (the admin's token subject) when it starts, `lastModifiedAt` and `lastModifiedBy` on every save (`system` for the worker that finishes it). See [ADR 0003](../adr/0003-spring-data-auditing.md).
+
 Failure reasons a job can show (`error`, a fixed text):
 
 | `error` | Meaning |

@@ -69,6 +69,26 @@
             <artifactId>spring-boot-starter-data-elasticsearch</artifactId>
         </dependency>
 
+        <!--
+            Who is acting (SecurityAuditorAware) for the audit fields of the job documents (ADR 0003).
+            Its JPA dependencies are excluded: this service has no JPA and no datasource, and the
+            module's JPA auditing switches itself off when JPA is absent.
+        -->
+        <dependency>
+            <groupId>com.aerotrace</groupId>
+            <artifactId>audit-module</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springframework.data</groupId>
+                    <artifactId>spring-data-jpa</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>jakarta.persistence</groupId>
+                    <artifactId>jakarta.persistence-api</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <!-- OpenAPI definition only (/v3/api-docs); the Swagger UI is served by the api-gateway. -->
         <dependency>
             <groupId>org.springdoc</groupId>

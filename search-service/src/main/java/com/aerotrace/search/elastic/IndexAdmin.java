@@ -4,6 +4,8 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.ElasticsearchException;
 import co.elastic.clients.elasticsearch.indices.update_aliases.Action;
 import com.aerotrace.search.config.SearchProperties;
+import jakarta.json.Json;
+import jakarta.json.JsonReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
@@ -84,8 +86,24 @@ public class IndexAdmin implements InitializingBean {
     for (SupportIndex index : SupportIndex.values()) {
       if (!client.indices().exists(e -> e.index(index.index())).value()) {
         createIgnoringExisting(index.index(), null, null, resource(index.resource()));
+      } else {
+        addNewFields(index);
       }
     }
+  }
+
+  /**
+   * Adds the fields a newer template has to an index an older start created (a mapping update that
+   * only adds fields is allowed and idempotent), so a field added to the template, such as the
+   * audit fields of the jobs, is not refused by the strict mapping of the index that already
+   * exists. The read models need no such step: a rebuild creates its index from the template.
+   */
+  private void addNewFields(SupportIndex index) throws IOException {
+    String mappings;
+    try (JsonReader reader = Json.createReader(new StringReader(resource(index.resource())))) {
+      mappings = reader.readObject().getJsonObject("mappings").toString();
+    }
+    client.indices().putMapping(m -> m.index(index.index()).withJson(new StringReader(mappings)));
   }
 
   private void createIgnoringExisting(String index, String read, String live, String body)
