@@ -12,6 +12,7 @@ Opens recovery cases for bags at risk of missing a connection, moves them along 
 | [Calls](#calls) | The requests and who may make them |
 | [Rules](#rules) | Cases, moves, capacity, policy |
 | [Errors](#errors) | Status and code per case |
+| [Internal export](#internal-export) | The read-only case export for the search-service's rebuild |
 | [Events](#events) | What the service publishes and reads |
 | [When Redis is down](#when-redis-is-down) | Degraded mode |
 | [Known limitations](#known-limitations) | What is not done yet |
@@ -39,6 +40,7 @@ Opens recovery cases for bags at risk of missing a connection, moves them along 
 | `GET /api/v1/recovery-cases?state=OPEN&page=0&size=20` | AGENT, DISPATCHER, ADMIN | Lists cases, oldest first |
 | `GET /api/v1/recovery-policy` | AGENT, DISPATCHER, ADMIN | Reads the policy |
 | `PUT /api/v1/recovery-policy` | ADMIN | Changes the policy |
+| `GET /internal/v1/export/cases?after=&size=` | service token only, not routed by the gateway | Every case, keyset-paged, for the search-service's rebuild ([below](#internal-export)) |
 
 | Call | Body |
 |---|---|
@@ -126,6 +128,54 @@ Opens recovery cases for bags at risk of missing a connection, moves them along 
 | 409 | `CAPACITY_EXCEEDED` | No capacity is left |
 | 503 | `CAPACITY_UNAVAILABLE` | The capacity-service did not answer in time |
 
+## Internal export
+
+`GET /internal/v1/export/cases?after={caseId}&size={1..500}` (#29, [ADR 0004](../adr/0004-search-read-models-and-rebuild.md)) lets the search-service rebuild its `cases` index from this service's own state, without reading its database.
+
+| Topic | Value |
+|---|---|
+| Who | A service caller with the shared secret in `X-Service-Token` (`SEARCH_EXPORT_SERVICE_TOKEN`, at least 16 characters). A user token is never accepted here, an admin's neither |
+| Routing | Inside the network only: the gateway has no route to `/internal/**` and strips `X-Service-Token` from every request it forwards |
+| Without a token configured | Fail closed: every call is `401`. Only the `local` and `dev` profiles open the export instead, for local runs (logged at start-up) |
+| Paging | Keyset by `caseId` (the primary key), ascending. The first page has no `after`; the next one asks `after=<nextAfter>`. `nextAfter` is `null` on the last page |
+| Size | Default 100, maximum 500; `0`, more than 500 or an `after` that is not a case id is `400 VALIDATION_ERROR` |
+| Consistency | Every case that exists for the whole run is returned exactly once, whatever is inserted meanwhile; a case inserted meanwhile at most once. A case changed meanwhile is returned as it was when its page was read; its event carries the newer version |
+| Read-only | A read-only transaction; nothing is written (no row, no history, no outbox event) |
+| Not in | The public OpenAPI document |
+
+| Status | Code | When |
+|---|---|---|
+| 200 | | A page |
+| 400 | `VALIDATION_ERROR` | `size` out of range, or `after` not a case id |
+| 401 | `UNAUTHENTICATED` | No token, a wrong one, a user token, or no token configured |
+| 403 | `ACCESS_DENIED` | The token on any other method or `/internal/**` path |
+
+Each item has the shape of the `recovery.case.changed.v1` payload (revision 2, below), so the rebuild source and the events cannot drift apart:
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "caseId": "0b6f9c1e-3a52-4d0e-9a59-2b8f6b1d7c11",
+        "bagTag": "0123456789",
+        "legId": "LEG-2",
+        "state": "RESOLVED",
+        "version": 6,
+        "reason": "delivered",
+        "openedAt": "2026-11-03T08:00:00Z",
+        "resolvedAt": "2026-11-03T09:30:00Z",
+        "trigger": "MANUAL",
+        "assignedTo": "agent-7"
+      }
+    ],
+    "nextAfter": "0b6f9c1e-3a52-4d0e-9a59-2b8f6b1d7c11"
+  },
+  "timestamp": "2026-11-03T10:00:00Z"
+}
+```
+
 ## Events
 
 | Topic | Direction | What happens |
@@ -137,6 +187,23 @@ Opens recovery cases for bags at risk of missing a connection, moves them along 
 | `baggage.dead-letter.v1` | published | An event that can never be handled, or failed after 3 tries |
 
 Every event id is stored in the same transaction as its effect, so a repeat changes nothing. Events of a bag and leg are applied by event time: an older one is ignored.
+
+While a consumer handles an event, the event's `correlationId` is in the logging context, so its log lines and the case events it writes carry it (a case opened from a risk event has the risk event's id). It is restored, never generated: an event without a valid one is handled without one.
+
+**`recovery.case.changed.v1` payload, schema revision 2** (`schemaVersion: 2`, #29). Revision 2 added the last four fields; the `.v1` topic and the first six fields are unchanged. A revision 1 event has none of them, and a consumer reads them as `null`.
+
+| Field | Since | Meaning |
+|---|---|---|
+| `caseId`, `bagTag`, `legId` | 1 | The case and its bag and leg |
+| `state` | 1 | The state after the change |
+| `version` | 1 | Starts at 1, rises by one on every change (move, assignment, anomaly flag) |
+| `reason` | 1 | Free text of the change; may name people or places, so consumers must not index or log it |
+| `openedAt` | 2 | When the case was opened (UTC) |
+| `resolvedAt` | 2 | When it reached `RESOLVED`; `null` in every other state, `CANCELLED` and `CLOSED_AS_UNRECOVERABLE` included |
+| `trigger` | 2 | What opened it: `RISK` (a risk event), `MANUAL` (staff through the API) or `SCANNER_ANOMALY`. No case has `SCANNER_ANOMALY` yet: an anomaly only flags the cases a bag already has. A value added later reads as `null` |
+| `assignedTo` | 2 | The token subject of the handler; `null` while unassigned |
+
+Cases that existed before revision 2 were backfilled by the migration `011-case-trigger-and-resolution`: `trigger` is `RISK` when the system opened the case and `MANUAL` otherwise, `resolvedAt` is the time of the move to `RESOLVED` in the history.
 
 **Planned action**
 
@@ -168,3 +235,4 @@ Redis only caches the policy. See [ADR 0001](../adr/0001-redis-policy-cache.md).
 | Assignee check | The assignee is checked for shape only: the identity-service is not asked whether that person exists or is an agent, and any agent or dispatcher may assign any case to any id |
 | Redis policy entry | An entry outside 0 to 720 minutes is dropped; Redis is still trusted to hold only what this service wrote, so keep it private (ACL or own instance per service) |
 | Airline policy | One `DEFAULT` policy; the events carry no airline |
+| Leg ids | `legId` must be 1 to 32 letters, digits, `-` or `_`. The journey-service's leg ids (in its scan and bag events) are 36-character UUIDs, so a risk event for such a leg is refused as unreadable and dead-lettered. Not changed by #29 (it needs a migration of `leg_id`); open |

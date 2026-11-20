@@ -48,14 +48,20 @@ spring:
               uri: lb://journey-service
               predicates:
                 - Path=/api/v1/scans/**
+            # The recovery-service accepts X-Service-Token on its internal export only, which has no
+            # route here; the header is stripped anyway, like on every service that accepts it.
             - id: recovery-cases
               uri: lb://recovery-service
               predicates:
                 - Path=/api/v1/recovery-cases/**
+              filters:
+                - RemoveRequestHeader=X-Service-Token
             - id: recovery-policy
               uri: lb://recovery-service
               predicates:
                 - Path=/api/v1/recovery-policy/**
+              filters:
+                - RemoveRequestHeader=X-Service-Token
             - id: capacity
               uri: lb://capacity-service
               predicates:

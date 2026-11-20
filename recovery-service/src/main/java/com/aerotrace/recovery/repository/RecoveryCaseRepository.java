@@ -8,6 +8,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -26,6 +27,22 @@ public interface RecoveryCaseRepository extends JpaRepository<RecoveryCaseEntity
   /** Filters by state when given; the caller supplies a deterministic sort. */
   @Query("select c from RecoveryCaseEntity c where (:state is null or c.state = :state)")
   Page<RecoveryCaseEntity> search(@Param("state") RecoveryState state, Pageable pageable);
+
+  /** The first cases in id order: the first page of the internal export. */
+  List<RecoveryCaseEntity> findAllByOrderByIdAsc(Limit limit);
+
+  /** The cases after the given id, in id order: a following page of the internal export. */
+  List<RecoveryCaseEntity> findByIdGreaterThanOrderByIdAsc(UUID after, Limit limit);
+
+  /**
+   * Records when a case was resolved, in the transaction of its move to RESOLVED. Written once: a
+   * resolved case is final, so it is never resolved again.
+   */
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query(
+      "update RecoveryCaseEntity c set c.resolvedAt = :now"
+          + " where c.id = :id and c.resolvedAt is null")
+  int markResolved(@Param("id") UUID id, @Param("now") Instant now);
 
   /**
    * Moves a case to a new state and raises its version, but only while the version is still the one

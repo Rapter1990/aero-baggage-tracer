@@ -1,5 +1,6 @@
 package com.aerotrace.recovery.consumer;
 
+import com.aerotrace.common.correlation.CorrelationScope;
 import com.aerotrace.common.event.CapacityChangedPayload;
 import com.aerotrace.common.event.EventEnvelope;
 import com.aerotrace.recovery.constant.RecoveryRules;
@@ -60,9 +61,12 @@ public class CapacityEventHandler {
     if (event.occurredAt().isAfter(Instant.now(clock).plus(MAX_CLOCK_SKEW))) {
       throw new PoisonEventException("occurredAt is in the future");
     }
-    Outcome outcome = transaction.execute(status -> process(event));
-    meters.counter("recovery.capacity.events", "outcome", outcome.name()).increment();
-    return outcome;
+    // Its log lines join the trace of the change that caused the event.
+    try (CorrelationScope ignored = CorrelationScope.of(event.correlationId())) {
+      Outcome outcome = transaction.execute(status -> process(event));
+      meters.counter("recovery.capacity.events", "outcome", outcome.name()).increment();
+      return outcome;
+    }
   }
 
   private Outcome process(EventEnvelope<CapacityChangedPayload> event) {

@@ -209,14 +209,25 @@ class RecoveryCaseApiTest extends AbstractRecoveryTest {
 
     assertThat(statuses.stream().filter(s -> s == 201)).hasSize(1);
     assertThat(statuses.stream().filter(s -> s == 409)).hasSize(attempts - 1);
-    ResultActions list = mockMvc.perform(get(CASES).with(as(Role.AGENT)).param("size", "100"));
-    long forBag =
-        body(list)
-            .get("data")
-            .get("items")
-            .valueStream()
-            .filter(c -> c.get("bagTag").asString().equals(bagTag))
-            .count();
+    // The database is shared and the list is oldest first: count over every page.
+    long forBag = 0;
+    int pages = 1;
+    for (int page = 0; page < pages; page++) {
+      ResultActions list =
+          mockMvc.perform(
+              get(CASES)
+                  .with(as(Role.AGENT))
+                  .param("size", "100")
+                  .param("page", String.valueOf(page)));
+      forBag +=
+          body(list)
+              .get("data")
+              .get("items")
+              .valueStream()
+              .filter(c -> c.get("bagTag").asString().equals(bagTag))
+              .count();
+      pages = body(list).get("data").get("totalPages").asInt();
+    }
     assertThat(forBag).isEqualTo(1);
   }
 
