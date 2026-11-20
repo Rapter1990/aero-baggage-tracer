@@ -310,7 +310,7 @@ Elasticsearch read models for journey and case search. Derived data: it can be d
 - No business rule BR-xx is owned by this issue. AT-15, AT-16, AT-20 and AT-21 are owned elsewhere (#8, #7, #19); search adds its own role-matrix tests (401 and 403 contract, `PASSENGER` refused).
 
 **Acceptance criteria**
-- [ ] AT-18 with an Elasticsearch Testcontainer (pinned image), as described above.
+- [x] AT-18 with an Elasticsearch Testcontainer (pinned image), as described above.
 - [x] Idempotent indexer: the same `recovery.case.changed.v1` twice, or an older version after a newer one, leaves one document at the newest version; replay and snapshot overlap give the same documents.
 - [x] One test per filter and a combined-filter test; `search_after` paging over a fixed data set has no duplicates and no gaps; forged and expired cursors are rejected.
 - [ ] Alias-swap rebuild without downtime: searches during a rebuild return results without error, and the read alias moves only when the new index is complete and its counts match.
@@ -564,9 +564,9 @@ The search-service must be rebuildable from the journey-service without reading 
 - Document both in `docs/apis/JOURNEY-API.md`; tests for paging (no gaps or repeats while rows are inserted), the service token, and the event contract.
 
 **Acceptance criteria**
-- [ ] The export pages through more bags than one page with no gap and no repeat, and requires the service token (`401`/`403` otherwise); it writes nothing.
-- [ ] Registering a bag queues `baggage.bag.registered.v1` once (outbox, idempotent), with the snapshot of every leg.
-- [ ] Existing journey tests and contracts still pass; `JOURNEY-API.md` updated.
+- [x] The export pages through more bags than one page with no gap and no repeat, and requires the service token (`401`/`403` otherwise); it writes nothing.
+- [x] Registering a bag queues `baggage.bag.registered.v1` once (outbox, idempotent), with the snapshot of every leg.
+- [x] Existing journey tests and contracts still pass; `JOURNEY-API.md` updated.
 
 ---
 
@@ -583,7 +583,7 @@ The search-service needs the full case (version, opened and resolved times) both
 - Document in `docs/apis/RECOVERY-API.md`; contract tests for revisions 1 and 2.
 
 **Acceptance criteria**
-- [ ] The export pages through more cases than one page with no gap and no repeat, and requires the service token; it writes nothing.
-- [ ] Every case event carries the revision 2 fields; a consumer reading revision 1 events still works.
-- [ ] Case events opened from risk events carry the originating `correlationId`.
-- [ ] Existing recovery tests (`RecoveryCaseApiTest`, `KafkaOutageTest` and the rest) still pass; `RECOVERY-API.md` updated.
+- [x] The export pages through more cases than one page with no gap and no repeat, and requires the service token; it writes nothing.
+- [x] Every case event carries the revision 2 fields; a consumer reading revision 1 events still works.
+- [x] Case events opened from risk events carry the originating `correlationId`.
+- [x] Existing recovery tests (`RecoveryCaseApiTest`, `KafkaOutageTest` and the rest) still pass; `RECOVERY-API.md` updated.
