@@ -7,7 +7,10 @@ import co.elastic.clients.elasticsearch._types.aggregations.DateHistogramBucket;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import com.aerotrace.common.error.ApiException;
+import com.aerotrace.common.error.ErrorCode;
 import com.aerotrace.common.model.RecoveryState;
+import com.aerotrace.search.config.SearchProperties;
 import com.aerotrace.search.elastic.Elastic;
 import com.aerotrace.search.elastic.IndexFamily;
 import com.aerotrace.search.elastic.SupportIndex;
@@ -16,6 +19,7 @@ import com.aerotrace.search.report.AirportReport.Totals;
 import com.aerotrace.search.status.LagMonitor;
 import com.aerotrace.search.status.LagMonitor.Lag;
 import java.io.IOException;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -33,6 +37,11 @@ import org.springframework.stereotype.Service;
  * aggregations: date histograms count documents exactly, and distinct bags are counted from the
  * risk-hour documents themselves ({@code _id = bag:leg:hour}). The airport of a case or a risk hour
  * is the origin of its leg.
+ *
+ * <p>Bounded: the scans of one report read at most {@code max-scanned-documents} documents (more is
+ * {@code 422 REPORT_TOO_LARGE}: narrow the range), fetch only the fields they need, and the report
+ * must be done within {@code timeout} (else {@code 503 SEARCH_UNAVAILABLE}). The lag it carries is
+ * the last one the scheduler measured; a report never asks Kafka itself.
  */
 @Service
 public class AirportReportService {
@@ -43,10 +52,37 @@ public class AirportReportService {
 
   private final ElasticsearchClient client;
   private final LagMonitor lag;
+  private final Clock clock;
+  private final long maxScanned;
+  private final Duration timeout;
 
-  public AirportReportService(ElasticsearchClient client, LagMonitor lag) {
+  public AirportReportService(
+      ElasticsearchClient client, LagMonitor lag, SearchProperties properties, Clock clock) {
     this.client = client;
     this.lag = lag;
+    this.clock = clock;
+    this.maxScanned = properties.report().maxScannedDocuments();
+    this.timeout = properties.report().timeout();
+  }
+
+  /** The budget of one report: documents scanned so far and the deadline. */
+  private final class Budget {
+    final Instant deadline = clock.instant().plus(timeout);
+    long scanned;
+
+    void spend(int documents) {
+      scanned += documents;
+      if (scanned > maxScanned) {
+        throw new ApiException(
+            ErrorCode.REPORT_TOO_LARGE,
+            "The report would read more than " + maxScanned + " documents. Narrow the range.");
+      }
+      if (clock.instant().isAfter(deadline)) {
+        throw new ApiException(
+            ErrorCode.SEARCH_UNAVAILABLE,
+            "The report took too long. Narrow the range or try again later.");
+      }
+    }
   }
 
   public AirportReport report(String airport, Instant from, Instant to) {
@@ -54,11 +90,12 @@ public class AirportReportService {
     Map<Instant, Set<String>> risky = new HashMap<>();
     Map<Instant, long[]> resolved = new HashMap<>(); // [count, sum of seconds, timed count]
     Map<Instant, Long> retries = new HashMap<>();
+    Budget budget = new Budget();
     Elastic.call(
         () -> {
-          riskyBags(airport, from, to, risky);
+          riskyBags(airport, from, to, risky, budget);
           resolved(airport, from, to, resolved);
-          retries(airport, from, to, retries);
+          retries(airport, from, to, retries, budget);
           return null;
         });
 
@@ -80,7 +117,7 @@ public class AirportReportService {
       totalTimed += r[2];
       totalRetries += retried;
     }
-    Lag now = lag.check();
+    Lag now = lag.last();
     return new AirportReport(
         airport,
         from,
@@ -105,11 +142,15 @@ public class AirportReportService {
             q.range(
                 r ->
                     r.date(
-                        d ->
-                            d.field(field)
-                                .gte(String.valueOf(from.toEpochMilli()))
-                                .lt(String.valueOf(to.toEpochMilli()))
-                                .format("epoch_millis"))));
+                        d -> {
+                          d.field(field)
+                              .lt(String.valueOf(to.toEpochMilli()))
+                              .format("epoch_millis");
+                          if (from != null) {
+                            d.gte(String.valueOf(from.toEpochMilli()));
+                          }
+                          return d;
+                        })));
   }
 
   private static Instant hourOf(Object millis) {
@@ -117,12 +158,17 @@ public class AirportReportService {
   }
 
   /**
-   * Pages through every hit of a query in a stable order: the sort fields must identify a document
-   * (stored keywords, never {@code _id}, which cannot be sorted on).
+   * Pages through every hit of a query in a stable order (the sort fields must identify a document:
+   * stored keywords, never {@code _id}), reading only the given fields, within the budget.
    */
   @SuppressWarnings({"rawtypes", "unchecked"})
   private void scan(
-      String index, Query query, List<String> sortFields, Consumer<Map<String, Object>> each)
+      String index,
+      Query query,
+      List<String> sortFields,
+      List<String> fields,
+      Budget budget,
+      Consumer<Map<String, Object>> each)
       throws IOException {
     List<FieldValue> after = null;
     while (true) {
@@ -130,7 +176,11 @@ public class AirportReportService {
       SearchResponse<Map> page =
           client.search(
               s -> {
-                s.index(index).query(query).size(PAGE).trackTotalHits(t -> t.enabled(false));
+                s.index(index)
+                    .query(query)
+                    .size(PAGE)
+                    .trackTotalHits(t -> t.enabled(false))
+                    .source(x -> x.filter(f -> f.includes(fields)));
                 for (String field : sortFields) {
                   s.sort(o -> o.field(f -> f.field(field).order(SortOrder.Asc)));
                 }
@@ -141,6 +191,7 @@ public class AirportReportService {
               },
               Map.class);
       List<Hit<Map>> hits = page.hits().hits();
+      budget.spend(hits.size());
       hits.forEach(hit -> each.accept(hit.source()));
       if (hits.size() < PAGE) {
         return;
@@ -150,7 +201,8 @@ public class AirportReportService {
   }
 
   /** Distinct bags per hour, from the risk-hour documents. */
-  private void riskyBags(String airport, Instant from, Instant to, Map<Instant, Set<String>> risky)
+  private void riskyBags(
+      String airport, Instant from, Instant to, Map<Instant, Set<String>> risky, Budget budget)
       throws IOException {
     Query query =
         Query.of(
@@ -159,6 +211,8 @@ public class AirportReportService {
         SupportIndex.RISK_HOURS.index(),
         query,
         List.of("hour", "bagTag", "legId"),
+        List.of("hour", "bagTag"),
+        budget,
         doc ->
             risky
                 .computeIfAbsent(hourOf(doc.get("hour")), h -> new HashSet<>())
@@ -207,61 +261,65 @@ public class AirportReportService {
   /**
    * Cases opened in the range for a bag and leg that had an earlier case (opened before it) which
    * ended CANCELLED or CLOSED_AS_UNRECOVERABLE, counted in the hour of their openedAt.
+   *
+   * <p>A retry is of the same leg, so of the same airport: the earliest failure per bag and leg is
+   * read from the failed cases of this airport opened before {@code to} (one capped scan), and the
+   * cases opened in the range are then streamed and counted; neither list is kept.
    */
-  private void retries(String airport, Instant from, Instant to, Map<Instant, Long> retries)
+  private void retries(
+      String airport, Instant from, Instant to, Map<Instant, Long> retries, Budget budget)
       throws IOException {
-    List<Map<String, Object>> opened = new ArrayList<>();
-    Query query =
+    Map<String, Long> earliestFailure = new HashMap<>();
+    Query failed =
+        Query.of(
+            q ->
+                q.bool(
+                    b ->
+                        b.filter(term("airport", airport))
+                            .filter(
+                                f ->
+                                    f.terms(
+                                        t ->
+                                            t.field("state")
+                                                .terms(
+                                                    v ->
+                                                        v.value(
+                                                            FAILED_STATES.stream()
+                                                                .map(FieldValue::of)
+                                                                .toList()))))
+                            .filter(range("openedAt", null, to))));
+    List<String> fields = List.of("bagTag", "legId", "openedAt");
+    scan(
+        IndexFamily.CASES.readAlias(),
+        failed,
+        List.of("openedAt", "docId"),
+        fields,
+        budget,
+        doc ->
+            earliestFailure.merge(
+                doc.get("bagTag") + ":" + doc.get("legId"),
+                ((Number) doc.get("openedAt")).longValue(),
+                Math::min));
+    if (earliestFailure.isEmpty()) {
+      return;
+    }
+    Query opened =
         Query.of(
             q ->
                 q.bool(
                     b -> b.filter(term("airport", airport)).filter(range("openedAt", from, to))));
-    scan(IndexFamily.CASES.readAlias(), query, List.of("openedAt", "docId"), opened::add);
-    if (opened.isEmpty()) {
-      return;
-    }
-    // Earliest failure per bag and leg, among the bags of the opened cases.
-    Map<String, Long> earliestFailure = new HashMap<>();
-    List<String> bagTags = opened.stream().map(c -> (String) c.get("bagTag")).distinct().toList();
-    for (int i = 0; i < bagTags.size(); i += PAGE) {
-      List<FieldValue> chunk =
-          bagTags.subList(i, Math.min(i + PAGE, bagTags.size())).stream()
-              .map(FieldValue::of)
-              .toList();
-      Query failed =
-          Query.of(
-              q ->
-                  q.bool(
-                      b ->
-                          b.filter(f -> f.terms(t -> t.field("bagTag").terms(v -> v.value(chunk))))
-                              .filter(
-                                  f ->
-                                      f.terms(
-                                          t ->
-                                              t.field("state")
-                                                  .terms(
-                                                      v ->
-                                                          v.value(
-                                                              FAILED_STATES.stream()
-                                                                  .map(FieldValue::of)
-                                                                  .toList()))))
-                              .filter(f -> f.exists(e -> e.field("openedAt")))));
-      scan(
-          IndexFamily.CASES.readAlias(),
-          failed,
-          List.of("openedAt", "docId"),
-          doc ->
-              earliestFailure.merge(
-                  doc.get("bagTag") + ":" + doc.get("legId"),
-                  ((Number) doc.get("openedAt")).longValue(),
-                  Math::min));
-    }
-    for (Map<String, Object> c : opened) {
-      Long failure = earliestFailure.get(c.get("bagTag") + ":" + c.get("legId"));
-      long openedAt = ((Number) c.get("openedAt")).longValue();
-      if (failure != null && failure < openedAt) {
-        retries.merge(hourOf(openedAt), 1L, Long::sum);
-      }
-    }
+    scan(
+        IndexFamily.CASES.readAlias(),
+        opened,
+        List.of("openedAt", "docId"),
+        fields,
+        budget,
+        c -> {
+          Long failure = earliestFailure.get(c.get("bagTag") + ":" + c.get("legId"));
+          long openedAt = ((Number) c.get("openedAt")).longValue();
+          if (failure != null && failure < openedAt) {
+            retries.merge(hourOf(openedAt), 1L, Long::sum);
+          }
+        });
   }
 }

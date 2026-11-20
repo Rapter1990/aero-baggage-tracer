@@ -94,6 +94,10 @@ aerotrace:
       check-interval: ${SEARCH_LAG_CHECK_INTERVAL:15s}
     report:
       max-range: ${SEARCH_REPORT_MAX_RANGE:31d}
+      # A report reading more documents than this is 422 REPORT_TOO_LARGE; one slower than the
+      # timeout is 503 SEARCH_UNAVAILABLE.
+      max-scanned-documents: ${SEARCH_REPORT_MAX_SCANNED_DOCUMENTS:200000}
+      timeout: ${SEARCH_REPORT_TIMEOUT:10s}
     docs:
       enabled: ${DOCS_ENABLED:true}
     jwt:

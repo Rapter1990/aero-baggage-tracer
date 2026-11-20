@@ -1,30 +1,39 @@
 package com.aerotrace.search.report;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import com.aerotrace.common.error.ApiException;
+import com.aerotrace.common.error.ErrorCode;
 import com.aerotrace.common.event.Topics;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.common.model.RiskLevel;
 import com.aerotrace.common.security.Role;
 import com.aerotrace.search.base.AbstractSearchTest;
 import com.aerotrace.search.base.Events;
+import com.aerotrace.search.config.SearchProperties;
 import com.aerotrace.search.constant.SearchTopics;
 import com.aerotrace.search.elastic.IndexFamily;
 import com.aerotrace.search.elastic.SupportIndex;
 import com.aerotrace.search.indexer.EventIndexer;
 import com.aerotrace.search.indexer.model.LegSnapshot;
+import com.aerotrace.search.status.LagMonitor;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
@@ -46,6 +55,7 @@ class AirportReportApiTest extends AbstractSearchTest {
   @Autowired MockMvc mockMvc;
   @Autowired EventIndexer indexer;
   @Autowired ElasticsearchClient client;
+  @Autowired LagMonitor lag;
 
   private String airport;
 
@@ -220,6 +230,45 @@ class AirportReportApiTest extends AbstractSearchTest {
     assertThat(report.get("totals").get("resolvedRecoveries").asLong()).isZero();
     assertThat(report.get("totals").get("meanResolutionSeconds").isNull()).isTrue();
     assertThat(report(airport, H0.toString(), H0.toString()).get("buckets")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("instants far outside 2000..2100 are 400, never 500")
+  void extremeDates() throws Exception {
+    String[][] bad = {
+      {"-1000000000-01-01T00:00:00Z", "+1000000000-01-01T00:00:00Z"},
+      {"+1000000000-01-01T00:00:00Z", "+1000000000-01-01T01:00:00Z"},
+      {"1999-12-31T23:00:00Z", "2000-01-01T00:00:00Z"},
+      {"2100-01-01T00:00:00Z", "2100-01-01T01:00:00Z"},
+    };
+    for (String[] query : bad) {
+      mockMvc
+          .perform(
+              get("/api/v1/reports/airport/IST")
+                  .param("from", query[0])
+                  .param("to", query[1])
+                  .with(as(Role.DISPATCHER)))
+          .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "a report that would read more documents than its cap is 422 REPORT_TOO_LARGE, never a"
+          + " full scan into memory")
+  void cappedReport() {
+    SearchProperties capped =
+        new Binder(
+                new MapConfigurationPropertySource(
+                    Map.of("aerotrace.search.report.max-scanned-documents", "1")))
+            .bindOrCreate("aerotrace.search", SearchProperties.class);
+    AirportReportService service = new AirportReportService(client, lag, capped, Clock.systemUTC());
+
+    assertThatThrownBy(() -> service.report(airport, H0, H0.plusSeconds(4 * 3600)))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> assertThat(e.errorCode()).isEqualTo(ErrorCode.REPORT_TOO_LARGE));
   }
 
   @Test

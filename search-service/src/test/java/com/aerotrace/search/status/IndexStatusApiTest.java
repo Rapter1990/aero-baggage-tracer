@@ -43,6 +43,8 @@ class IndexStatusApiTest extends AbstractSearchTest {
   static void consumers(DynamicPropertyRegistry registry) {
     registry.add("aerotrace.search.consumers.enabled", () -> "true");
     registry.add("aerotrace.search.consumers.group-id", () -> GROUP);
+    // The status shows the last scheduled measurement.
+    registry.add("aerotrace.search.lag.check-interval", () -> "300ms");
   }
 
   @Autowired MockMvc mockMvc;
@@ -79,9 +81,18 @@ class IndexStatusApiTest extends AbstractSearchTest {
           .get();
     }
 
+    Instant published = Instant.now();
+
+    // A measurement taken after the publish that found everything indexed and committed.
     await()
         .atMost(Duration.ofSeconds(90))
-        .until(() -> indexStatus().get("lagEvents").toString(), "0"::equals);
+        .until(
+            () -> {
+              JsonNode now = indexStatus();
+              return "0".equals(now.get("lagEvents").toString())
+                  && !now.get("checkedAt").isNull()
+                  && Instant.parse(now.get("checkedAt").asString()).isAfter(published);
+            });
     JsonNode status = indexStatus();
 
     assertThat(status.get("lagSeconds").asDouble()).isZero();

@@ -22,6 +22,9 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "Reports", description = "Hourly airport report for staff (AGENT, DISPATCHER, ADMIN)")
 class AirportReportController {
 
+  static final Instant EARLIEST = Instant.parse("2000-01-01T00:00:00Z");
+  static final Instant LATEST = Instant.parse("2100-01-01T00:00:00Z");
+
   private final AirportReportService reports;
   private final Duration maxRange;
 
@@ -36,15 +39,21 @@ class AirportReportController {
       description =
           "Hourly UTC buckets over [from, to): risky bags, resolved recoveries, retries and the "
               + "mean resolution time (null when nothing was resolved). from and to are whole "
-              + "UTC hours, from <= to, at most 31 days apart. Hours without data are zeros; an "
-              + "airport without data is 200. Eventually consistent: see indexedThrough and "
-              + "lagSeconds.")
+              + "UTC hours between 2000 and 2100, from <= to, at most 31 days apart. Hours "
+              + "without data are zeros; an airport without data is 200. 422 REPORT_TOO_LARGE "
+              + "when the report would read too many documents; 503 SEARCH_UNAVAILABLE when it "
+              + "takes too long. Eventually consistent: see indexedThrough and lagSeconds.")
   ApiResponse<AirportReport> airport(
       @PathVariable
           @Pattern(regexp = SearchRules.AIRPORT_PATTERN, message = SearchRules.AIRPORT_RULE)
           String iata,
       @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
       @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {
+    // Checked first: an instant far outside the data (year -10^9 or +10^9) is a bad request, not
+    // an overflow in the date arithmetic below.
+    if (from.isBefore(EARLIEST) || to.isAfter(LATEST)) {
+      throw invalid("from and to must be between 2000-01-01T00:00:00Z and 2100-01-01T00:00:00Z");
+    }
     if (from.isAfter(to)) {
       throw invalid("from must not be after to");
     }

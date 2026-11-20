@@ -52,9 +52,11 @@ class IndexStatusController {
   @Operation(
       summary = "Indexing lag and indexes",
       description =
-          "Measures the consumer-group lag now. While a rebuild runs, live holds two indexes.")
+          "The consumer-group lag as last measured (every check-interval; checkedAt says when). "
+              + "While a rebuild runs, live holds two indexes.")
   ApiResponse<IndexStatus> status() {
-    Lag now = lag.check();
+    // The scheduler measures the lag; a request never makes Kafka admin calls of its own.
+    Lag now = lag.last();
     Map<String, IndexState> indexes = new LinkedHashMap<>();
     for (IndexFamily family : IndexFamily.values()) {
       indexes.put(

@@ -118,8 +118,14 @@ public record SearchProperties(
    * Reports.
    *
    * @param maxRange the longest {@code [from, to)} a report may cover
+   * @param maxScannedDocuments the most documents the scans of one report may read; more is {@code
+   *     422 REPORT_TOO_LARGE}
+   * @param timeout how long one report may take; longer is {@code 503 SEARCH_UNAVAILABLE}
    */
-  public record Report(@DefaultValue("31d") Duration maxRange) {}
+  public record Report(
+      @DefaultValue("31d") Duration maxRange,
+      @DefaultValue("200000") long maxScannedDocuments,
+      @DefaultValue("10s") Duration timeout) {}
 
   /** Token verification: the identity-service public key (inline or location) and audience. */
   public record Jwt(
