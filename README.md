@@ -370,6 +370,7 @@ They are in the AeroTrace folder, provisioned from `observability/grafana`.
 | **AeroTrace - Kafka Topics** | Messages, errors, send time per topic |
 | **AeroTrace - Kafka Streams** | Streams state, HIGH-risk bags, lag, risk/anomaly/dead-letter events, state stores |
 | **AeroTrace - Outbox** | Outbox backlog, delay, failures, relay runs |
+| **AeroTrace - Elasticsearch** | Search indexing lag, outcomes and rebuilds (search-service); cluster health, heap, index sizes and search/indexing rates (`elasticsearch-exporter`) |
 
 | Dashboard | How to use it |
 |---|---|

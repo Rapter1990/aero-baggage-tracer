@@ -91,6 +91,26 @@ services:
     networks:
       - aerotrace
 
+  # Prometheus metrics of Elasticsearch (cluster health, heap, indexes, search and indexing rates)
+  # for the "AeroTrace - Elasticsearch" Grafana dashboard. Prometheus scrapes it on 9114; the port
+  # is not published. It logs in with the same elastic user (ES_USERNAME/ES_PASSWORD, not in a URL).
+  elasticsearch-exporter:
+    image: prometheuscommunity/elasticsearch-exporter:latest
+    container_name: elasticsearch-exporter
+    restart: unless-stopped
+    command:
+      - --es.uri=http://elasticsearch:9200
+      - --es.all
+      - --es.indices
+    environment:
+      ES_USERNAME: elastic
+      ES_PASSWORD: ${ELASTIC_PASSWORD:?set ELASTIC_PASSWORD in .env (see README)}
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - aerotrace
+
   # Web UI for Kafka: topics, messages, consumer groups. The outbox events of the journey-service
   # (topic baggage.scan.received.v1) show up here. Open http://localhost:8090.
   kafka-ui:
