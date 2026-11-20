@@ -56,9 +56,41 @@ services:
         $$T --bootstrap-server $$B --create --if-not-exists --topic recovery.case.changed.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
         $$T --bootstrap-server $$B --create --if-not-exists --topic recovery.capacity.changed.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
         $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.dead-letter.v1 --partitions 3 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=2592000000
+        # Published by the journey-service (#28), read by the search-service (#15 owns its final settings).
+        $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.bag.registered.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
     depends_on:
       kafka:
         condition: service_healthy
+    networks:
+      - aerotrace
+
+  # The search-service's read models. Same image and security as docker-compose.yml. The tag is
+  # latest at the user's request, but Elastic publishes no latest tag, so the pull fails until a
+  # concrete tag (e.g. 9.5.3) is set (README). ELASTIC_PASSWORD has a dev-only default here. Port
+  # 9200 is published, for the search-service run from the IDE (http://localhost:9200, user elastic).
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:latest
+    container_name: elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.security.transport.ssl.enabled: "false"
+      xpack.ml.enabled: "false"
+      # DEV ONLY default, so `docker compose -f docker-compose-local.yml up` works without a .env
+      # for developers who do not use search. Never use it anywhere else: set ELASTIC_PASSWORD.
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-dev-only-elastic-password}
+      ES_JAVA_OPTS: ${ELASTICSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u \"elastic:$$ELASTIC_PASSWORD\" http://localhost:9200/_cluster/health > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
     networks:
       - aerotrace
 
@@ -168,9 +200,9 @@ services:
     image: prom/pushgateway:latest
     container_name: pushgateway
     restart: unless-stopped
-    # Anyone who can reach it could push fake numbers: loopback only (the script runs on the host).
+    # Anyone who can reach it could push fake numbers: keep it on a trusted network (the script runs on the host).
     ports:
-      - "127.0.0.1:9091:9091"
+      - "9091:9091"
     networks:
       - aerotrace
 
@@ -224,6 +256,7 @@ volumes:
   postgres-18-data:
   tempo-data:
   loki-data:
+  elasticsearch-data:
 
 networks:
   aerotrace:

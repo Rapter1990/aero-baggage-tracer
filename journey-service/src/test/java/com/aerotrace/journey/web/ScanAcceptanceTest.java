@@ -11,6 +11,7 @@ import com.aerotrace.common.event.ScanReceivedPayload;
 import com.aerotrace.common.event.Topics;
 import com.aerotrace.common.security.Role;
 import com.aerotrace.journey.base.AbstractApiTest;
+import com.aerotrace.journey.model.entity.OutboxEventEntity;
 import com.aerotrace.journey.repository.OutboxEventRepository;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -53,7 +54,7 @@ class ScanAcceptanceTest extends AbstractApiTest {
 
     assertThat(count("SELECT count(*) FROM journey.scan_audit WHERE bag_tag = ?", bagTag))
         .isEqualTo(1);
-    String payload = outbox.findByMessageKeyOrderByCreatedAt(bagTag).getFirst().getPayload();
+    String payload = scanEvents(bagTag).getFirst().getPayload();
     EventEnvelope<ScanReceivedPayload> event = EventJson.read(payload, ScanReceivedPayload.class);
     assertThat(event.eventType()).isEqualTo("baggage.scan.received");
     assertThat(event.schemaVersion()).isEqualTo(2);
@@ -86,7 +87,7 @@ class ScanAcceptanceTest extends AbstractApiTest {
         .andExpect(status().isAccepted());
 
     List<ScanReceivedPayload> events =
-        outbox.findByMessageKeyOrderByCreatedAt(bagTag).stream()
+        scanEvents(bagTag).stream()
             .map(e -> EventJson.read(e.getPayload(), ScanReceivedPayload.class).payload())
             .toList();
     assertThat(events)
@@ -112,7 +113,7 @@ class ScanAcceptanceTest extends AbstractApiTest {
     scan(barcodeScan(bagTag, ISTANBUL, "ARRIVED", 2, minutesAgo(2)), newKey(), as(SCANNER))
         .andExpect(status().isAccepted());
 
-    assertThat(outbox.findByMessageKeyOrderByCreatedAt(bagTag))
+    assertThat(scanEvents(bagTag))
         .hasSize(2)
         .allSatisfy(
             e -> {
@@ -125,6 +126,13 @@ class ScanAcceptanceTest extends AbstractApiTest {
     journey(bagTag, as(Role.AGENT))
         .andExpect(jsonPath("$.data.history.length()").value(2))
         .andExpect(jsonPath("$.data.latestState.airport").value(ISTANBUL));
+  }
+
+  /** The scan events of a bag in the outbox (its registration event is there too, #28). */
+  private List<OutboxEventEntity> scanEvents(String bagTag) {
+    return outbox.findByMessageKeyOrderByCreatedAt(bagTag).stream()
+        .filter(e -> Topics.SCAN_RECEIVED.equals(e.getTopic()))
+        .toList();
   }
 
   private String legId(String bagTag, int legNo) {
@@ -171,7 +179,11 @@ class ScanAcceptanceTest extends AbstractApiTest {
 
     assertThat(count("SELECT count(*) FROM journey.scan_audit WHERE bag_tag = ?", bagTag))
         .isEqualTo(1);
-    assertThat(count("SELECT count(*) FROM journey.outbox_event WHERE message_key = ?", bagTag))
+    assertThat(
+            count(
+                "SELECT count(*) FROM journey.outbox_event WHERE message_key = ? AND topic = ?",
+                bagTag,
+                Topics.SCAN_RECEIVED))
         .isEqualTo(1);
     assertThat(count("SELECT count(*) FROM journey.processed_event WHERE event_id = ?", key))
         .isEqualTo(1);
@@ -198,7 +210,11 @@ class ScanAcceptanceTest extends AbstractApiTest {
     assertThat(statuses).containsOnly(202);
     assertThat(count("SELECT count(*) FROM journey.scan_audit WHERE bag_tag = ?", bagTag))
         .isEqualTo(1);
-    assertThat(count("SELECT count(*) FROM journey.outbox_event WHERE message_key = ?", bagTag))
+    assertThat(
+            count(
+                "SELECT count(*) FROM journey.outbox_event WHERE message_key = ? AND topic = ?",
+                bagTag,
+                Topics.SCAN_RECEIVED))
         .isEqualTo(1);
   }
 
@@ -317,7 +333,7 @@ class ScanAcceptanceTest extends AbstractApiTest {
             count(
                 "SELECT count(*) FROM journey.scan_audit WHERE bag_tag = ? AND late_event", bagTag))
         .isEqualTo(1);
-    String payload = outbox.findByMessageKeyOrderByCreatedAt(bagTag).getFirst().getPayload();
+    String payload = scanEvents(bagTag).getFirst().getPayload();
     assertThat(EventJson.read(payload, ScanReceivedPayload.class).payload().lateEvent()).isTrue();
   }
 

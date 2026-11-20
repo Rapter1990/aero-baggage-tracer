@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "AeroTrace",
-    "description": "The AeroTrace API through the api-gateway (default http://localhost:8080): the Identity Service (authentication), the Journey Service (bags, scans, journey), the Recovery Service (cases, moves, assignment, policy) and the Capacity Service (resources, holds, confirmation, release). Each service has its own folder; run a folder top to bottom with the runner. The gateway limits each address to about 10 requests per second (burst 20), so run with a delay of 150 ms or more between requests. Each folder signs in with the dev dummy accounts or the accounts the identity folder creates, so use the compose stack with the dev Liquibase context.",
+    "description": "The AeroTrace API through the api-gateway (default http://localhost:8080): the Identity Service (authentication), the Journey Service (bags, scans, journey), the Recovery Service (cases, moves, assignment, policy) the Capacity Service (resources, holds, confirmation, release) and the Search Service (bag search, airport report, index status, rebuild). Each service has its own folder; run a folder top to bottom with the runner. The gateway limits each address to about 10 requests per second (burst 20), so run with a delay of 150 ms or more between requests. Each folder signs in with the dev dummy accounts or the accounts the identity folder creates, so use the compose stack with the dev Liquibase context.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -8034,6 +8034,1003 @@
                   "path": [
                     "v3",
                     "api-docs"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Search Service",
+      "description": "The search-service through the api-gateway: bag search with filters and cursor paging, the hourly airport report, the indexing lag, and the rebuild of the Elasticsearch read models (ADMIN). Staff only: a passenger is refused everywhere. Results are eventually consistent (reports carry indexedThrough and lagSeconds). The rebuild reads the export endpoints of the journey- and recovery-services (#28, #29); until they exist the job ends FAILED and the indexes stay as they were. Run with a delay of 150 ms or more between requests.",
+      "item": [
+        {
+          "name": "1 - Sign in",
+          "item": [
+            {
+              "name": "1.1 Sign in as the admin",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.environment.set('searchAdminToken', pm.response.json().data.accessToken);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"usernameOrEmail\": \"{{searchAdminUsername}}\",\n  \"password\": \"{{searchPassword}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "1.2 Sign in as the dispatcher",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.environment.set('searchDispatcherToken', pm.response.json().data.accessToken);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"usernameOrEmail\": \"{{searchDispatcherUsername}}\",\n  \"password\": \"{{searchPassword}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "1.3 Sign in as the agent",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.environment.set('searchAgentToken', pm.response.json().data.accessToken);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"usernameOrEmail\": \"{{searchAgentUsername}}\",\n  \"password\": \"{{searchPassword}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "1.4 Sign in as the passenger",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.environment.set('searchPassengerToken', pm.response.json().data.accessToken);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"usernameOrEmail\": \"{{searchPassengerUsername}}\",\n  \"password\": \"{{searchPassword}}\"\n}"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "2 - Search bags (agent)",
+          "item": [
+            {
+              "name": "2.1 First page of all bags",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const body = pm.response.json();",
+                      "pm.test('wrapped in the ApiResponse envelope', () => {",
+                      "  pm.expect(body.success).to.eql(true);",
+                      "  pm.expect(body.timestamp).to.be.a('string');",
+                      "});",
+                      "const d = body.data;",
+                      "pm.test('a page: items, size, nextCursor, hasMore', () => {",
+                      "  pm.expect(d.items).to.be.an('array');",
+                      "  pm.expect(d.size).to.eql(2);",
+                      "  pm.expect(d).to.have.property('hasMore');",
+                      "});",
+                      "pm.environment.set('searchCursor', d.hasMore ? d.nextCursor : '');"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/search/bags?size=2",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "search",
+                    "bags"
+                  ],
+                  "query": [
+                    {
+                      "key": "size",
+                      "value": "2"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{searchAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "2.2 Next page with the cursor",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.environment.get('searchCursor')) { pm.test('one page only: nothing to page', () => {}); return; }",
+                      "pm.test('200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/search/bags?size=2&cursor={{searchCursor}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "search",
+                    "bags"
+                  ],
+                  "query": [
+                    {
+                      "key": "size",
+                      "value": "2"
+                    },
+                    {
+                      "key": "cursor",
+                      "value": "{{searchCursor}}"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{searchAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "2.3 Filters combined (airline, risk level, case state)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.test('no raw hits or scores', () => pm.response.json().data.items.forEach(i => pm.expect(i).to.not.have.property('_score')));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/search/bags?airline=TK&riskLevel=HIGH&caseState=OPEN",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "search",
+                    "bags"
+                  ],
+                  "query": [
+                    {
+                      "key": "airline",
+                      "value": "TK"
+                    },
+                    {
+                      "key": "riskLevel",
+                      "value": "HIGH"
+                    },
+                    {
+                      "key": "caseState",
+                      "value": "OPEN"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{searchAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "2.4 Size over 100 is refused",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('400', () => pm.response.to.have.status(400));",
+                      "pm.test('ApiError VALIDATION_ERROR', () => pm.expect(pm.response.json().code).to.eql('VALIDATION_ERROR'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/search/bags?size=101",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "search",
+                    "bags"
+                  ],
+                  "query": [
+                    {
+                      "key": "size",
+                      "value": "101"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{searchAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "2.5 A forged cursor is refused",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('400', () => pm.response.to.have.status(400));",
+                      "pm.test('ApiError VALIDATION_ERROR', () => pm.expect(pm.response.json().code).to.eql('VALIDATION_ERROR'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/search/bags?cursor=Zm9yZ2Vk.c2lnbmVk",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "search",
+                    "bags"
+                  ],
+                  "query": [
+                    {
+                      "key": "cursor",
+                      "value": "Zm9yZ2Vk.c2lnbmVk"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{searchAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "3 - Airport report (dispatcher)",
+          "item": [
+            {
+              "name": "3.1 Report of IST over two hours",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const body = pm.response.json();",
+                      "pm.test('wrapped in the ApiResponse envelope', () => {",
+                      "  pm.expect(body.success).to.eql(true);",
+                      "  pm.expect(body.timestamp).to.be.a('string');",
+                      "});",
+                      "pm.test('two zero-filled hourly buckets', () => pm.expect(body.data.buckets.length).to.eql(2));",
+                      "pm.test('the watermark and the lag', () => { pm.expect(body.data).to.have.property('indexedThrough'); pm.expect(body.data).to.have.property('lagSeconds'); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/reports/airport/IST?from=2026-01-01T00:00:00Z&to=2026-01-01T02:00:00Z",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "reports",
+                    "airport",
+                    "IST"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-01-01T00:00:00Z"
+                    },
+                    {
+                      "key": "to",
+                      "value": "2026-01-01T02:00:00Z"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{searchDispatcherToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "3.2 from after to is refused",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('400', () => pm.response.to.have.status(400));",
+                      "pm.test('ApiError VALIDATION_ERROR', () => pm.expect(pm.response.json().code).to.eql('VALIDATION_ERROR'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/reports/airport/IST?from=2026-01-02T00:00:00Z&to=2026-01-01T00:00:00Z",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "reports",
+                    "airport",
+                    "IST"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-01-02T00:00:00Z"
+                    },
+                    {
+                      "key": "to",
+                      "value": "2026-01-01T00:00:00Z"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{searchDispatcherToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "4 - Index status (dispatcher)",
+          "item": [
+            {
+              "name": "4.1 Indexing lag and indexes",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const body = pm.response.json();",
+                      "pm.test('wrapped in the ApiResponse envelope', () => {",
+                      "  pm.expect(body.success).to.eql(true);",
+                      "  pm.expect(body.timestamp).to.be.a('string');",
+                      "});",
+                      "pm.test('one read index per read model', () => { pm.expect(body.data.indexes.cases.read).to.match(/^cases-v/); pm.expect(body.data.indexes.journeys.read).to.match(/^journeys-v/); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/search/index/status",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "search",
+                    "index",
+                    "status"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{searchDispatcherToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "4.2 An agent may not read it",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('403', () => pm.response.to.have.status(403));",
+                      "pm.test('ApiError ACCESS_DENIED', () => pm.expect(pm.response.json().code).to.eql('ACCESS_DENIED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/search/index/status",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "search",
+                    "index",
+                    "status"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{searchAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "5 - Rebuild (admin)",
+          "item": [
+            {
+              "name": "5.1 Start a rebuild of the cases",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.environment.set('searchReindexKey', pm.variables.replaceIn('{{$guid}}'));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('202', () => pm.response.to.have.status(202));",
+                      "pm.environment.set('searchJobId', pm.response.json().data.jobId);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{searchReindexKey}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/search/reindex?scope=CASES",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "search",
+                    "reindex"
+                  ],
+                  "query": [
+                    {
+                      "key": "scope",
+                      "value": "CASES"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{searchAdminToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "5.2 The same key returns the same job",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('202', () => pm.response.to.have.status(202));",
+                      "pm.test('the same job', () => pm.expect(pm.response.json().data.jobId).to.eql(pm.environment.get('searchJobId')));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{searchReindexKey}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/search/reindex?scope=CASES",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "search",
+                    "reindex"
+                  ],
+                  "query": [
+                    {
+                      "key": "scope",
+                      "value": "CASES"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{searchAdminToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "5.3 Read the job",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.test('RUNNING, SUCCEEDED or FAILED', () => pm.expect(['RUNNING', 'SUCCEEDED', 'FAILED']).to.include(pm.response.json().data.status));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/search/reindex/{{searchJobId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "search",
+                    "reindex",
+                    "{{searchJobId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{searchAdminToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "5.4 A dispatcher may not rebuild",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('403', () => pm.response.to.have.status(403));",
+                      "pm.test('ApiError ACCESS_DENIED', () => pm.expect(pm.response.json().code).to.eql('ACCESS_DENIED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/search/reindex",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "search",
+                    "reindex"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{searchDispatcherToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "6 - Refused calls",
+          "item": [
+            {
+              "name": "6.1 A passenger may not search",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('403', () => pm.response.to.have.status(403));",
+                      "pm.test('ApiError ACCESS_DENIED', () => pm.expect(pm.response.json().code).to.eql('ACCESS_DENIED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/search/bags",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "search",
+                    "bags"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{searchPassengerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "6.2 A passenger may not read reports",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('403', () => pm.response.to.have.status(403));",
+                      "pm.test('ApiError ACCESS_DENIED', () => pm.expect(pm.response.json().code).to.eql('ACCESS_DENIED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/reports/airport/IST?from=2026-01-01T00:00:00Z&to=2026-01-01T01:00:00Z",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "reports",
+                    "airport",
+                    "IST"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-01-01T00:00:00Z"
+                    },
+                    {
+                      "key": "to",
+                      "value": "2026-01-01T01:00:00Z"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{searchPassengerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "6.3 No token",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('401', () => pm.response.to.have.status(401));",
+                      "pm.test('ApiError UNAUTHENTICATED', () => pm.expect(pm.response.json().code).to.eql('UNAUTHENTICATED'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/search/bags",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "search",
+                    "bags"
                   ]
                 },
                 "auth": {

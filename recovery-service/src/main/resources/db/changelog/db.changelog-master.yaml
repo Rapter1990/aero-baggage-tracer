@@ -19,3 +19,7 @@ databaseChangeLog:
       file: db/changelog/changes/009-outbox-sequence.sql
   - include:
       file: db/changelog/changes/010-hold-confirmation.sql
+  - include:
+      file: db/changelog/changes/011-case-trigger-and-resolution.sql
+  - include:
+      file: db/changelog/changes/012-leg-id-uuid.sql

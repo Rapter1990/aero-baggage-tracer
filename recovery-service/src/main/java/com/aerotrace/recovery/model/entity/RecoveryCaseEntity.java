@@ -1,5 +1,6 @@
 package com.aerotrace.recovery.model.entity;
 
+import com.aerotrace.common.model.CaseTrigger;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.recovery.strategy.RecoveryAction;
 import jakarta.persistence.Column;
@@ -32,7 +33,7 @@ public class RecoveryCaseEntity {
   @Column(name = "bag_tag", nullable = false, updatable = false, length = 10)
   private String bagTag;
 
-  @Column(name = "leg_id", nullable = false, updatable = false, length = 32)
+  @Column(name = "leg_id", nullable = false, updatable = false, length = 36)
   private String legId;
 
   @Enumerated(EnumType.STRING)
@@ -57,6 +58,15 @@ public class RecoveryCaseEntity {
   /** When a scanner anomaly was recorded on the bag of this case; null when none was. */
   @Column(name = "scanner_anomaly_at")
   private Instant scannerAnomalyAt;
+
+  /** What opened the case (a risk event or a person); fixed when it is opened. */
+  @Enumerated(EnumType.STRING)
+  @Column(name = "case_trigger", nullable = false, updatable = false, length = 20)
+  private CaseTrigger trigger;
+
+  /** When the case reached RESOLVED; null in every other state, the other final ones included. */
+  @Column(name = "resolved_at")
+  private Instant resolvedAt;
 
   /** The capacity hold of this case in the capacity-service; null when there is none. */
   @Column(name = "reservation_id")
@@ -92,8 +102,10 @@ public class RecoveryCaseEntity {
       String idempotencyKey,
       String createdBy,
       Instant createdAt,
-      RecoveryAction plannedAction) {
+      RecoveryAction plannedAction,
+      CaseTrigger trigger) {
     this.plannedAction = plannedAction;
+    this.trigger = trigger;
     this.bagTag = bagTag;
     this.legId = legId;
     this.reason = reason;

@@ -1,0 +1,164 @@
+server:
+  port: 1117
+
+spring:
+  application:
+    name: search-service
+  web:
+    error:
+      # Never put exception messages, stack traces or binding details into error responses.
+      include-message: never
+      include-stacktrace: never
+      include-binding-errors: never
+      include-exception: false
+  config:
+    # Optional local settings (see the .env section of the README); real environment variables take precedence.
+    import: optional:file:.env[.properties],optional:file:../.env[.properties]
+  threads:
+    virtual:
+      enabled: true
+  elasticsearch:
+    uris: ${ELASTICSEARCH_URIS:http://localhost:9200}
+    # Required outside the local, dev and test profiles (see ElasticsearchCredentialsCheck); use
+    # a dedicated least-privilege user (docs/apis/SEARCH-API.md), not the elastic superuser.
+    username: ${ELASTICSEARCH_USERNAME:}
+    # No default: the service refuses to start rather than guess a password (security is on).
+    password: ${ELASTIC_PASSWORD}
+    connection-timeout: ${ELASTICSEARCH_CONNECT_TIMEOUT:2s}
+    socket-timeout: ${ELASTICSEARCH_SOCKET_TIMEOUT:10s}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    listener:
+      # A listener gets a batch of records and indexes it with one bulk request; the offsets of the
+      # batch are committed only after the listener returned, so after Elasticsearch acknowledged.
+      type: batch
+      ack-mode: batch
+      observation-enabled: true
+    admin:
+      close-timeout: 2s
+      operation-timeout: 2s
+      properties:
+        default.api.timeout.ms: 3000
+        request.timeout.ms: 2000
+    consumer:
+      group-id: ${aerotrace.search.consumers.group-id}
+      # A new group reads the topics from the start, so the first start indexes what is retained.
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      max-poll-records: ${SEARCH_CONSUMER_BATCH_SIZE:500}
+      properties:
+        max.poll.interval.ms: 300000
+        # Topics are created by kafka-init, never by a consumer subscribing to them.
+        allow.auto.create.topics: false
+    producer:
+      # Only dead letters are produced.
+      acks: all
+      properties:
+        enable.idempotence: true
+        delivery.timeout.ms: 15000
+        request.timeout.ms: 5000
+        max.block.ms: 5000
+
+aerotrace:
+  search:
+    consumers:
+      enabled: ${SEARCH_CONSUMERS_ENABLED:true}
+      group-id: ${SEARCH_CONSUMER_GROUP:search-service}
+      retry-backoff: ${SEARCH_CONSUMER_RETRY_BACKOFF:200ms}
+      max-retry-backoff: ${SEARCH_CONSUMER_MAX_RETRY_BACKOFF:30s}
+    index:
+      replicas: ${SEARCH_INDEX_REPLICAS:0}
+      pit-keep-alive: ${SEARCH_PIT_KEEP_ALIVE:1m}
+      live-settle: ${SEARCH_REINDEX_LIVE_SETTLE:5s}
+      old-index-grace: ${SEARCH_OLD_INDEX_GRACE:5m}
+      janitor-delay: ${SEARCH_INDEX_JANITOR_DELAY:1m}
+    cursor:
+      # HMAC key of the paging cursors, the same on every instance, at least 32 bytes. Required
+      # outside the local, dev and test profiles (which fall back to a random key per instance).
+      secret: ${SEARCH_CURSOR_SECRET:}
+    reindex:
+      page-size: ${SEARCH_REINDEX_PAGE_SIZE:500}
+      lock-lease: ${SEARCH_REINDEX_LOCK_LEASE:2m}
+      heartbeat: ${SEARCH_REINDEX_HEARTBEAT:30s}
+      max-pages: ${SEARCH_REINDEX_MAX_PAGES:100000}
+      max-duration: ${SEARCH_REINDEX_MAX_DURATION:2h}
+      # How long an Idempotency-Key names its job.
+      key-ttl: ${SEARCH_REINDEX_KEY_TTL:24h}
+    export:
+      # The internal export endpoints of the owning services (#28, #29); never through the gateway.
+      journey-url: ${JOURNEY_SERVICE_URL:http://localhost:1113}
+      recovery-url: ${RECOVERY_SERVICE_URL:http://localhost:1115}
+      # Shared secret the export endpoints accept. No default: empty sends none.
+      service-token: ${SEARCH_EXPORT_SERVICE_TOKEN:}
+      connect-timeout: ${SEARCH_EXPORT_CONNECT_TIMEOUT:2s}
+      read-timeout: ${SEARCH_EXPORT_READ_TIMEOUT:30s}
+      max-page-bytes: ${SEARCH_EXPORT_MAX_PAGE_BYTES:16777216}
+    lag:
+      check-interval: ${SEARCH_LAG_CHECK_INTERVAL:15s}
+    report:
+      max-range: ${SEARCH_REPORT_MAX_RANGE:31d}
+      # A report reading more documents than this is 422 REPORT_TOO_LARGE; one slower than the
+      # timeout is 503 SEARCH_UNAVAILABLE.
+      max-scanned-documents: ${SEARCH_REPORT_MAX_SCANNED_DOCUMENTS:200000}
+      timeout: ${SEARCH_REPORT_TIMEOUT:10s}
+    docs:
+      enabled: ${DOCS_ENABLED:true}
+    jwt:
+      audience: ${IDENTITY_AUDIENCE:aerotrace-api}
+      # The identity-service public key (PEM), inline or from a location. Required: with nothing
+      # set the service refuses to start, except under the local, dev or test profile, which use
+      # the development key bundled in src/main/resources/keys.
+      public-key: ${IDENTITY_JWT_PUBLIC_KEY:}
+      public-key-location: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:}
+
+eureka:
+  instance:
+    hostname: ${EUREKA_INSTANCE_HOSTNAME:localhost}
+    instance-id: ${spring.application.name}:${eureka.instance.hostname}:${server.port}
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: ${EUREKA_URL:http://${EUREKA_USER:eureka}:${EUREKA_PASSWORD}@localhost:8761/eureka/}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  observations:
+    enable:
+      tasks:
+        scheduled:
+          execution: false
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+    logging:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:http://localhost:4318/v1/logs}
+  otlp:
+    metrics:
+      export:
+        url: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:http://localhost:4318/v1/metrics}
+        step: ${METRICS_EXPORT_STEP:15s}
+
+springdoc:
+  api-docs:
+    enabled: ${aerotrace.search.docs.enabled}

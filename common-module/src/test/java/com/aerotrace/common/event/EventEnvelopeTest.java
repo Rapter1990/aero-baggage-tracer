@@ -39,7 +39,9 @@ class EventEnvelopeTest {
 
   @Test
   void jsonUsesIsoTimestampsAndAllEnvelopeFields() {
-    var payload = new CaseChangedPayload("c1", "AB123456", "LEG-2", RecoveryState.OPEN, 1, "init");
+    var payload =
+        new CaseChangedPayload(
+            "c1", "AB123456", "LEG-2", RecoveryState.OPEN, 1, "init", OCCURRED, null, null, null);
     var envelope =
         EventEnvelope.create(Topics.CASE_CHANGED, 1, "c1", "corr", OCCURRED, payload, CLOCK);
     String json = EventJson.write(envelope);
@@ -119,7 +121,8 @@ class EventEnvelopeTest {
             "baggage.risk.changed.v1",
             "recovery.case.changed.v1",
             "recovery.capacity.changed.v1",
-            "baggage.dead-letter.v1");
+            "baggage.dead-letter.v1",
+            "baggage.bag.registered.v1");
     assertThat(Topics.ALL).allMatch(t -> t.endsWith(".v1"));
   }
 

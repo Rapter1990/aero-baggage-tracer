@@ -1,5 +1,6 @@
 package com.aerotrace.journey.constant;
 
+import java.util.regex.Pattern;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
@@ -28,4 +29,26 @@ public final class JourneyRules {
 
   /** Revision 2 added the leg (legId, flightNumber, departureAt) to the scan payload. */
   public static final int SCAN_EVENT_SCHEMA_VERSION = 2;
+
+  public static final String EVENT_TYPE_BAG_REGISTERED = "baggage.bag.registered";
+  public static final int BAG_REGISTERED_SCHEMA_VERSION = 1;
+
+  public static final String EXPORT_AFTER_RULE = "after must be a 10-digit bag tag";
+
+  private static final Pattern FLIGHT = Pattern.compile(FLIGHT_PATTERN);
+
+  /**
+   * The airline of a leg (#28): the two-character IATA airline designator its validated flight
+   * number starts with ({@link #FLIGHT_PATTERN}: two letters or digits, then one to four digits and
+   * an optional suffix letter), so {@code TK1981} is {@code TK} and {@code 4U8} is {@code 4U}. The
+   * journey-service decides it once, at registration, and publishes it; consumers never guess.
+   *
+   * @throws IllegalArgumentException for a flight number that breaks the validated format
+   */
+  public static String airlineOf(String flightNumber) {
+    if (flightNumber == null || !FLIGHT.matcher(flightNumber).matches()) {
+      throw new IllegalArgumentException("not a validated flight number");
+    }
+    return flightNumber.substring(0, 2);
+  }
 }

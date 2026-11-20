@@ -114,6 +114,11 @@ aerotrace:
       # Shared secret the capacity-service accepts from a service caller. Sent only on calls without
       # a user token (the sweeper's releases). No default: empty sends none.
       service-token: ${CAPACITY_SERVICE_TOKEN:}
+    export:
+      # Shared secret the search-service sends in X-Service-Token to read the internal case export
+      # (/internal/**, never routed by the gateway). No default: empty (or under 16 characters)
+      # refuses every call, except in the local and dev profiles.
+      service-token: ${SEARCH_EXPORT_SERVICE_TOKEN:}
     docs:
       enabled: ${DOCS_ENABLED:true}
     jwt:

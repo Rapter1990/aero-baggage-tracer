@@ -1,0 +1,25 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": "__REPLICAS__"
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "kind": { "type": "keyword" },
+      "jobId": { "type": "keyword" },
+      "status": { "type": "keyword" },
+      "scope": { "type": "keyword" },
+      "requestedBy": { "type": "keyword" },
+      "startedAt": { "type": "date" },
+      "finishedAt": { "type": "date" },
+      "leaseUntil": { "type": "date" },
+      "error": { "type": "keyword" },
+      "results": { "type": "object", "enabled": false },
+      "createdAt": { "type": "date" },
+      "lastModifiedAt": { "type": "date" },
+      "createdBy": { "type": "keyword" },
+      "lastModifiedBy": { "type": "keyword" }
+    }
+  }
+}

@@ -62,6 +62,21 @@ class ErrorContractTest {
   }
 
   @Test
+  void searchCodesHaveTheirOwnStatusesAndAreNeverInferredFromOne() {
+    assertThat(ErrorCode.SEARCH_UNAVAILABLE.httpStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+    assertThat(ErrorCode.REINDEX_IN_PROGRESS.httpStatus()).isEqualTo(HttpStatus.CONFLICT);
+    assertThat(ErrorCode.CURSOR_EXPIRED.httpStatus()).isEqualTo(HttpStatus.GONE);
+    assertThat(ErrorCode.IDEMPOTENCY_KEY_REUSED.httpStatus())
+        .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+    assertThat(ErrorCode.REPORT_TOO_LARGE.httpStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+    assertThat(ErrorCode.fromStatus(422)).isEqualTo(ErrorCode.REQUEST_REJECTED);
+    // A bare status keeps its old mapping: these codes are only ever thrown explicitly.
+    assertThat(ErrorCode.fromStatus(409)).isEqualTo(ErrorCode.VERSION_CONFLICT);
+    assertThat(ErrorCode.fromStatus(503)).isEqualTo(ErrorCode.INTERNAL_ERROR);
+    assertThat(ErrorCode.fromStatus(410)).isEqualTo(ErrorCode.REQUEST_REJECTED);
+  }
+
+  @Test
   void rateLimitedIsStable429AndMapsFromStatus() {
     assertThat(ErrorCode.RATE_LIMITED.httpStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
     assertThat(ErrorCode.fromStatus(429)).isEqualTo(ErrorCode.RATE_LIMITED);

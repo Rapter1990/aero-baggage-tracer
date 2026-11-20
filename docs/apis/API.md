@@ -10,6 +10,7 @@ What the platform offers, how requests flow, how to try them in Postman.
 | [Journey Service API](JOURNEY-API.md) | Calls, rules, scans, events, requests |
 | [Recovery Service API](RECOVERY-API.md) | Cases, moves, capacity, policy, events |
 | [Capacity Service API](CAPACITY-API.md) | Reservations, release, resources, the 409 contract, events |
+| [Search Service API](SEARCH-API.md) | Bag search, airport report, index status, rebuild |
 | [README](../../README.md) | Setup, variables, limits, observability |
 
 ## At a glance
@@ -21,6 +22,7 @@ What the platform offers, how requests flow, how to try them in Postman.
 | journey-service | `http://localhost:1113` | `/api/v1/bags/**`, `/api/v1/scans/**` |
 | recovery-service | `http://localhost:1115` | `/api/v1/recovery-cases/**`, `/api/v1/recovery-policy` |
 | capacity-service | `http://localhost:1116` | `/api/v1/capacity/**` |
+| search-service | `http://localhost:1117` | `/api/v1/search/**`, `/api/v1/reports/**`, `/api/v1/admin/search/**` |
 
 Success answers look like `{"success":true,"data":...,"timestamp":...}`. Errors use the shared shape, see [response format](../../README.md#api-response-format).
 
@@ -102,6 +104,17 @@ Two files in `postman/`:
 | 6 Service token (the recovery-service sweeper) | Confirm and release directly on port 1116 with `X-Service-Token` and no user token; the token cannot hold slots; a wrong token and the gateway are refused |
 | 7 Service checks (port 1116) | Health and OpenAPI (the 409 contract) via `capacityUrl` |
 
+**Search Service folders** (run top to bottom; see [Search Service API](SEARCH-API.md#every-request-in-the-postman-collection))
+
+| Folder | What it does |
+|---|---|
+| 1 Sign in | Admin, dispatcher, agent and passenger tokens |
+| 2 Search bags (agent) | First page, next page with the cursor, combined filters; size over 100 and a forged cursor refused |
+| 3 Airport report (dispatcher) | Two zero-filled hours with `indexedThrough` and `lagSeconds`; `from` after `to` refused |
+| 4 Index status (dispatcher) | Lag and read indexes; an agent refused |
+| 5 Rebuild (admin) | Start, the same key returns the same job, read the job (succeeds when the journey- and recovery-service are up, `FAILED` with `export unauthorized` if they refuse the token), a dispatcher refused |
+| 6 Refused calls | Passenger on search and report, no token |
+
 **Notes**
 
 | Topic | What to know |
@@ -131,7 +144,7 @@ Two files in `postman/`:
 newman run postman/AeroTrace.postman_collection.json -e postman/AeroTrace-local.postman_environment.json --delay-request 150 --folder "Identity Service"
 ```
 
-Use `--folder "Journey Service"` for the journey folder, `--folder "Recovery Service"` for the recovery folder and `--folder "Capacity Service"` for the capacity folder.
+Use `--folder "Journey Service"` for the journey folder, `--folder "Recovery Service"` for the recovery folder, `--folder "Capacity Service"` for the capacity folder and `--folder "Search Service"` for the search folder.
 
 **Run order of the collection**
 
@@ -151,4 +164,4 @@ flowchart LR
     end
 ```
 
-The tables of every request are in [Identity Service API](IDENTITY-API.md#every-request-in-the-postman-collection) and [Journey Service API](JOURNEY-API.md#every-request-in-the-postman-collection). The recovery requests are listed above and in [Recovery Service API](RECOVERY-API.md). The capacity requests are in [Capacity Service API](CAPACITY-API.md#every-request-in-the-postman-collection).
+The tables of every request are in [Identity Service API](IDENTITY-API.md#every-request-in-the-postman-collection) and [Journey Service API](JOURNEY-API.md#every-request-in-the-postman-collection). The recovery requests are listed above and in [Recovery Service API](RECOVERY-API.md). The capacity requests are in [Capacity Service API](CAPACITY-API.md#every-request-in-the-postman-collection), the search requests in [Search Service API](SEARCH-API.md#every-request-in-the-postman-collection).

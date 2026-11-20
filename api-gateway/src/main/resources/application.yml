@@ -40,22 +40,34 @@ spring:
               uri: lb://identity-service
               predicates:
                 - Path=/api/v1/auth/**
+            # The journey-service accepts X-Service-Token on its internal export only, which has no
+            # route here; the header is stripped anyway, like on every service that accepts it.
             - id: journey-bags
               uri: lb://journey-service
               predicates:
                 - Path=/api/v1/bags/**
+              filters:
+                - RemoveRequestHeader=X-Service-Token
             - id: journey-scans
               uri: lb://journey-service
               predicates:
                 - Path=/api/v1/scans/**
+              filters:
+                - RemoveRequestHeader=X-Service-Token
+            # The recovery-service accepts X-Service-Token on its internal export only, which has no
+            # route here; the header is stripped anyway, like on every service that accepts it.
             - id: recovery-cases
               uri: lb://recovery-service
               predicates:
                 - Path=/api/v1/recovery-cases/**
+              filters:
+                - RemoveRequestHeader=X-Service-Token
             - id: recovery-policy
               uri: lb://recovery-service
               predicates:
                 - Path=/api/v1/recovery-policy/**
+              filters:
+                - RemoveRequestHeader=X-Service-Token
             - id: capacity
               uri: lb://capacity-service
               predicates:
@@ -68,6 +80,22 @@ spring:
               uri: lb://search-service
               predicates:
                 - Path=/api/v1/reports/**
+              filters:
+                - RemoveRequestHeader=X-Service-Token
+            # Bag search and the index status; the search-service checks the roles (staff only).
+            - id: search
+              uri: lb://search-service
+              predicates:
+                - Path=/api/v1/search/**
+              filters:
+                - RemoveRequestHeader=X-Service-Token
+            # Rebuild of the search indexes; the search-service lets only ADMIN through.
+            - id: search-admin
+              uri: lb://search-service
+              predicates:
+                - Path=/api/v1/admin/search/**
+              filters:
+                - RemoveRequestHeader=X-Service-Token
             # OpenAPI definitions of each service, fetched through the gateway for the Swagger UI.
             - id: docs-identity
               uri: lb://identity-service

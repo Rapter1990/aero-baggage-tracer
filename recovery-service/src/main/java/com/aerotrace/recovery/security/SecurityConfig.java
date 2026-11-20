@@ -2,10 +2,13 @@ package com.aerotrace.recovery.security;
 
 import com.aerotrace.common.error.ApiErrorWriter;
 import com.aerotrace.common.error.ErrorCode;
+import com.aerotrace.common.export.ExportApi;
 import com.aerotrace.common.security.AeroTraceJwtValidators;
 import com.aerotrace.common.security.JwtClaims;
 import com.aerotrace.common.security.PemKeyUtils;
 import com.aerotrace.common.security.Role;
+import com.aerotrace.common.security.ServiceToken;
+import com.aerotrace.common.security.ServiceTokenFilter;
 import com.aerotrace.recovery.config.RecoveryProperties;
 import com.aerotrace.recovery.constant.ApiPaths;
 import java.security.interfaces.RSAPublicKey;
@@ -13,6 +16,8 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -27,17 +32,71 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 
 /**
  * Servlet JWT resource-server security, the same posture as the journey-service: stateless, 401 for
  * a missing or invalid token, 403 for a valid token without the role, and everything not listed is
  * denied. Only agents and dispatchers may move a case (spec section 11).
+ *
+ * <p>{@code /internal/**} has a chain of its own that accepts only the service token ({@link
+ * ServiceTokenFilter}), never a user token: the read-only case export for the search-service's
+ * rebuild. The gateway has no route to it.
  */
 @Configuration(proxyBeanMethods = false)
 class SecurityConfig {
 
   private static final String AUTHENTICATION_REQUIRED = "Authentication is required";
   private static final String INSUFFICIENT_PERMISSIONS = "You do not have permission to do this";
+  private static final String SERVICE_TOKEN_REQUIRED = "A valid service token is required";
+
+  /**
+   * The internal endpoints: the service token or nothing. A missing or wrong token is 401 (so is a
+   * user token, which this chain never reads); the token on anything but the export is 403.
+   */
+  @Bean
+  @Order(1)
+  SecurityFilterChain internalChain(
+      HttpSecurity http,
+      ApiErrorWriter errors,
+      RecoveryProperties properties,
+      Environment environment)
+      throws Exception {
+    http.securityMatcher(ExportApi.INTERNAL_ALL)
+        .csrf(AbstractHttpConfigurer::disable)
+        .httpBasic(AbstractHttpConfigurer::disable)
+        .formLogin(AbstractHttpConfigurer::disable)
+        .logout(AbstractHttpConfigurer::disable)
+        .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        .addFilterBefore(
+            new ServiceTokenFilter(properties.export().serviceToken(), environment),
+            AnonymousAuthenticationFilter.class)
+        .authorizeHttpRequests(
+            requests ->
+                requests
+                    .requestMatchers(HttpMethod.GET, ExportApi.CASES)
+                    .hasRole(ServiceToken.ROLE)
+                    .anyRequest()
+                    .denyAll())
+        .exceptionHandling(
+            handling ->
+                handling
+                    .authenticationEntryPoint(
+                        (request, response, ex) ->
+                            errors.write(
+                                request,
+                                response,
+                                ErrorCode.UNAUTHENTICATED,
+                                SERVICE_TOKEN_REQUIRED))
+                    .accessDeniedHandler(
+                        (request, response, ex) ->
+                            errors.write(
+                                request,
+                                response,
+                                ErrorCode.ACCESS_DENIED,
+                                INSUFFICIENT_PERMISSIONS)));
+    return http.build();
+  }
 
   @Bean
   JwtDecoder jwtDecoder(RecoveryProperties properties) {

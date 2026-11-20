@@ -1,0 +1,55 @@
+# Defaults for every Spring test. Elasticsearch and Kafka come from Testcontainers (see the base).
+spring:
+  cloud:
+    config:
+      enabled: false
+    discovery:
+      enabled: false
+  elasticsearch:
+    # The throwaway Testcontainers cluster's superuser.
+    username: elastic
+    socket-timeout: 5s
+  kafka:
+    producer:
+      properties:
+        max.block.ms: 10000
+        delivery.timeout.ms: 20000
+        request.timeout.ms: 10000
+eureka:
+  client:
+    enabled: false
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  tracing:
+    export:
+      otlp:
+        enabled: false
+  logging:
+    export:
+      otlp:
+        enabled: false
+aerotrace:
+  search:
+    consumers:
+      # Only the Kafka test starts the listeners; the others call the indexer directly.
+      enabled: false
+      retry-backoff: 50ms
+      max-retry-backoff: 500ms
+    index:
+      live-settle: 100ms
+      # Tests call the janitor by hand.
+      janitor-delay: 1h
+    cursor:
+      # Test-only; at least 32 bytes like every cursor secret.
+      secret: test-cursor-secret-of-at-least-32-bytes
+    reindex:
+      # Smaller than the AT-18 data set, so a rebuild needs several export pages.
+      page-size: 100
+    lag:
+      check-interval: 1h
+    jwt:
+      # A key pair of the tests' own (test-keys/), not the identity-service's development pair.
+      public-key-location: classpath:test-keys/public.pem

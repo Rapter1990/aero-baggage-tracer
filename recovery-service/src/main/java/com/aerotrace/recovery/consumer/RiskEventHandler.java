@@ -1,5 +1,6 @@
 package com.aerotrace.recovery.consumer;
 
+import com.aerotrace.common.correlation.CorrelationScope;
 import com.aerotrace.common.event.EventEnvelope;
 import com.aerotrace.common.event.RiskChangedPayload;
 import com.aerotrace.common.model.RiskLevel;
@@ -96,9 +97,12 @@ public class RiskEventHandler {
     if (event.occurredAt().isAfter(Instant.now(clock).plus(MAX_CLOCK_SKEW))) {
       throw new PoisonEventException("occurredAt is in the future");
     }
-    Outcome outcome = transaction.execute(status -> process(event));
-    meters.counter("recovery.risk.events", "outcome", outcome.name()).increment();
-    return outcome;
+    // The case events written while handling it carry the risk event's correlation id.
+    try (CorrelationScope ignored = CorrelationScope.of(event.correlationId())) {
+      Outcome outcome = transaction.execute(status -> process(event));
+      meters.counter("recovery.risk.events", "outcome", outcome.name()).increment();
+      return outcome;
+    }
   }
 
   private Outcome process(EventEnvelope<RiskChangedPayload> event) {

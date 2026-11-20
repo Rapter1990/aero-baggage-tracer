@@ -7,6 +7,7 @@ import com.aerotrace.common.event.CaseChangedPayload;
 import com.aerotrace.common.event.EventEnvelope;
 import com.aerotrace.common.event.EventJson;
 import com.aerotrace.common.event.Topics;
+import com.aerotrace.common.model.CaseTrigger;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.common.security.SecurityContextHelper;
 import com.aerotrace.recovery.capacity.CapacityGateway;
@@ -30,6 +31,7 @@ import io.micrometer.core.instrument.Timer;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -231,7 +233,8 @@ public class RecoveryCaseService {
 
   private RecoveryCaseEntity open(
       CreateCaseRequest request, String idempotencyKey, RecoveryAction plannedAction) {
-    Instant now = Instant.now(clock);
+    // Microseconds, as the column holds them: the event and the export carry the stored instant.
+    Instant now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
     String actor = actor();
     RecoveryCaseEntity created =
         cases.saveAndFlush(
@@ -242,7 +245,9 @@ public class RecoveryCaseService {
                 idempotencyKey,
                 actor,
                 now,
-                plannedAction));
+                plannedAction,
+                // Only a case opened from a risk event has a plan chosen by the strategy.
+                plannedAction != null ? CaseTrigger.RISK : CaseTrigger.MANUAL));
     transitions.save(
         new StateTransitionEntity(
             created.getId(), null, RecoveryState.OPEN, actor, now, request.reason(), 1));
@@ -505,6 +510,9 @@ public class RecoveryCaseService {
       // Somebody moved the case between the read and the update.
       throw new ApiException(ErrorCode.VERSION_CONFLICT, RecoveryRules.VERSION_MISMATCH);
     }
+    if (target == RecoveryState.RESOLVED) {
+      cases.markResolved(caseId, now);
+    }
     RecoveryCaseEntity updated = cases.findById(caseId).orElseThrow();
     transitions.save(
         new StateTransitionEntity(
@@ -619,15 +627,26 @@ public class RecoveryCaseService {
     return released;
   }
 
+  /**
+   * The case as {@code recovery.case.changed.v1} revision 2 and the internal export carry it: one
+   * shape for both, so the rebuild source and the events cannot drift apart.
+   */
+  public static CaseChangedPayload payloadOf(RecoveryCaseEntity c) {
+    return new CaseChangedPayload(
+        c.getId().toString(),
+        c.getBagTag(),
+        c.getLegId(),
+        c.getState(),
+        c.getVersion(),
+        c.getReason(),
+        c.getCreatedAt(),
+        c.getResolvedAt(),
+        c.getTrigger(),
+        c.getAssignedTo());
+  }
+
   private void queueEvent(RecoveryCaseEntity c, Instant now) {
-    CaseChangedPayload payload =
-        new CaseChangedPayload(
-            c.getId().toString(),
-            c.getBagTag(),
-            c.getLegId(),
-            c.getState(),
-            c.getVersion(),
-            c.getReason());
+    CaseChangedPayload payload = payloadOf(c);
     EventEnvelope<CaseChangedPayload> envelope =
         EventEnvelope.create(
             RecoveryRules.EVENT_TYPE_CASE_CHANGED,

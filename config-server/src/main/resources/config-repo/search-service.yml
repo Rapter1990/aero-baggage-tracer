@@ -1,0 +1,17 @@
+# Served to search-service by name. Defaults mirror its local application.yml. No secrets here:
+# ELASTIC_PASSWORD, SEARCH_CURSOR_SECRET and SEARCH_EXPORT_SERVICE_TOKEN come from the environment.
+aerotrace:
+  search:
+    index:
+      # How long a search page's point-in-time stays open, and how long a retired index is kept
+      # (longer than the keep-alive, so an open cursor never loses its index).
+      pit-keep-alive: 2m
+      old-index-grace: 5m
+    reindex:
+      # Records per export page of the owning services (#28, #29 allow at most 500).
+      page-size: 500
+    report:
+      # The longest [from, to) of the airport report.
+      max-range: 31d
+    lag:
+      check-interval: 15s
