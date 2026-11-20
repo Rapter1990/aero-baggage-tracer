@@ -23,7 +23,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
-import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.mock.env.MockEnvironment;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -40,6 +40,9 @@ class HttpSourceExportClientTest {
   private volatile String casesBody;
   private volatile String bagsBody;
   private volatile int status = 200;
+
+  private static final String EMPTY_PAGE =
+      "{\"success\":true,\"data\":{\"items\":[],\"nextAfter\":null}}";
 
   @BeforeEach
   void start() throws IOException {
@@ -69,6 +72,10 @@ class HttpSourceExportClientTest {
   }
 
   private HttpSourceExportClient client(String token) {
+    return client(token, "test", 16_777_216);
+  }
+
+  private HttpSourceExportClient client(String token, String profile, int maxPageBytes) {
     String url = "http://127.0.0.1:" + server.getAddress().getPort();
     SearchProperties properties =
         new Binder(
@@ -76,9 +83,12 @@ class HttpSourceExportClientTest {
                     Map.of(
                         "aerotrace.search.export.journey-url", url,
                         "aerotrace.search.export.recovery-url", url,
-                        "aerotrace.search.export.service-token", token)))
+                        "aerotrace.search.export.service-token", token,
+                        "aerotrace.search.export.max-page-bytes", String.valueOf(maxPageBytes))))
             .bindOrCreate("aerotrace.search", SearchProperties.class);
-    return new HttpSourceExportClient(properties, JsonMapper.builder().build());
+    MockEnvironment environment = new MockEnvironment();
+    environment.setActiveProfiles(profile);
+    return new HttpSourceExportClient(properties, JsonMapper.builder().build(), environment);
   }
 
   @Test
@@ -138,6 +148,51 @@ class HttpSourceExportClientTest {
     casesBody = "{\"code\":\"NOT_FOUND\"}";
 
     assertThatThrownBy(() -> client("t").cases(null, 10))
-        .isInstanceOf(HttpClientErrorException.NotFound.class);
+        .isInstanceOf(SourceExportException.class)
+        .hasMessage("export endpoint not found");
+  }
+
+  @Test
+  @DisplayName("401 and 403 fail with a clear reason: export unauthorized")
+  void unauthorized() {
+    casesBody = "{}";
+    for (int refused : new int[] {401, 403}) {
+      status = refused;
+      assertThatThrownBy(() -> client("wrong").cases(null, 10))
+          .isInstanceOf(SourceExportException.class)
+          .hasMessage("export unauthorized");
+    }
+  }
+
+  @Test
+  @DisplayName("outside the development profiles a missing token fails before any call")
+  void noTokenOutsideDevelopment() {
+    casesBody = EMPTY_PAGE;
+
+    assertThatThrownBy(() -> client("", "default", 1_000).cases(null, 10))
+        .isInstanceOf(SourceExportException.class)
+        .hasMessageStartingWith("export unauthorized");
+    assertThat(calls).isEmpty();
+  }
+
+  @Test
+  @DisplayName("the after key is encoded strictly: it can never add a query parameter")
+  void afterIsEncoded() {
+    casesBody = EMPTY_PAGE;
+
+    client("t").cases("a&size=100000+b/c?d#e", 10);
+
+    assertThat(calls.getFirst().uri())
+        .isEqualTo("/internal/v1/export/cases?size=10&after=a%26size%3D100000%2Bb%2Fc%3Fd%23e");
+  }
+
+  @Test
+  @DisplayName("an answer larger than max-page-bytes fails the call")
+  void pageTooLarge() {
+    casesBody = "{\"data\":{\"items\":[],\"pad\":\"" + "x".repeat(2_000) + "\"}}";
+
+    assertThatThrownBy(() -> client("t", "test", 1_000).cases(null, 10))
+        .isInstanceOf(SourceExportException.class)
+        .hasMessage("export page larger than the maximum");
   }
 }

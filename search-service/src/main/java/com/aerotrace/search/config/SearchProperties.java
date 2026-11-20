@@ -74,12 +74,20 @@ public record SearchProperties(
    * @param pageSize how many records one export page asks for
    * @param lockLease how long the rebuild lock is held without a heartbeat before another instance
    *     may take it over
-   * @param heartbeat how often a running job renews its lock
+   * @param heartbeat how often a running job renews its lock; a job that cannot renew it, or finds
+   *     it taken over, stops and fails
+   * @param maxPages the most export pages one family may take; a source that pages on and on fails
+   *     the job instead of looping
+   * @param maxDuration how long a job may run in all before it fails
+   * @param keyTtl how long an Idempotency-Key names its job; an older key may be used again
    */
   public record Reindex(
       @DefaultValue("500") int pageSize,
       @DefaultValue("2m") Duration lockLease,
-      @DefaultValue("30s") Duration heartbeat) {}
+      @DefaultValue("30s") Duration heartbeat,
+      @DefaultValue("100000") int maxPages,
+      @DefaultValue("2h") Duration maxDuration,
+      @DefaultValue("24h") Duration keyTtl) {}
 
   /**
    * The internal export endpoints of the owning services (#28, #29).
@@ -89,13 +97,15 @@ public record SearchProperties(
    * @param serviceToken the shared secret sent as {@code X-Service-Token}; empty sends none
    * @param connectTimeout how long to wait for a connection
    * @param readTimeout how long to wait for one page
+   * @param maxPageBytes the largest answer one export page may have; a larger one fails the job
    */
   public record Export(
       @DefaultValue("http://localhost:1113") String journeyUrl,
       @DefaultValue("http://localhost:1115") String recoveryUrl,
       @DefaultValue("") String serviceToken,
       @DefaultValue("2s") Duration connectTimeout,
-      @DefaultValue("30s") Duration readTimeout) {}
+      @DefaultValue("30s") Duration readTimeout,
+      @DefaultValue("16777216") int maxPageBytes) {}
 
   /**
    * Indexing lag.

@@ -65,7 +65,8 @@ class RebuildFromSourceTest extends AbstractSearchTest {
   @Autowired IndexAdmin admin;
   @Autowired ElasticsearchClient client;
 
-  private final Random random = new Random();
+  // Seeded: the states and versions of the source are the same on every run.
+  private final Random random = new Random(18);
 
   @BeforeEach
   void freshSource() {

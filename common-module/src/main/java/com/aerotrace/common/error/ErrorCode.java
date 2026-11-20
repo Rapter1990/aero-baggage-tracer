@@ -25,6 +25,10 @@ public enum ErrorCode {
   REINDEX_IN_PROGRESS(HttpStatus.CONFLICT),
   /** A paging cursor whose point-in-time has expired; start the search again. */
   CURSOR_EXPIRED(HttpStatus.GONE),
+  /** An Idempotency-Key was reused for another request (another scope or another caller). */
+  IDEMPOTENCY_KEY_REUSED(HttpStatus.UNPROCESSABLE_ENTITY),
+  /** A report would scan more documents than its limit allows; narrow the range. */
+  REPORT_TOO_LARGE(HttpStatus.UNPROCESSABLE_ENTITY),
   RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS),
   INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR);
 

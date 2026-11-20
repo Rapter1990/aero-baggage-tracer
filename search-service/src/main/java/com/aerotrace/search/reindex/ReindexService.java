@@ -19,16 +19,20 @@ import com.aerotrace.search.indexer.model.CaseChange;
 import com.aerotrace.search.indexer.model.LegSnapshot;
 import com.aerotrace.search.reindex.ReindexJob.Scope;
 import com.aerotrace.search.reindex.ReindexJob.Status;
+import com.aerotrace.search.reindex.ReindexJobStore.KeyBinding;
 import com.aerotrace.search.reindex.SourceExportClient.BagExport;
 import com.aerotrace.search.reindex.SourceExportClient.ExportPage;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -36,6 +40,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
@@ -51,19 +56,30 @@ import org.springframework.stereotype.Service;
  *   <li>load the owners' exports page by page into the new indexes only, with the same idempotent
  *       writes as the live indexer (external versions, guarded scripts), and for journeys replay
  *       the risk topic; live and snapshot writes may overlap in any order;
- *   <li>check every page: each exported case is in the new index at its version or a newer one;
- *       then compare the counts;
- *   <li>only then move {@code -read} to the new index in one atomic {@code _aliases} call and take
- *       the old one out of {@code -live}; the janitor deletes it after the point-in-time grace.
+ *   <li>check every page with a realtime multi-get: each exported case is in the new index at its
+ *       version or a newer one, each exported bag has its journey; then compare the counts and
+ *       record id checksums;
+ *   <li>only then move every rebuilt {@code -read} alias to its new index in one atomic {@code
+ *       _aliases} call and take the old ones out of {@code -live}; the janitor deletes them after
+ *       the point-in-time grace.
  * </ol>
  *
- * If anything fails, the new indexes are discarded and searches never noticed. The source is only
- * read: {@code GET}s of the export endpoints and a group-less replay of a topic.
+ * If anything fails, the new indexes are discarded and searches never noticed. A job holds the
+ * rebuild lock for its whole run; when it cannot renew it, or finds it taken over, it stops, never
+ * swaps and fails. A job that takes over the lock of a job whose instance died marks that job
+ * FAILED and discards the indexes it left in the live aliases. The source is only read: {@code
+ * GET}s of the export endpoints and a group-less replay of a topic.
  */
 @Service
 public class ReindexService implements DisposableBean {
 
   private static final Logger LOG = LoggerFactory.getLogger(ReindexService.class);
+
+  /** The error of a job whose instance stopped renewing the lock, set by the job that took over. */
+  static final String ABANDONED = "abandoned: its instance stopped renewing the rebuild lock";
+
+  static final String LOCK_LOST = "rebuild lock lost: another job took it over";
+  static final String LOCK_NOT_RENEWED = "rebuild lock not renewed";
 
   private final SourceExportClient source;
   private final RiskTopicReplay riskReplay;
@@ -105,19 +121,21 @@ public class ReindexService implements DisposableBean {
   /**
    * Starts a rebuild, or returns the job an earlier request with the same key started.
    *
-   * @throws ApiException {@code REINDEX_IN_PROGRESS} while another job holds the lock
+   * @throws ApiException {@code REINDEX_IN_PROGRESS} while another job holds the lock; {@code
+   *     IDEMPOTENCY_KEY_REUSED} when the key was used for another scope or by another caller
    */
   public ReindexJob start(Scope scope, String idempotencyKey, String requestedBy) {
     return Elastic.call(
         () -> {
-          Optional<ReindexJob> earlier = jobOfKey(idempotencyKey);
+          Optional<ReindexJob> earlier = jobOfKey(idempotencyKey, scope, requestedBy);
           if (earlier.isPresent()) {
             return earlier.get();
           }
           String jobId = UUID.randomUUID().toString();
-          if (!store.lock(jobId, properties.reindex().lockLease())) {
+          ReindexJobStore.Lock lock = store.lock(jobId, properties.reindex().lockLease());
+          if (!lock.acquired()) {
             // The same request may have just been started by a parallel call.
-            return jobOfKey(idempotencyKey)
+            return jobOfKey(idempotencyKey, scope, requestedBy)
                 .orElseThrow(
                     () ->
                         new ApiException(
@@ -128,19 +146,29 @@ public class ReindexService implements DisposableBean {
               new ReindexJob(
                   jobId, Status.RUNNING, scope, requestedBy, clock.instant(), null, null, Map.of());
           store.save(job);
-          if (!store.bindKey(idempotencyKey, jobId)) {
+          if (!store.bindKey(idempotencyKey, jobId, scope, requestedBy)) {
             store.save(finished(job, Status.FAILED, "superseded by a parallel request", Map.of()));
             store.unlock(jobId);
-            return jobOfKey(idempotencyKey).orElseThrow();
+            return jobOfKey(idempotencyKey, scope, requestedBy).orElseThrow();
           }
-          jobs.submit(() -> run(job));
+          jobs.submit(() -> run(job, lock.abandonedJob()));
           return job;
         });
   }
 
-  private Optional<ReindexJob> jobOfKey(String key) throws IOException {
-    Optional<String> jobId = store.jobOfKey(key);
-    return jobId.isPresent() ? store.find(jobId.get()) : Optional.empty();
+  private Optional<ReindexJob> jobOfKey(String key, Scope scope, String requestedBy)
+      throws IOException {
+    Optional<KeyBinding> binding = store.keyBinding(key);
+    if (binding.isEmpty()) {
+      return Optional.empty();
+    }
+    if (binding.get().scope() != scope
+        || !Objects.equals(binding.get().requestedBy(), requestedBy)) {
+      throw new ApiException(
+          ErrorCode.IDEMPOTENCY_KEY_REUSED,
+          "This Idempotency-Key was used for another rebuild request. Use a new key.");
+    }
+    return store.find(binding.get().jobId());
   }
 
   public Optional<ReindexJob> find(String jobId) {
@@ -167,17 +195,61 @@ public class ReindexService implements DisposableBean {
     }
   }
 
-  void run(ReindexJob job) {
+  /** The job was stopped: its lock is lost or could not be renewed. */
+  static final class JobAborted extends RuntimeException {
+    JobAborted(String message) {
+      super(message);
+    }
+  }
+
+  /** A running job: its deadline, and why it must stop, once something says so. */
+  final class Running {
+    final ReindexJob job;
+    final Instant deadline;
+    final Thread worker = Thread.currentThread();
+    volatile String abortReason;
+
+    Running(ReindexJob job) {
+      this.job = job;
+      this.deadline = job.startedAt().plus(properties.reindex().maxDuration());
+    }
+
+    /** Stops the job: it fails at its next step (and a blocking call is interrupted). */
+    void abort(String reason) {
+      if (abortReason == null) {
+        abortReason = reason;
+        LOG.warn("Rebuild {} aborted: {}", job.jobId(), reason);
+        worker.interrupt();
+      }
+    }
+
+    /** Called between steps: fails the job once it was aborted or ran out of time. */
+    void check() {
+      if (abortReason != null) {
+        throw new JobAborted(abortReason);
+      }
+      if (clock.instant().isAfter(deadline)) {
+        throw new RebuildCheckFailed("the rebuild took longer than its maximum duration");
+      }
+    }
+  }
+
+  void run(ReindexJob job, String abandonedJob) {
+    Running running = new Running(job);
     Map<String, Object> results = new LinkedHashMap<>();
     Map<IndexFamily, String> created = new LinkedHashMap<>();
     ScheduledFuture<?> heartbeat =
         heartbeats.scheduleAtFixedRate(
-            () -> renew(job.jobId()),
+            () -> heartbeat(running),
             properties.reindex().heartbeat().toMillis(),
             properties.reindex().heartbeat().toMillis(),
             TimeUnit.MILLISECONDS);
     String result = "failed";
+    boolean interrupted = false;
     try {
+      if (abandonedJob != null) {
+        cleanUpAbandoned(abandonedJob);
+      }
       if (job.scope().cases()) {
         created.put(IndexFamily.CASES, admin.createNext(IndexFamily.CASES));
       }
@@ -189,16 +261,19 @@ public class ReindexService implements DisposableBean {
       }
       // Writes resolved against the old alias before this point land before the export is read.
       Thread.sleep(properties.index().liveSettle().toMillis());
+      running.check();
 
-      CaseLoad cases = loadCases(created.get(IndexFamily.CASES), created.get(IndexFamily.JOURNEYS));
-      long bags = 0;
-      long risks = 0;
+      String casesIndex = created.get(IndexFamily.CASES);
       String journeys = created.get(IndexFamily.JOURNEYS);
+      Load cases = loadCases(running, casesIndex, journeys);
+      Load bags = null;
+      long risks = 0;
       if (journeys != null) {
-        bags = loadBags(journeys);
+        bags = loadBags(running, journeys);
         risks =
             riskReplay.replay(
                 batch -> {
+                  running.check();
                   if (indexer.applyRisks(batch, List.of(journeys)).stream()
                       .anyMatch(ItemResult::rejected)) {
                     throw new RebuildCheckFailed(
@@ -207,39 +282,29 @@ public class ReindexService implements DisposableBean {
                 });
       }
 
-      String casesIndex = created.get(IndexFamily.CASES);
       if (casesIndex != null) {
-        results.put("cases", cases.check(casesIndex));
+        results.put("cases", cases.check(IndexFamily.CASES, casesIndex, "cases", Map.of()));
       }
       if (journeys != null) {
-        admin.refresh(journeys);
-        long indexed = client.count(c -> c.index(journeys)).count();
-        Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("index", journeys);
-        summary.put("previousIndex", admin.readIndex(IndexFamily.JOURNEYS));
-        summary.put("sourceCount", bags);
-        summary.put("indexedCount", indexed);
-        summary.put("riskEventsReplayed", risks);
-        results.put("journeys", summary);
-        if (indexed < bags) {
-          throw new RebuildCheckFailed("journeys: fewer documents than bags in the source");
-        }
+        results.put(
+            "journeys",
+            bags.check(
+                IndexFamily.JOURNEYS, journeys, "journeys", Map.of("riskEventsReplayed", risks)));
       }
 
-      for (Map.Entry<IndexFamily, String> next : created.entrySet()) {
-        admin.swapRead(next.getKey(), next.getValue());
+      running.check();
+      // A job that lost its lock never swaps, even if its heartbeat has not noticed yet.
+      if (!store.holds(job.jobId())) {
+        throw new JobAborted(LOCK_LOST);
       }
+      admin.swapRead(created);
       store.save(finished(job, Status.SUCCEEDED, null, results));
       result = "succeeded";
       LOG.info("Rebuild {} succeeded: {}", job.jobId(), created.values());
     } catch (Exception e) {
-      if (e instanceof InterruptedException) {
-        Thread.currentThread().interrupt();
-      }
-      String reason =
-          e instanceof RebuildCheckFailed
-              ? e.getMessage()
-              : "failed: " + e.getClass().getSimpleName();
+      // Cleared so the clean-up below can still talk to Elasticsearch; set again at the end.
+      interrupted = Thread.interrupted() || e instanceof InterruptedException;
+      String reason = reason(running, e);
       LOG.warn("Rebuild {} {}", job.jobId(), reason);
       for (Map.Entry<IndexFamily, String> next : created.entrySet()) {
         try {
@@ -257,14 +322,54 @@ public class ReindexService implements DisposableBean {
         LOG.warn("Rebuild lock not released; its lease expires");
       }
       meters.counter(MetricNames.REINDEX_RUNS, MetricNames.TAG_RESULT, result).increment();
+      if (interrupted) {
+        Thread.currentThread().interrupt();
+      }
     }
   }
 
-  private void renew(String jobId) {
+  /** The job's error: a fixed text, never an exception message from a source or a client. */
+  private static String reason(Running running, Exception e) {
+    if (running.abortReason != null) {
+      return running.abortReason;
+    }
+    if (e instanceof RebuildCheckFailed
+        || e instanceof JobAborted
+        || e instanceof SourceExportException) {
+      return e.getMessage();
+    }
+    return "failed: " + e.getClass().getSimpleName();
+  }
+
+  /**
+   * Renews the lock. A job that cannot renew it stops at once: its lease may run out, and another
+   * instance may then take the lock and run a rebuild of its own next to it.
+   */
+  private void heartbeat(Running running) {
     try {
-      store.renew(jobId, properties.reindex().lockLease());
+      if (!store.renew(running.job.jobId(), properties.reindex().lockLease())) {
+        running.abort(LOCK_LOST);
+      }
     } catch (Exception e) {
-      LOG.warn("Rebuild lock not renewed: {}", e.getClass().getSimpleName());
+      running.abort(LOCK_NOT_RENEWED + ": " + e.getClass().getSimpleName());
+    }
+  }
+
+  /**
+   * The previous holder of the lock died mid-run: its job stays RUNNING and its half-built index
+   * stays in the live alias (written by every live event, read by nobody) unless the job that took
+   * the lock over cleans up after it.
+   */
+  private void cleanUpAbandoned(String abandonedJob) throws IOException {
+    Optional<ReindexJob> previous = store.find(abandonedJob);
+    if (previous.isPresent() && previous.get().status() == Status.RUNNING) {
+      store.save(finished(previous.get(), Status.FAILED, ABANDONED, previous.get().results()));
+    }
+    for (IndexFamily family : IndexFamily.values()) {
+      List<String> discarded = admin.discardUnread(family);
+      if (!discarded.isEmpty()) {
+        LOG.warn("Discarded {} left by abandoned rebuild {}", discarded, abandonedJob);
+      }
     }
   }
 
@@ -276,90 +381,81 @@ public class ReindexService implements DisposableBean {
     }
   }
 
-  // ------------------------------------------------------------------ cases
+  // ------------------------------------------------------------------ checks
 
-  /** The case export as loaded: counts, checksums and missing or newer documents. */
-  final class CaseLoad {
+  /**
+   * What was loaded into a new index: counts, order-independent id checksums and the exported
+   * records that are missing or newer in the index.
+   */
+  final class Load {
     long sourceCount;
     long missing;
     long newer;
     long sourceChecksum;
     long indexChecksum;
 
-    Map<String, Object> check(String index) throws IOException {
+    Map<String, Object> check(
+        IndexFamily family, String index, String name, Map<String, Object> extra)
+        throws IOException {
       admin.refresh(index);
       long indexed = client.count(c -> c.index(index)).count();
       Map<String, Object> summary = new LinkedHashMap<>();
       summary.put("index", index);
-      summary.put("previousIndex", admin.readIndex(IndexFamily.CASES));
+      summary.put("previousIndex", admin.readIndex(family));
       summary.put("sourceCount", sourceCount);
       summary.put("indexedCount", indexed);
       summary.put("missing", missing);
-      summary.put("newerThanSource", newer);
+      if (family == IndexFamily.CASES) {
+        summary.put("newerThanSource", newer);
+      }
       summary.put("sourceChecksum", HexFormat.of().toHexDigits(sourceChecksum));
       summary.put("indexChecksum", HexFormat.of().toHexDigits(indexChecksum));
+      summary.putAll(extra);
       if (missing > 0) {
-        throw new RebuildCheckFailed("cases: exported cases missing from the new index");
+        throw new RebuildCheckFailed(name + ": exported records missing from the new index");
       }
-      // Live events may add cases the export did not have yet, never fewer.
+      // Live events may add documents the export did not have yet, never fewer.
       if (indexed < sourceCount) {
-        throw new RebuildCheckFailed("cases: fewer documents than cases in the source");
+        throw new RebuildCheckFailed(name + ": fewer documents than records in the source");
       }
       return summary;
     }
   }
 
-  private CaseLoad loadCases(String casesIndex, String journeysIndex) throws IOException {
-    CaseLoad load = new CaseLoad();
-    if (casesIndex == null && journeysIndex == null) {
-      return load;
-    }
-    String after = null;
-    do {
-      ExportPage<CaseChange> page = source.cases(after, properties.reindex().pageSize());
-      List<CaseChange> items = page.items();
-      if (casesIndex != null && !items.isEmpty()) {
-        List<CaseWrite> writes = items.stream().map(c -> new CaseWrite(c, null)).toList();
-        List<ItemResult> written = writer.writeCases(writes, List.of(casesIndex));
-        if (written.stream().anyMatch(ItemResult::rejected)) {
-          throw new RebuildCheckFailed("cases: the index refused exported cases");
-        }
-        verify(casesIndex, items, load);
-      }
-      if (journeysIndex != null && !items.isEmpty()) {
-        List<JourneyChange> changes = new ArrayList<>();
-        for (CaseChange c : items) {
-          changes.add(EventIndexer.caseOnJourney(c, null));
-        }
-        writer.applyJourneys(changes, List.of(journeysIndex));
-      }
-      after = page.nextAfter();
-    } while (after != null);
-    return load;
-  }
-
-  /** Each exported case must be in the new index at its version or newer (a live event). */
+  /**
+   * Each exported record must be in the new index (a realtime multi-get, so no refresh is needed):
+   * {@code version} gives the version the source exported, or -1 when the index's version is not
+   * compared (journeys have none). The checksums sum a fingerprint of id and version (cases) or of
+   * the id alone (journeys).
+   */
   @SuppressWarnings({"rawtypes"})
-  private void verify(String index, List<CaseChange> items, CaseLoad load) throws IOException {
+  private <T> void verify(
+      String index, List<T> items, Function<T, String> id, Function<T, Long> version, Load load)
+      throws IOException {
+    if (items.isEmpty()) {
+      return;
+    }
     MgetResponse<Map> found =
         client.mget(
-            m ->
-                m.index(index)
-                    .ids(items.stream().map(CaseChange::caseId).toList())
-                    .source(s -> s.fetch(false)),
+            m -> m.index(index).ids(items.stream().map(id).toList()).source(s -> s.fetch(false)),
             Map.class);
     for (int i = 0; i < items.size(); i++) {
-      CaseChange expected = items.get(i);
+      T expected = items.get(i);
+      long exported = version.apply(expected);
       MultiGetResponseItem<Map> item = found.docs().get(i);
       load.sourceCount++;
-      load.sourceChecksum += fingerprint(expected.caseId(), expected.version());
+      load.sourceChecksum += fingerprint(id.apply(expected), Math.max(exported, 0));
       if (!item.isResult() || !item.result().found()) {
         load.missing++;
         continue;
       }
-      long version = item.result().version();
-      load.indexChecksum += fingerprint(expected.caseId(), version);
-      if (version > expected.version()) {
+      if (exported < 0) {
+        load.indexChecksum += fingerprint(id.apply(expected), 0);
+        continue;
+      }
+      long stored = item.result().version();
+      load.indexChecksum += fingerprint(id.apply(expected), stored);
+      if (stored > exported) {
         load.newer++;
       }
     }
@@ -368,30 +464,102 @@ public class ReindexService implements DisposableBean {
   /** FNV-1a 64 of "id:version"; summed, so the order of the pages does not matter. */
   static long fingerprint(String id, long version) {
     long hash = 0xcbf29ce484222325L;
-    for (byte b : (id + ":" + version).getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
+    for (byte b : (id + ":" + version).getBytes(StandardCharsets.UTF_8)) {
       hash ^= b & 0xff;
       hash *= 0x100000001b3L;
     }
     return hash;
   }
 
+  /**
+   * Guards a keyset-paged export against a source that misbehaves: the next key must move on, an
+   * empty page must be the last, and a family may take at most {@code max-pages} pages.
+   */
+  private String nextAfter(String family, String after, ExportPage<?> page, int pages) {
+    String next = page.nextAfter();
+    if (next != null && (next.equals(after) || page.items().isEmpty())) {
+      throw new RebuildCheckFailed(family + ": the export did not advance");
+    }
+    if (next != null && pages >= properties.reindex().maxPages()) {
+      throw new RebuildCheckFailed(family + ": the export has more pages than the maximum");
+    }
+    return next;
+  }
+
+  private static Instant latest(Instant a, Instant b) {
+    if (a == null) {
+      return b;
+    }
+    return b == null || a.isAfter(b) ? a : b;
+  }
+
+  // ------------------------------------------------------------------ cases
+
+  private Load loadCases(Running running, String casesIndex, String journeysIndex)
+      throws IOException {
+    Load load = new Load();
+    if (casesIndex == null && journeysIndex == null) {
+      return load;
+    }
+    String after = null;
+    int pages = 0;
+    do {
+      running.check();
+      ExportPage<CaseChange> page = source.cases(after, properties.reindex().pageSize());
+      pages++;
+      List<CaseChange> items = page.items();
+      if (casesIndex != null && !items.isEmpty()) {
+        List<CaseWrite> writes = items.stream().map(c -> new CaseWrite(c, null)).toList();
+        List<ItemResult> written = writer.writeCases(writes, List.of(casesIndex));
+        if (written.stream().anyMatch(ItemResult::rejected)) {
+          throw new RebuildCheckFailed("cases: the index refused exported cases");
+        }
+        verify(casesIndex, items, CaseChange::caseId, CaseChange::version, load);
+      }
+      if (journeysIndex != null && !items.isEmpty()) {
+        List<JourneyChange> changes = new ArrayList<>();
+        for (CaseChange c : items) {
+          // The case's own latest time: a rebuilt journey's updatedAt is deterministic.
+          changes.add(EventIndexer.caseOnJourney(c, latest(c.openedAt(), c.resolvedAt())));
+        }
+        if (writer.applyJourneys(changes, List.of(journeysIndex)).stream()
+            .anyMatch(ItemResult::rejected)) {
+          throw new RebuildCheckFailed("journeys: the index refused exported cases");
+        }
+      }
+      after = nextAfter("cases", after, page, pages);
+    } while (after != null);
+    return load;
+  }
+
   // ------------------------------------------------------------------ bags
 
-  private long loadBags(String journeysIndex) throws IOException {
-    long count = 0;
+  /**
+   * Loads the bag export. A rebuilt journey's {@code updatedAt} is the latest of its legs'
+   * departures, its latest scan, its cases' {@code openedAt}/{@code resolvedAt} and its replayed
+   * risk events: all owner data, so two rebuilds give the same value. (Live, it is the time of the
+   * latest event that changed the journey; the export has no event times.)
+   */
+  private Load loadBags(Running running, String journeysIndex) throws IOException {
+    Load load = new Load();
     String after = null;
+    int pages = 0;
     do {
+      running.check();
       ExportPage<BagExport> page = source.bags(after, properties.reindex().pageSize());
+      pages++;
       Map<String, LegSnapshot> legs = new LinkedHashMap<>();
       Map<String, String> bagOfLeg = new LinkedHashMap<>();
       List<JourneyChange> changes = new ArrayList<>();
       for (BagExport bag : page.items()) {
         List<LegSnapshot> itinerary = bag.legs() == null ? List.of() : bag.legs();
+        Instant departure = null;
         for (LegSnapshot leg : itinerary) {
           legs.put(leg.legId(), leg);
           bagOfLeg.put(leg.legId(), bag.bagTag());
+          departure = latest(departure, leg.departureAt());
         }
-        changes.add(JourneyChange.itinerary(bag.bagTag(), itinerary, null));
+        changes.add(JourneyChange.itinerary(bag.bagTag(), itinerary, departure));
         if (bag.latestScan() != null) {
           SourceExportClient.LatestScan scan = bag.latestScan();
           changes.add(
@@ -405,7 +573,6 @@ public class ReindexService implements DisposableBean {
                   null,
                   null));
         }
-        count++;
       }
       if (!writer.writeLegs(legs, bagOfLeg).isEmpty()) {
         throw new RebuildCheckFailed("journeys: the index refused exported legs");
@@ -414,9 +581,10 @@ public class ReindexService implements DisposableBean {
       if (written.stream().anyMatch(ItemResult::rejected)) {
         throw new RebuildCheckFailed("journeys: the index refused exported bags");
       }
-      after = page.nextAfter();
+      verify(journeysIndex, page.items(), BagExport::bagTag, bag -> -1L, load);
+      after = nextAfter("journeys", after, page, pages);
     } while (after != null);
-    return count;
+    return load;
   }
 
   @Override

@@ -77,6 +77,10 @@ aerotrace:
       page-size: ${SEARCH_REINDEX_PAGE_SIZE:500}
       lock-lease: ${SEARCH_REINDEX_LOCK_LEASE:2m}
       heartbeat: ${SEARCH_REINDEX_HEARTBEAT:30s}
+      max-pages: ${SEARCH_REINDEX_MAX_PAGES:100000}
+      max-duration: ${SEARCH_REINDEX_MAX_DURATION:2h}
+      # How long an Idempotency-Key names its job.
+      key-ttl: ${SEARCH_REINDEX_KEY_TTL:24h}
     export:
       # The internal export endpoints of the owning services (#28, #29); never through the gateway.
       journey-url: ${JOURNEY_SERVICE_URL:http://localhost:1113}
@@ -85,6 +89,7 @@ aerotrace:
       service-token: ${SEARCH_EXPORT_SERVICE_TOKEN:}
       connect-timeout: ${SEARCH_EXPORT_CONNECT_TIMEOUT:2s}
       read-timeout: ${SEARCH_EXPORT_READ_TIMEOUT:30s}
+      max-page-bytes: ${SEARCH_EXPORT_MAX_PAGE_BYTES:16777216}
     lag:
       check-interval: ${SEARCH_LAG_CHECK_INTERVAL:15s}
     report:

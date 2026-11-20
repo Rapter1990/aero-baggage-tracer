@@ -1,14 +1,25 @@
 package com.aerotrace.search.reindex;
 
+import com.aerotrace.search.config.Profiles;
 import com.aerotrace.search.config.SearchProperties;
 import com.aerotrace.search.constant.ApiPaths;
 import com.aerotrace.search.indexer.model.CaseChange;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.http.HttpClient;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
+import org.springframework.core.env.Environment;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.JavaType;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -27,6 +38,11 @@ import tools.jackson.databind.json.JsonMapper;
  * page continues after its last key and a short page is the last. Unknown fields are ignored. Until
  * #28 and #29 are merged these endpoints answer 404 and a rebuild fails without changing the
  * indexes.
+ *
+ * <p>The {@code after} key is sent as a URI variable, so every reserved character in it is encoded
+ * and it can never add or change a query parameter. An answer larger than {@code max-page-bytes} is
+ * refused. 401 and 403 fail the job with {@code export unauthorized}; outside the development
+ * profiles a missing service token fails it the same way before any call is made.
  */
 @Component
 public class HttpSourceExportClient implements SourceExportClient {
@@ -34,13 +50,22 @@ public class HttpSourceExportClient implements SourceExportClient {
   public static final String CASES_PATH = "/internal/v1/export/cases";
   public static final String BAGS_PATH = "/internal/v1/export/bags";
 
+  static final String UNAUTHORIZED = "export unauthorized";
+  static final String NO_TOKEN = UNAUTHORIZED + ": no SEARCH_EXPORT_SERVICE_TOKEN configured";
+
   private final RestClient recovery;
   private final RestClient journey;
   private final JsonMapper json;
+  private final int maxPageBytes;
+  private final boolean tokenMissing;
 
-  public HttpSourceExportClient(SearchProperties properties, JsonMapper json) {
+  public HttpSourceExportClient(
+      SearchProperties properties, JsonMapper json, Environment environment) {
     SearchProperties.Export export = properties.export();
     this.json = json;
+    this.maxPageBytes = export.maxPageBytes();
+    boolean noToken = export.serviceToken() == null || export.serviceToken().isBlank();
+    this.tokenMissing = noToken && !Profiles.development(environment);
     this.recovery = client(export.recoveryUrl(), export);
     this.journey = client(export.journeyUrl(), export);
   }
@@ -77,19 +102,29 @@ public class HttpSourceExportClient implements SourceExportClient {
       int size,
       Class<T> type,
       Function<T, String> key) {
-    String body =
-        client
-            .get()
-            .uri(
-                builder -> {
-                  builder.path(path).queryParam("size", size);
-                  if (after != null) {
-                    builder.queryParam("after", after);
-                  }
-                  return builder.build();
-                })
-            .retrieve()
-            .body(String.class);
+    if (tokenMissing) {
+      throw new SourceExportException(NO_TOKEN);
+    }
+    Map<String, Object> variables = new HashMap<>();
+    variables.put("size", size);
+    String body;
+    try {
+      body =
+          client
+              .get()
+              .uri(
+                  builder -> {
+                    builder.path(path).queryParam("size", "{size}");
+                    if (after != null) {
+                      variables.put("after", after);
+                      builder.queryParam("after", "{after}");
+                    }
+                    return builder.build(variables);
+                  })
+              .exchange((request, response) -> readCapped(response.getStatusCode(), response));
+    } catch (RestClientResponseException e) {
+      throw failure(e.getStatusCode().value(), e);
+    }
     JsonNode data = json.readTree(body == null ? "{}" : body).path("data");
     JavaType listType = json.getTypeFactory().constructCollectionType(List.class, type);
     List<T> items =
@@ -101,5 +136,28 @@ public class HttpSourceExportClient implements SourceExportClient {
       next = items.size() < size || items.isEmpty() ? null : key.apply(items.getLast());
     }
     return new ExportPage<>(items, next);
+  }
+
+  private String readCapped(HttpStatusCode status, ClientHttpResponse response) throws IOException {
+    if (!status.is2xxSuccessful()) {
+      throw failure(status.value(), null);
+    }
+    try (InputStream in = response.getBody()) {
+      byte[] bytes = in.readNBytes(maxPageBytes + 1);
+      if (bytes.length > maxPageBytes) {
+        throw new SourceExportException("export page larger than the maximum");
+      }
+      return new String(bytes, StandardCharsets.UTF_8);
+    }
+  }
+
+  private static SourceExportException failure(int status, Throwable cause) {
+    if (status == HttpStatus.UNAUTHORIZED.value() || status == HttpStatus.FORBIDDEN.value()) {
+      return new SourceExportException(UNAUTHORIZED, cause);
+    }
+    if (status == HttpStatus.NOT_FOUND.value()) {
+      return new SourceExportException("export endpoint not found", cause);
+    }
+    return new SourceExportException("export failed with status " + status, cause);
   }
 }

@@ -52,6 +52,9 @@ public final class InMemorySource implements SourceExportClient {
   /** Each case page after the first repeats the previous page's last case (an owner bug). */
   public volatile boolean repeatAcrossPages;
 
+  /** Every case page after the first names the same next key again (paging that never ends). */
+  public volatile boolean stuckPaging;
+
   private int casePage;
 
   public void reset() {
@@ -62,6 +65,7 @@ public final class InMemorySource implements SourceExportClient {
     gate = null;
     failOnCasePage = -1;
     repeatAcrossPages = false;
+    stuckPaging = false;
     casePage = 0;
   }
 
@@ -94,6 +98,9 @@ public final class InMemorySource implements SourceExportClient {
     }
     String last = page.isEmpty() ? null : page.getLast().caseId();
     String next = last != null && !cases.tailMap(last, false).isEmpty() ? last : null;
+    if (stuckPaging && after != null) {
+      next = after;
+    }
     return new ExportPage<>(page, next);
   }
 
