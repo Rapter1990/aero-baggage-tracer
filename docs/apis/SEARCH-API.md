@@ -143,7 +143,7 @@ Counts come from documents with deterministic ids (exact date histograms and per
 | `search.index.delay` | time from `publishedAt` to the acknowledgement by Elasticsearch |
 | `search.reindex.runs{result}` | rebuild jobs, `succeeded` or `failed` |
 
-The metrics go to the OpenTelemetry collector like every service's; the Grafana panel comes with #19.
+The metrics go to the OpenTelemetry collector like every service's; the lag, outcome and rebuild panels are in the "AeroTrace - Elasticsearch" Grafana dashboard.
 
 ## Rebuild
 
@@ -325,4 +325,4 @@ Variables: `searchAdminUsername`, `searchDispatcherUsername`, `searchAgentUserna
 | Cursor secret | required outside the dev profiles; under `local`, `dev` or `test` without it each instance signs with a random key, so a cursor only works on the instance that issued it |
 | Elasticsearch user | Compose uses the `elastic` superuser; the least-privilege user below is documented, not created by Compose |
 | Paging snapshot | the point-in-time is opened after the first page, so a bag that changed in that instant can cross the first page's boundary |
-| Grafana | the lag panel comes with #19 |
+| Grafana | the "AeroTrace - Elasticsearch" dashboard (`observability/grafana/dashboards/elasticsearch.json`) shows the lag and the indexing outcomes |

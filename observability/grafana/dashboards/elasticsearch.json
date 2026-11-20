@@ -691,7 +691,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(search_index_delay_seconds_sum{service_name=\"search-service\"}[1m])) / sum(rate(search_index_delay_seconds_count{service_name=\"search-service\"}[1m]))",
+          "expr": "sum(rate(search_index_delay_milliseconds_sum{service_name=\"search-service\"}[1m])) / sum(rate(search_index_delay_milliseconds_count{service_name=\"search-service\"}[1m])) / 1000",
           "refId": "A",
           "legendFormat": "mean delay"
         }
@@ -700,7 +700,7 @@
     {
       "id": 13,
       "type": "timeseries",
-      "title": "Rebuild jobs",
+      "title": "Rebuild jobs (total since the service started)",
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -746,7 +746,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (result) (increase(search_reindex_runs_total{service_name=\"search-service\"}[5m]))",
+          "expr": "sum by (result) (search_reindex_runs_total{service_name=\"search-service\"})",
           "refId": "A",
           "legendFormat": "{{result}}"
         }
@@ -1329,8 +1329,8 @@
     {
       "id": 24,
       "type": "timeseries",
-      "title": "Open search contexts (PIT)",
-      "description": "Point-in-time contexts held by paging cursors; the node limit is 300 by default.",
+      "title": "Request cache hits and misses",
+      "description": "Shard request cache lookups per second on the selected indices. The exporter does not publish the open point-in-time contexts of the paging cursors.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1343,7 +1343,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "ops",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1375,9 +1375,18 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max(elasticsearch_indices_search_open_contexts)",
+          "expr": "sum(rate(elasticsearch_index_stats_request_cache_hits_total{index=~\"$index\"}[1m]))",
           "refId": "A",
-          "legendFormat": "open contexts"
+          "legendFormat": "hits"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(elasticsearch_index_stats_request_cache_misses_total{index=~\"$index\"}[1m]))",
+          "refId": "B",
+          "legendFormat": "misses"
         }
       ]
     },
