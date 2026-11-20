@@ -57,7 +57,7 @@ services:
         $$T --bootstrap-server $$B --create --if-not-exists --topic recovery.case.changed.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
         $$T --bootstrap-server $$B --create --if-not-exists --topic recovery.capacity.changed.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
         $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.dead-letter.v1 --partitions 3 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=2592000000
-        # Read by the search-service; published by the journey-service once #28 lands (#15 owns its final settings).
+        # Published by the journey-service (#28), read by the search-service (#15 owns its final settings).
         $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.bag.registered.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
     depends_on:
       kafka:
@@ -306,9 +306,10 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
-    # Clients reach it through the gateway (/api/v1/bags/**, /api/v1/scans/**); 1113 is its own port.
+    # Clients reach it through the gateway (/api/v1/bags/**, /api/v1/scans/**); 1113 is its own port,
+    # on loopback only: it also answers the internal export, whose token has a public dev default.
     ports:
-      - "1113:1113"
+      - "127.0.0.1:1113:1113"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:1113/actuator/health"]
       interval: 10s
@@ -363,9 +364,9 @@ services:
       redis:
         condition: service_healthy
     # Clients reach it through the gateway (/api/v1/recovery-cases/**, /api/v1/recovery-policy);
-    # 1115 is its own port.
+    # 1115 is its own port, on loopback only (the internal export, token with a public dev default).
     ports:
-      - "1115:1115"
+      - "127.0.0.1:1115:1115"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:1115/actuator/health"]
       interval: 10s

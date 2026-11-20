@@ -31,6 +31,7 @@ import io.micrometer.core.instrument.Timer;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -232,7 +233,8 @@ public class RecoveryCaseService {
 
   private RecoveryCaseEntity open(
       CreateCaseRequest request, String idempotencyKey, RecoveryAction plannedAction) {
-    Instant now = Instant.now(clock);
+    // Microseconds, as the column holds them: the event and the export carry the stored instant.
+    Instant now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
     String actor = actor();
     RecoveryCaseEntity created =
         cases.saveAndFlush(

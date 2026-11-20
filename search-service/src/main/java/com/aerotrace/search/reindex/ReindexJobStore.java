@@ -52,7 +52,6 @@ public class ReindexJobStore {
   private static final Logger LOG = LoggerFactory.getLogger(ReindexJobStore.class);
   private static final String LOCK = "lock";
   private static final String KEY = "key:";
-  private static final String JOB = "job:";
 
   /**
    * The outcome of taking the lock.
@@ -269,7 +268,10 @@ public class ReindexJobStore {
   /**
    * Saves the job. The document is built anew on every save, so the creation fields of the saved
    * one are carried over (a document without them is "new" and gets them from the auditing); the
-   * modification fields are always set by the auditing.
+   * modification fields are always set by the auditing. A job written before the audit fields
+   * existed has no {@code createdAt}, so its next save stamps it (harmless: jobs are short-lived).
+   * The read and the write are not conditional on each other, which is safe because only one
+   * thread, the one running the job, writes a job at a time.
    */
   public void save(ReindexJob job) {
     String id = JobDocument.ID_PREFIX + job.jobId();

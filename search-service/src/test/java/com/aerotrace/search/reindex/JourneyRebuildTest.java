@@ -67,6 +67,7 @@ class JourneyRebuildTest extends AbstractSearchTest {
 
   @BeforeEach
   void freshSource() {
+    awaitNoLiveRebuildLock(client);
     source.reset();
   }
 

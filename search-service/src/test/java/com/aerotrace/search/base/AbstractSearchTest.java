@@ -1,13 +1,19 @@
 package com.aerotrace.search.base;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch.core.GetResponse;
 import com.aerotrace.common.event.Topics;
 import com.aerotrace.common.security.JwtClaims;
 import com.aerotrace.common.security.Role;
+import com.aerotrace.search.elastic.SupportIndex;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -143,6 +149,29 @@ public abstract class AbstractSearchTest {
         });
     registry.add("spring.elasticsearch.password", () -> ELASTIC_PASSWORD);
     registry.add("spring.kafka.bootstrap-servers", AbstractSearchTest::kafkaBootstrapServers);
+  }
+
+  /**
+   * Waits until no rebuild holds a live lock. The tests share one Elasticsearch and one jobs index,
+   * and a job's final status is visible a moment before it releases its lock, so a test that starts
+   * a rebuild (or takes the lock itself) first waits for the previous one to let go. An expired
+   * lease does not count: the next start takes it over, which is what several tests check.
+   */
+  @SuppressWarnings("rawtypes")
+  protected static void awaitNoLiveRebuildLock(ElasticsearchClient client) {
+    await()
+        .atMost(Duration.ofSeconds(120))
+        .until(
+            () -> {
+              GetResponse<Map> lock =
+                  client.get(g -> g.index(SupportIndex.JOBS.index()).id("lock"), Map.class);
+              if (!lock.found()) {
+                return true;
+              }
+              Object until = lock.source().get("leaseUntil");
+              return !(until instanceof Number millis)
+                  || Instant.ofEpochMilli(millis.longValue()).isBefore(Instant.now());
+            });
   }
 
   protected static RequestPostProcessor as(Role role) {

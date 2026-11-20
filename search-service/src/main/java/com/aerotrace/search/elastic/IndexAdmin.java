@@ -5,7 +5,10 @@ import co.elastic.clients.elasticsearch._types.ElasticsearchException;
 import co.elastic.clients.elasticsearch.indices.update_aliases.Action;
 import com.aerotrace.search.config.SearchProperties;
 import jakarta.json.Json;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonObjectBuilder;
 import jakarta.json.JsonReader;
+import jakarta.json.JsonValue;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
@@ -96,14 +99,42 @@ public class IndexAdmin implements InitializingBean {
    * Adds the fields a newer template has to an index an older start created (a mapping update that
    * only adds fields is allowed and idempotent), so a field added to the template, such as the
    * audit fields of the jobs, is not refused by the strict mapping of the index that already
-   * exists. The read models need no such step: a rebuild creates its index from the template.
+   * exists. Only the properties the index lacks are sent, so a later template change to an existing
+   * field cannot make the update fail; and a refusal is logged, never thrown, because it must not
+   * stop the service from starting (a write that needs the field then fails visibly). The read
+   * models need no such step: a rebuild creates its index from the template.
    */
-  private void addNewFields(SupportIndex index) throws IOException {
-    String mappings;
-    try (JsonReader reader = Json.createReader(new StringReader(resource(index.resource())))) {
-      mappings = reader.readObject().getJsonObject("mappings").toString();
+  private void addNewFields(SupportIndex index) {
+    try {
+      JsonObject wanted;
+      try (JsonReader reader = Json.createReader(new StringReader(resource(index.resource())))) {
+        wanted = reader.readObject().getJsonObject("mappings");
+      }
+      Set<String> present =
+          client
+              .indices()
+              .getMapping(m -> m.index(index.index()))
+              .get(index.index())
+              .mappings()
+              .properties()
+              .keySet();
+      JsonObjectBuilder missing = Json.createObjectBuilder();
+      for (Map.Entry<String, JsonValue> property : wanted.getJsonObject("properties").entrySet()) {
+        if (!present.contains(property.getKey())) {
+          missing.add(property.getKey(), property.getValue());
+        }
+      }
+      JsonObject add = missing.build();
+      if (add.isEmpty()) {
+        return;
+      }
+      String body = Json.createObjectBuilder().add("properties", add).build().toString();
+      client.indices().putMapping(m -> m.index(index.index()).withJson(new StringReader(body)));
+      LOG.info("Added {} to the mapping of {}", add.keySet(), index.index());
+    } catch (IOException | RuntimeException e) {
+      LOG.warn(
+          "Mapping of {} not brought up to date: {}", index.index(), e.getClass().getSimpleName());
     }
-    client.indices().putMapping(m -> m.index(index.index()).withJson(new StringReader(mappings)));
   }
 
   private void createIgnoringExisting(String index, String read, String live, String body)

@@ -13,6 +13,7 @@ import com.aerotrace.search.base.InMemorySource;
 import com.aerotrace.search.elastic.SupportIndex;
 import java.time.Duration;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,6 +43,11 @@ class JobAuditTest extends AbstractSearchTest {
     return client
         .get(g -> g.index(SupportIndex.JOBS.index()).id("job:" + jobId), Map.class)
         .source();
+  }
+
+  @BeforeEach
+  void noRebuildRunning() {
+    awaitNoLiveRebuildLock(client);
   }
 
   @Test

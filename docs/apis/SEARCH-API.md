@@ -275,7 +275,7 @@ Outside the `local`, `dev` and `test` Spring profiles the service refuses to sta
 | `ELASTICSEARCH_USERNAME` | a named user, see below | `elastic` |
 | `SEARCH_EXPORT_SERVICE_TOKEN` | the token the export endpoints accept (only checked when a rebuild runs: the job fails with `export unauthorized`) | none sent |
 
-`docker-compose.yml` gives `ELASTIC_PASSWORD`, `SEARCH_CURSOR_SECRET` and `SEARCH_EXPORT_SERVICE_TOKEN` dev-only defaults (set your own wherever the data matters), passes `ELASTICSEARCH_USERNAME=elastic` and names the bundled development public key explicitly (`IDENTITY_JWT_PUBLIC_KEY_LOCATION=classpath:keys/public.pem`, the pair identity-service signs with in that stack): override both wherever the data matters. Port 1117 is published on `127.0.0.1` only; the gateway reaches the service over the Compose network, and it strips `X-Service-Token` from every search route.
+`docker-compose.yml` gives `ELASTIC_PASSWORD`, `SEARCH_CURSOR_SECRET` and `SEARCH_EXPORT_SERVICE_TOKEN` dev-only defaults (set your own wherever the data matters), passes `ELASTICSEARCH_USERNAME=elastic` and names the bundled development public key explicitly (`IDENTITY_JWT_PUBLIC_KEY_LOCATION=classpath:keys/public.pem`, the pair identity-service signs with in that stack): override both wherever the data matters. Ports 1113 (journey-service), 1115 (recovery-service) and 1117 are published on `127.0.0.1` only, because the first two answer the internal export with a token that has a public development default; the gateway reaches the service over the Compose network, and it strips `X-Service-Token` from every search route.
 
 ### A least-privilege Elasticsearch user
 

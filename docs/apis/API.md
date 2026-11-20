@@ -112,7 +112,7 @@ Two files in `postman/`:
 | 2 Search bags (agent) | First page, next page with the cursor, combined filters; size over 100 and a forged cursor refused |
 | 3 Airport report (dispatcher) | Two zero-filled hours with `indexedThrough` and `lagSeconds`; `from` after `to` refused |
 | 4 Index status (dispatcher) | Lag and read indexes; an agent refused |
-| 5 Rebuild (admin) | Start, the same key returns the same job, read the job (ends `FAILED` until #28 and #29 add the export endpoints), a dispatcher refused |
+| 5 Rebuild (admin) | Start, the same key returns the same job, read the job (succeeds when the journey- and recovery-service are up, `FAILED` with `export unauthorized` if they refuse the token), a dispatcher refused |
 | 6 Refused calls | Passenger on search and report, no token |
 
 **Notes**

@@ -12,6 +12,8 @@ import org.springframework.core.env.Environment;
 public final class Profiles {
 
   /** The profiles that allow development defaults. */
+  // Not the list of the owners' ServiceToken (local, dev only): there "test" stays closed on
+  // purpose.
   public static final Set<String> DEVELOPMENT = Set.of("local", "dev", "test");
 
   private Profiles() {}

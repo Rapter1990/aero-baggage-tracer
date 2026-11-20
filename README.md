@@ -163,7 +163,7 @@ docker compose up -d
 | Staff accounts | Only an ADMIN token can create them |
 | API docs | On by default. `DOCS_ENABLED=false` turns them off |
 | Kafka UI | Port 8090, cluster `local` |
-| Elasticsearch | Set `ELASTIC_PASSWORD` and `SEARCH_CURSOR_SECRET` in `.env` first: `docker-compose.yml` refuses to start without them (`docker-compose-local.yml` has a dev-only `ELASTIC_PASSWORD` default). Port 9200 is not published (loopback only in `docker-compose-local.yml`). Both files use the image tag `latest` at the user's request, but **Elastic publishes no `latest` tag**, so the pull currently fails with `manifest unknown`: put a concrete tag such as `9.5.3` in the two `image:` lines (see [SEARCH-API.md](docs/apis/SEARCH-API.md#the-elasticsearch-image-tag)) |
+| Elasticsearch | `ELASTIC_PASSWORD`, `SEARCH_CURSOR_SECRET` and `SEARCH_EXPORT_SERVICE_TOKEN` have dev-only defaults in `docker-compose.yml` (and `ELASTIC_PASSWORD` in `docker-compose-local.yml`): set your own in `.env` for anything shared. Port 9200 is not published (loopback only in `docker-compose-local.yml`). Both files use the image tag `latest` at the user's request, but **Elastic publishes no `latest` tag**, so the pull currently fails with `manifest unknown`: put a concrete tag such as `9.5.3` in the two `image:` lines (see [SEARCH-API.md](docs/apis/SEARCH-API.md#the-elasticsearch-image-tag)) |
 
 ### Dev accounts
 
@@ -224,7 +224,7 @@ In Compose, the one-shot `kafka-init` job creates the Kafka topics before journe
 | `recovery.case.changed.v1` | 6 | 7d |
 | `recovery.capacity.changed.v1` | 6 | 7d |
 | `baggage.dead-letter.v1` | 3 | 30d |
-| `baggage.bag.registered.v1` | 6 | 7d (read by the search-service; published once #28 lands) |
+| `baggage.bag.registered.v1` | 6 | 7d (published by the journey-service, read by the search-service) |
 
 All use `cleanup.policy=delete` and replication factor 1. A topic that already exists (for example auto-created earlier with 1 partition) is not changed: delete it once in Kafka UI to get these settings. `docker-compose-local.yml` has the same `kafka-init` job, so the topics exist with these settings when you run the services from the IDE.
 
