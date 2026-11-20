@@ -44,7 +44,7 @@ Opens recovery cases for bags at risk of missing a connection, moves them along 
 
 | Call | Body |
 |---|---|
-| `POST /api/v1/recovery-cases` | `bagTag`, `legId`, `reason`; optional header `Idempotency-Key` |
+| `POST /api/v1/recovery-cases` | `bagTag`, `legId` (1 to 36 letters, digits, `-` or `_`, so a journey-service UUID fits), `reason`; optional header `Idempotency-Key` |
 | `PATCH .../transitions` | `targetState`, `expectedVersion`, `reason`; optional header `Idempotency-Key` |
 | `PUT .../assignment` | `assignee` (the handler's token subject), `expectedVersion` |
 | `PUT /api/v1/recovery-policy` | `minimumExpediteMinutes` (0 to 720), `expectedVersion` |

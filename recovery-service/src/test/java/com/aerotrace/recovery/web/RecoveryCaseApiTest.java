@@ -244,6 +244,23 @@ class RecoveryCaseApiTest extends AbstractRecoveryTest {
   }
 
   @Test
+  @DisplayName("A 36 character UUID leg id, as the journey-service issues it, opens a case")
+  void uuidLegIdIsAccepted() throws Exception {
+    String legId = UUID.randomUUID().toString();
+
+    ResultActions created = open(newBagTag(), legId, null, as(Role.AGENT));
+
+    created.andExpect(status().isCreated());
+    assertThat(data(created).get("legId").asString()).isEqualTo(legId);
+  }
+
+  @Test
+  @DisplayName("A leg id longer than 36 characters is refused")
+  void tooLongLegIdIsRefused() throws Exception {
+    open(newBagTag(), "L".repeat(37), null, as(Role.AGENT)).andExpect(status().isBadRequest());
+  }
+
+  @Test
   @DisplayName("BR-01 another leg of the same bag is a different case")
   void anotherLegIsAnotherCase() throws Exception {
     String bagTag = newBagTag();

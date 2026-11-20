@@ -33,7 +33,7 @@ public class RecoveryCaseEntity {
   @Column(name = "bag_tag", nullable = false, updatable = false, length = 10)
   private String bagTag;
 
-  @Column(name = "leg_id", nullable = false, updatable = false, length = 32)
+  @Column(name = "leg_id", nullable = false, updatable = false, length = 36)
   private String legId;
 
   @Enumerated(EnumType.STRING)
