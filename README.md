@@ -132,11 +132,11 @@ Defaults marked "Compose" are for local use only.
 | `AUTH_RATE_LIMIT_REPLENISH_RATE` | api-gateway | Auth tokens refilled per second | `0.2` (12 a minute) |
 | `AUTH_RATE_LIMIT_BURST_CAPACITY` | api-gateway | Auth burst size | `10` |
 | `DOCS_ENABLED` | gateway, identity, journey | Serve OpenAPI and Swagger UI | `true` |
-| `ELASTIC_PASSWORD` | Elasticsearch, search-service | Password of the `elastic` user. `docker-compose.yml` refuses to start without it, so put it in `.env`; `docker-compose-local.yml` has a clearly marked dev-only default so it starts for developers who do not use search | `docker-compose.yml`: none, required; `docker-compose-local.yml`: `dev-only-elastic-password` |
+| `ELASTIC_PASSWORD` | Elasticsearch, search-service | Password of the `elastic` user. Both Compose files have the same clearly marked dev-only default, so the stack starts without a `.env`; set your own anywhere else | `dev-only-elastic-password` |
 | `ELASTICSEARCH_USERNAME` | search-service | The Elasticsearch user. Required outside the `local`/`dev`/`test` profiles; use a least-privilege user ([SEARCH-API.md](docs/apis/SEARCH-API.md#a-least-privilege-elasticsearch-user)) | `elastic` under the dev profiles; Compose: `elastic` |
 | `ELASTICSEARCH_URIS` | search-service | Where Elasticsearch answers | `http://localhost:9200` (Compose: `http://elasticsearch:9200`) |
-| `SEARCH_CURSOR_SECRET` | search-service | HMAC key of the paging cursors, the same on every instance, at least 32 bytes (e.g. `openssl rand -base64 48`). Required by `docker-compose.yml` and outside the `local`/`dev`/`test` profiles | none; under the dev profiles a random key per start |
-| `SEARCH_EXPORT_SERVICE_TOKEN` | search-service | Token sent to the export endpoints of #28 and #29; without it a rebuild fails with `export unauthorized` (outside the dev profiles) | empty = none sent |
+| `SEARCH_CURSOR_SECRET` | search-service | HMAC key of the paging cursors, the same on every instance, at least 32 bytes (e.g. `openssl rand -base64 48`). The service refuses to start without one outside the `local`/`dev`/`test` profiles; `docker-compose.yml` has a dev-only default | none in the service; under the dev profiles a random key per start |
+| `SEARCH_EXPORT_SERVICE_TOKEN` | search-, journey- and recovery-service | The shared secret of the internal export endpoints of #28 and #29 (at least 16 characters); `docker-compose.yml` passes the same dev-only default to all three, so a rebuild works out of the box | `aerotrace-local-export-token` in Compose; none in the services |
 | `IDENTITY_JWT_PUBLIC_KEY_LOCATION` | search-service | The identity-service public key. Required outside the `local`/`dev`/`test` profiles | Compose: the development key bundled in the image (`classpath:keys/public.pem`) |
 | `JOURNEY_SERVICE_URL`, `RECOVERY_SERVICE_URL` | search-service | Where the export endpoints answer | `http://localhost:1113`, `http://localhost:1115` |
 

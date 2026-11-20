@@ -273,7 +273,7 @@ Outside the `local`, `dev` and `test` Spring profiles the service refuses to sta
 | `ELASTICSEARCH_USERNAME` | a named user, see below | `elastic` |
 | `SEARCH_EXPORT_SERVICE_TOKEN` | the token the export endpoints accept (only checked when a rebuild runs: the job fails with `export unauthorized`) | none sent |
 
-`docker-compose.yml` requires `ELASTIC_PASSWORD` and `SEARCH_CURSOR_SECRET` in `.env`, passes `ELASTICSEARCH_USERNAME=elastic` and names the bundled development public key explicitly (`IDENTITY_JWT_PUBLIC_KEY_LOCATION=classpath:keys/public.pem`, the pair identity-service signs with in that stack): override both wherever the data matters. Port 1117 is published on `127.0.0.1` only; the gateway reaches the service over the Compose network, and it strips `X-Service-Token` from every search route.
+`docker-compose.yml` gives `ELASTIC_PASSWORD`, `SEARCH_CURSOR_SECRET` and `SEARCH_EXPORT_SERVICE_TOKEN` dev-only defaults (set your own wherever the data matters), passes `ELASTICSEARCH_USERNAME=elastic` and names the bundled development public key explicitly (`IDENTITY_JWT_PUBLIC_KEY_LOCATION=classpath:keys/public.pem`, the pair identity-service signs with in that stack): override both wherever the data matters. Port 1117 is published on `127.0.0.1` only; the gateway reaches the service over the Compose network, and it strips `X-Service-Token` from every search route.
 
 ### A least-privilege Elasticsearch user
 
@@ -317,7 +317,7 @@ Variables: `searchAdminUsername`, `searchDispatcherUsername`, `searchAgentUserna
 
 | Area | Limitation |
 |---|---|
-| Rebuild source | The export endpoints of the journey-service (#28) and the recovery-service (#29), with the shared secret `SEARCH_EXPORT_SERVICE_TOKEN` on both sides (the owners refuse every call without one outside the `local` and `dev` profiles). The Compose files do not pass that secret to the journey- and recovery-service yet (left to the Compose task): until they do, a rebuild in Compose ends `FAILED` (`export unauthorized`) and changes nothing |
+| Rebuild source | The export endpoints of the journey-service (#28) and the recovery-service (#29), with the shared secret `SEARCH_EXPORT_SERVICE_TOKEN` on both sides (the owners refuse every call without one outside the `local` and `dev` profiles). `docker-compose.yml` passes the same dev-only default to all three services |
 | Itinerary data | `airline`, `origin`, `destination` (and so the `airport` of cases and the report) come from `baggage.bag.registered.v1` and the bag export (#28). A case gets them only when its `legId` is a journey leg id; the recovery-service accepts leg ids of at most 32 characters, the journey-service's are 36-character UUIDs, so today cases opened from journey legs are refused there (open, see [RECOVERY-API](RECOVERY-API.md#known-limitations)) |
 | Case times | `openedAt`, `resolvedAt` and `trigger` come from case events revision 2 and the case export (#29). A case indexed from a revision 1 event has none until its next event or a rebuild, and is not in the report's resolved counts or mean until then. `resolvedAt` exists only for `RESOLVED` cases |
 | Risk history | replayed from `baggage.risk.changed.v1`; history older than its retention cannot be rebuilt (it becomes compacted with #15) |

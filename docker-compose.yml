@@ -67,7 +67,7 @@ services:
 
   # The search read models (search-service only). Single node, security on. The tag is latest at
   # the user's request, but Elastic publishes no latest tag, so the pull fails until a concrete tag
-  # (e.g. 9.5.3) is set (README). ELASTIC_PASSWORD has no default: set it in .env. Port 9200 is not
+  # (e.g. 9.5.3) is set (README). ELASTIC_PASSWORD has a dev-only default (set your own). Port 9200 is not
   # published; only containers on the network reach it. TLS is off on this internal network.
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:latest
@@ -79,7 +79,7 @@ services:
       xpack.security.http.ssl.enabled: "false"
       xpack.security.transport.ssl.enabled: "false"
       xpack.ml.enabled: "false"
-      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?set ELASTIC_PASSWORD in .env (see README)}
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-dev-only-elastic-password}
       ES_JAVA_OPTS: ${ELASTICSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
     volumes:
       - elasticsearch-data:/usr/share/elasticsearch/data
@@ -105,7 +105,7 @@ services:
       - --es.indices
     environment:
       ES_USERNAME: elastic
-      ES_PASSWORD: ${ELASTIC_PASSWORD:?set ELASTIC_PASSWORD in .env (see README)}
+      ES_PASSWORD: ${ELASTIC_PASSWORD:-dev-only-elastic-password}
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -289,6 +289,8 @@ services:
       DB_USER: ${POSTGRES_USER:-aerotrace}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Read by the search-service rebuild on the internal bag/case export (never through the gateway).
+      SEARCH_EXPORT_SERVICE_TOKEN: ${SEARCH_EXPORT_SERVICE_TOKEN:-aerotrace-local-export-token}
       # Empty: the identity-service development public key bundled in the image is used.
       IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
@@ -341,6 +343,8 @@ services:
       # Shared with the capacity-service: the sweeper releases holds with no user token. The default
       # is for local runs only; set CAPACITY_SERVICE_TOKEN in .env for anything shared.
       CAPACITY_SERVICE_TOKEN: ${CAPACITY_SERVICE_TOKEN:-aerotrace-local-service-token}
+      # Read by the search-service rebuild on the internal bag/case export (never through the gateway).
+      SEARCH_EXPORT_SERVICE_TOKEN: ${SEARCH_EXPORT_SERVICE_TOKEN:-aerotrace-local-export-token}
       # Empty: the identity-service development public key bundled in the image is used.
       IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
@@ -435,15 +439,16 @@ services:
       # The service needs a named user outside the dev profiles. This development stack uses the
       # elastic superuser; give it a least-privilege user anywhere else (docs/apis/SEARCH-API.md).
       ELASTICSEARCH_USERNAME: ${ELASTICSEARCH_USERNAME:-elastic}
-      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?set ELASTIC_PASSWORD in .env (see README)}
-      # HMAC key of the paging cursors, the same for every instance, at least 32 bytes. Required:
-      # the service does not start without it (see README).
-      SEARCH_CURSOR_SECRET: ${SEARCH_CURSOR_SECRET:?set SEARCH_CURSOR_SECRET (at least 32 bytes) in .env (see README)}
-      # The internal export endpoints of the owners (#28, #29) and the token they accept. Empty: a
-      # rebuild fails with "export unauthorized" before calling them.
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-dev-only-elastic-password}
+      # HMAC key of the paging cursors, the same for every instance, at least 32 bytes. The default
+      # is for this development stack only: set your own SEARCH_CURSOR_SECRET anywhere else.
+      SEARCH_CURSOR_SECRET: ${SEARCH_CURSOR_SECRET:-dev-only-search-cursor-secret-0123456789abcdef}
+      # The internal export endpoints of the owners (#28, #29) and the token they accept. The same
+      # value goes to the journey-, recovery- and search-service; the default is for local runs only
+      # (set SEARCH_EXPORT_SERVICE_TOKEN in .env for anything shared).
       JOURNEY_SERVICE_URL: ${JOURNEY_SERVICE_URL:-http://journey-service:1113}
       RECOVERY_SERVICE_URL: ${RECOVERY_SERVICE_URL:-http://recovery-service:1115}
-      SEARCH_EXPORT_SERVICE_TOKEN: ${SEARCH_EXPORT_SERVICE_TOKEN:-}
+      SEARCH_EXPORT_SERVICE_TOKEN: ${SEARCH_EXPORT_SERVICE_TOKEN:-aerotrace-local-export-token}
       # The identity-service public key. The service refuses to start without one; this
       # development stack names, explicitly, the development key bundled in the image (the pair
       # identity-service signs with here). Set your own key pair wherever tokens matter.
