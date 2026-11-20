@@ -10,6 +10,7 @@ import java.io.IOException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.util.DisconnectedClientHelper;
 
 /**
  * The shared error handling, plus: an Elasticsearch that cannot be reached or is overloaded is
@@ -20,8 +21,16 @@ class SearchExceptionHandler extends BaseExceptionHandler {
 
   private static final String UNAVAILABLE = "The search index is not available. Try again later.";
 
+  /**
+   * Elasticsearch calls are wrapped by {@link Elastic#call}, so an {@link IOException} that gets
+   * here is either the client going away (nothing can be written back, and it is not the index's
+   * fault: no 503) or an unwrapped transport failure (503).
+   */
   @ExceptionHandler(IOException.class)
-  ResponseEntity<ApiError> handleUnreachable(Exception ex, HttpServletRequest request) {
+  ResponseEntity<ApiError> handleUnreachable(IOException ex, HttpServletRequest request) {
+    if (DisconnectedClientHelper.isClientDisconnectedException(ex)) {
+      return null;
+    }
     return unavailable(request);
   }
 

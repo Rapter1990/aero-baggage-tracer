@@ -23,10 +23,15 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 
 /**
- * Bag search over the {@code journeys-read} alias with a point-in-time and {@code search_after}:
- * every page of one search sees the same snapshot, so paging has no duplicates and no gaps even
- * while the index changes or is swapped by a rebuild. The order is {@code updatedAt} descending,
- * then the stored {@code docId} (never {@code _id}, which cannot be sorted on efficiently).
+ * Bag search over the {@code journeys-read} alias with {@code search_after}. The first page is a
+ * plain search of the alias; only when there is a next page is a point-in-time opened (with a short
+ * keep-alive, renewed by each page), so the pages after the first see one snapshot even while the
+ * index changes or is swapped by a rebuild, and a search that fits one page, the usual case, holds
+ * no search context at all (open points-in-time are a limited cluster resource). The snapshot is
+ * taken just after the first page, so a document that changed in between can move across the first
+ * page's boundary; the pages after it have no duplicates and no gaps. The order is {@code
+ * updatedAt} descending, then the stored {@code docId} (never {@code _id}, which cannot be sorted
+ * on efficiently).
  */
 @Service
 public class BagSearchService {
@@ -48,17 +53,7 @@ public class BagSearchService {
     String fingerprint = criteria.fingerprint();
     Cursor cursor = cursorToken == null ? null : cursors.decode(cursorToken, fingerprint);
     String keepAlive = index.pitKeepAlive().toSeconds() + "s";
-    String pit =
-        cursor != null
-            ? cursor.pit()
-            : Elastic.call(
-                () ->
-                    client
-                        .openPointInTime(
-                            p ->
-                                p.index(IndexFamily.JOURNEYS.readAlias())
-                                    .keepAlive(t -> t.time(keepAlive)))
-                        .id());
+    String pit = cursor != null ? cursor.pit() : null;
     List<FieldValue> after =
         cursor == null ? List.of() : cursor.after().stream().map(BagSearchService::value).toList();
     Query query = query(criteria);
@@ -69,8 +64,12 @@ public class BagSearchService {
               () ->
                   client.search(
                       s -> {
-                        s.pit(p -> p.id(pit).keepAlive(t -> t.time(keepAlive)))
-                            .query(query)
+                        if (pit != null) {
+                          s.pit(p -> p.id(pit).keepAlive(t -> t.time(keepAlive)));
+                        } else {
+                          s.index(IndexFamily.JOURNEYS.readAlias());
+                        }
+                        s.query(query)
                             .size(size + 1)
                             .trackTotalHits(t -> t.enabled(false))
                             .sort(
@@ -100,6 +99,18 @@ public class BagSearchService {
     List<BagSummary> items = page.stream().map(BagSearchService::summary).toList();
     String next = null;
     String currentPit = response.pitId() != null ? response.pitId() : pit;
+    if (hasMore && currentPit == null) {
+      // The first page has a next one: only now is a point-in-time needed.
+      currentPit =
+          Elastic.call(
+              () ->
+                  client
+                      .openPointInTime(
+                          p ->
+                              p.index(IndexFamily.JOURNEYS.readAlias())
+                                  .keepAlive(t -> t.time(keepAlive)))
+                      .id());
+    }
     if (hasMore) {
       List<Object> sort = new ArrayList<>();
       for (FieldValue value : page.get(page.size() - 1).sort()) {
@@ -112,7 +123,7 @@ public class BagSearchService {
                   sort,
                   fingerprint,
                   clock.instant().plus(index.pitKeepAlive()).toEpochMilli()));
-    } else {
+    } else if (currentPit != null) {
       close(currentPit);
     }
     return new Page(items, size, next, hasMore);

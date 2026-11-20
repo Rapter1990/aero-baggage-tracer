@@ -13,7 +13,6 @@
       "state": { "type": "keyword" },
       "trigger": { "type": "keyword" },
       "version": { "type": "long" },
-      "reason": { "type": "text" },
       "airport": { "type": "keyword" },
       "airline": { "type": "keyword" },
       "flightNumber": { "type": "keyword" },

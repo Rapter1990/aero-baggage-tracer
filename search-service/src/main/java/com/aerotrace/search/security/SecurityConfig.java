@@ -6,6 +6,7 @@ import com.aerotrace.common.security.AeroTraceJwtValidators;
 import com.aerotrace.common.security.JwtClaims;
 import com.aerotrace.common.security.PemKeyUtils;
 import com.aerotrace.common.security.Role;
+import com.aerotrace.search.config.Profiles;
 import com.aerotrace.search.config.SearchProperties;
 import com.aerotrace.search.constant.ApiPaths;
 import java.security.interfaces.RSAPublicKey;
@@ -13,6 +14,7 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -48,10 +50,21 @@ class SecurityConfig {
   };
 
   @Bean
-  JwtDecoder jwtDecoder(SearchProperties properties) {
+  JwtDecoder jwtDecoder(SearchProperties properties, Environment environment) {
     SearchProperties.Jwt jwt = properties.jwt();
-    RSAPublicKey key =
-        (RSAPublicKey) PemKeyUtils.readPublicKey(jwt.publicKey(), jwt.publicKeyLocation());
+    String location = jwt.publicKeyLocation();
+    if (!jwt.configured()) {
+      if (!Profiles.development(environment)) {
+        // Never trust tokens signed with the development key pair (its private key is in the
+        // repository) just because nothing was configured.
+        throw new IllegalStateException(
+            "No identity public key configured: set IDENTITY_JWT_PUBLIC_KEY or"
+                + " IDENTITY_JWT_PUBLIC_KEY_LOCATION (the bundled development key is only used"
+                + " under the local, dev or test profile)");
+      }
+      location = SearchProperties.Jwt.DEVELOPMENT_PUBLIC_KEY_LOCATION;
+    }
+    RSAPublicKey key = (RSAPublicKey) PemKeyUtils.readPublicKey(jwt.publicKey(), location);
     NimbusJwtDecoder decoder =
         NimbusJwtDecoder.withPublicKey(key).signatureAlgorithm(SignatureAlgorithm.RS256).build();
     decoder.setJwtValidator(AeroTraceJwtValidators.create(JwtClaims.ISSUER, jwt.audience()));

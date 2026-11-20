@@ -131,4 +131,24 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
             "capacity-service",
             "search-service");
   }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void everyRouteToAServiceThatAcceptsTheServiceTokenStripsIt() {
+    List<Map<String, Object>> routes =
+        (List<Map<String, Object>>)
+            (List<?>)
+                Binder.get(environment)
+                    .bind("spring.cloud.gateway.server.webmvc.routes", Bindable.listOf(Map.class))
+                    .get();
+
+    // The search-service sends X-Service-Token to the export endpoints; capacity accepts it.
+    for (String id : List.of("capacity", "reports", "search", "search-admin")) {
+      Map<String, Object> route =
+          routes.stream().filter(r -> id.equals(r.get("id"))).findFirst().orElseThrow();
+      assertThat(String.valueOf(route.get("filters")))
+          .as("filters of route %s", id)
+          .contains("RemoveRequestHeader=X-Service-Token");
+    }
+  }
 }

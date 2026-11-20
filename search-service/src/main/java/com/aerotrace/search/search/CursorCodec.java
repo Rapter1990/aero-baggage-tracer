@@ -2,6 +2,7 @@ package com.aerotrace.search.search;
 
 import com.aerotrace.common.error.ApiException;
 import com.aerotrace.common.error.ErrorCode;
+import com.aerotrace.search.config.Profiles;
 import com.aerotrace.search.config.SearchProperties;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -15,6 +16,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -22,7 +24,8 @@ import tools.jackson.databind.json.JsonMapper;
  * The opaque paging cursor: the point-in-time id, the sort values of the last hit, a fingerprint of
  * the filters and the time the point-in-time expires, signed with HMAC-SHA256. A cursor that was
  * changed, or used with other filters, is {@code 400}; one past its expiry is {@code 410
- * CURSOR_EXPIRED}. Nothing in it is a secret, but nothing in it can be forged either.
+ * CURSOR_EXPIRED}. Nothing in it is a secret, but nothing in it can be forged either: the signature
+ * is checked before the body is parsed, and the key is at least 32 bytes.
  */
 @Component
 public class CursorCodec {
@@ -40,17 +43,34 @@ public class CursorCodec {
   private final byte[] key;
   private final Clock clock;
 
-  public CursorCodec(SearchProperties properties, Clock clock) {
+  /** The shortest HMAC-SHA256 key accepted: the length of the hash. */
+  static final int MIN_SECRET_BYTES = 32;
+
+  public CursorCodec(SearchProperties properties, Clock clock, Environment environment) {
     this.clock = clock;
     String secret = properties.cursor().secret();
     if (secret == null || secret.isBlank()) {
+      if (!Profiles.development(environment)) {
+        throw new IllegalStateException(
+            "SEARCH_CURSOR_SECRET is not set: set it (at least "
+                + MIN_SECRET_BYTES
+                + " bytes, the same on every instance)");
+      }
       LOG.warn(
           "No SEARCH_CURSOR_SECRET set: cursors are signed with a random key and only work on"
               + " this instance");
-      this.key = new byte[32];
+      this.key = new byte[MIN_SECRET_BYTES];
       new SecureRandom().nextBytes(this.key);
     } else {
-      this.key = secret.getBytes(StandardCharsets.UTF_8);
+      byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
+      if (bytes.length < MIN_SECRET_BYTES) {
+        // A short key is refused everywhere: the value is never logged, only its rule.
+        throw new IllegalStateException(
+            "SEARCH_CURSOR_SECRET is too short: it must be at least "
+                + MIN_SECRET_BYTES
+                + " bytes");
+      }
+      this.key = bytes;
     }
   }
 

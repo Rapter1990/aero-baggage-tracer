@@ -1,11 +1,17 @@
 package com.aerotrace.search.search;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch.core.OpenPointInTimeRequest;
 import com.aerotrace.common.event.Topics;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.common.model.RiskLevel;
@@ -30,6 +36,7 @@ import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.JsonNode;
@@ -51,7 +58,7 @@ class BagSearchApiTest extends AbstractSearchTest {
 
   @Autowired MockMvc mockMvc;
   @Autowired EventIndexer indexer;
-  @Autowired ElasticsearchClient client;
+  @MockitoSpyBean ElasticsearchClient client;
   @Autowired CursorCodec cursors;
 
   private final Random random = new Random();
@@ -217,6 +224,33 @@ class BagSearchApiTest extends AbstractSearchTest {
                   && seen.get(i - 1).compareTo(seen.get(i)) < 0);
       assertThat(ordered).as("order at %d", i).isTrue();
     }
+  }
+
+  @Test
+  @DisplayName(
+      "a search that fits one page opens no point-in-time; one with a next page opens exactly"
+          + " one")
+  void pointInTimeOnlyWhenPaging() throws Exception {
+    clearInvocations(client);
+
+    JsonNode single = search("bagTag=" + bags.get(0));
+
+    assertThat(single.get("hasMore").asBoolean()).isFalse();
+    verify(client, never()).openPointInTime(any(OpenPointInTimeRequest.class));
+
+    JsonNode first = search("airline=" + airline + "&size=5");
+
+    assertThat(first.get("hasMore").asBoolean()).isTrue();
+    verify(client, times(1)).openPointInTime(any(OpenPointInTimeRequest.class));
+    client.closePointInTime(
+        c ->
+            c.id(
+                cursors
+                    .decode(
+                        first.get("nextCursor").asString(),
+                        new BagSearchModels.Criteria(null, null, airline, null, null, null)
+                            .fingerprint())
+                    .pit()));
   }
 
   @Test

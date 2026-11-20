@@ -11,7 +11,8 @@ import java.time.Instant;
  * read here when present and are {@code null} in revision 1 events. The shared {@code
  * CaseChangedPayload} is not edited by this service; this record is its tolerant reader, and so the
  * same shape is used for a case from the bulk export. {@code trigger} is kept as text so a value
- * added later cannot make an event unreadable. {@code assignedTo} is read but never indexed.
+ * added later cannot make an event unreadable. {@code reason} (free text that may name people or
+ * places) and {@code assignedTo} are read but never indexed.
  */
 public record CaseChange(
     String caseId,

@@ -1,0 +1,5 @@
+# Development defaults of the dev profile (see Profiles): the elastic superuser of the local
+# single-node cluster. Never use it outside development; see docs/apis/SEARCH-API.md.
+spring:
+  elasticsearch:
+    username: ${ELASTICSEARCH_USERNAME:elastic}

@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.elasticsearch.autoconfigure.Rest5ClientBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 
 /**
  * Hard limits on every Elasticsearch call. The connection's socket timeout alone does not end a
@@ -21,7 +22,16 @@ class ElasticsearchClientConfiguration {
   @Bean
   Rest5ClientBuilderCustomizer elasticsearchTimeouts(
       @Value("${spring.elasticsearch.socket-timeout:10s}") Duration responseTimeout,
-      @Value("${spring.elasticsearch.connection-timeout:2s}") Duration connectTimeout) {
+      @Value("${spring.elasticsearch.connection-timeout:2s}") Duration connectTimeout,
+      @Value("${spring.elasticsearch.username:}") String username,
+      Environment environment) {
+    // Built with the client, so before any index is touched: outside the development profiles the
+    // user must be named (a dedicated least-privilege user), never assumed to be "elastic".
+    if (username.isBlank() && !Profiles.development(environment)) {
+      throw new IllegalStateException(
+          "ELASTICSEARCH_USERNAME is not set: name the search-service's Elasticsearch user (see"
+              + " docs/apis/SEARCH-API.md, least privilege)");
+    }
     return new Rest5ClientBuilderCustomizer() {
       @Override
       public void customize(Rest5ClientBuilder builder) {

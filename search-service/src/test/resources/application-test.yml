@@ -6,6 +6,8 @@ spring:
     discovery:
       enabled: false
   elasticsearch:
+    # The throwaway Testcontainers cluster's superuser.
+    username: elastic
     socket-timeout: 5s
   kafka:
     producer:
@@ -41,11 +43,13 @@ aerotrace:
       # Tests call the janitor by hand.
       janitor-delay: 1h
     cursor:
-      secret: test-cursor-secret
+      # Test-only; at least 32 bytes like every cursor secret.
+      secret: test-cursor-secret-of-at-least-32-bytes
     reindex:
       # Smaller than the AT-18 data set, so a rebuild needs several export pages.
       page-size: 100
     lag:
       check-interval: 1h
     jwt:
-      public-key-location: classpath:keys/public.pem
+      # A key pair of the tests' own (test-keys/), not the identity-service's development pair.
+      public-key-location: classpath:test-keys/public.pem

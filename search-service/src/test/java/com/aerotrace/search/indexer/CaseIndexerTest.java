@@ -109,7 +109,8 @@ class CaseIndexerTest extends AbstractSearchTest {
   }
 
   @Test
-  @DisplayName("a revision 2 event stores openedAt, resolvedAt, trigger and the resolution time")
+  @DisplayName(
+      "a revision 2 event stores openedAt, resolvedAt, trigger and the resolution time, never the reason")
   void revisionTwoFields() throws Exception {
     String caseId = newId("case");
     Instant opened = Instant.parse("2026-03-01T10:00:00Z");
@@ -136,7 +137,9 @@ class CaseIndexerTest extends AbstractSearchTest {
         .containsEntry("openedAt", opened.toEpochMilli())
         .containsEntry("resolvedAt", resolved.toEpochMilli())
         .containsEntry("resolutionSeconds", 2730)
-        .doesNotContainKey("assignedTo");
+        .doesNotContainKey("assignedTo")
+        // Free text that may name people or places is never indexed.
+        .doesNotContainKey("reason");
   }
 
   @Test

@@ -202,7 +202,6 @@ public class ReadModelWriter {
     doc.put("state", c.state().name());
     doc.put("trigger", c.trigger());
     doc.put("version", c.version());
-    doc.put("reason", c.reason());
     doc.put("openedAt", Elastic.millis(c.openedAt()));
     doc.put("resolvedAt", Elastic.millis(c.resolvedAt()));
     Instant updatedAt = changedAt != null ? changedAt : latest(c.openedAt(), c.resolvedAt());

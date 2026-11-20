@@ -19,7 +19,9 @@ spring:
       enabled: true
   elasticsearch:
     uris: ${ELASTICSEARCH_URIS:http://localhost:9200}
-    username: ${ELASTICSEARCH_USERNAME:elastic}
+    # Required outside the local, dev and test profiles (see ElasticsearchCredentialsCheck); use
+    # a dedicated least-privilege user (docs/apis/SEARCH-API.md), not the elastic superuser.
+    username: ${ELASTICSEARCH_USERNAME:}
     # No default: the service refuses to start rather than guess a password (security is on).
     password: ${ELASTIC_PASSWORD}
     connection-timeout: ${ELASTICSEARCH_CONNECT_TIMEOUT:2s}
@@ -66,12 +68,13 @@ aerotrace:
       max-retry-backoff: ${SEARCH_CONSUMER_MAX_RETRY_BACKOFF:30s}
     index:
       replicas: ${SEARCH_INDEX_REPLICAS:0}
-      pit-keep-alive: ${SEARCH_PIT_KEEP_ALIVE:2m}
+      pit-keep-alive: ${SEARCH_PIT_KEEP_ALIVE:1m}
       live-settle: ${SEARCH_REINDEX_LIVE_SETTLE:5s}
       old-index-grace: ${SEARCH_OLD_INDEX_GRACE:5m}
       janitor-delay: ${SEARCH_INDEX_JANITOR_DELAY:1m}
     cursor:
-      # HMAC key of the paging cursors, the same on every instance. Empty: a random key per instance.
+      # HMAC key of the paging cursors, the same on every instance, at least 32 bytes. Required
+      # outside the local, dev and test profiles (which fall back to a random key per instance).
       secret: ${SEARCH_CURSOR_SECRET:}
     reindex:
       page-size: ${SEARCH_REINDEX_PAGE_SIZE:500}
@@ -102,8 +105,9 @@ aerotrace:
       enabled: ${DOCS_ENABLED:true}
     jwt:
       audience: ${IDENTITY_AUDIENCE:aerotrace-api}
-      # The identity-service public key (PEM), inline or from a location. With nothing set, the
-      # development key bundled in src/main/resources/keys is used.
+      # The identity-service public key (PEM), inline or from a location. Required: with nothing
+      # set the service refuses to start, except under the local, dev or test profile, which use
+      # the development key bundled in src/main/resources/keys.
       public-key: ${IDENTITY_JWT_PUBLIC_KEY:}
       public-key-location: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:}
 

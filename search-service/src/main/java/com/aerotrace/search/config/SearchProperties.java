@@ -46,7 +46,8 @@ public record SearchProperties(
    * Index lifecycle.
    *
    * @param replicas replicas of every index (0 on a single node)
-   * @param pitKeepAlive how long a point-in-time of a search page stays open
+   * @param pitKeepAlive how long a point-in-time of a search page stays open (it is opened only
+   *     when a search has a next page)
    * @param liveSettle how long a rebuild waits after adding the new index to the live alias before
    *     it reads the source, so that every write already in flight reaches both indexes
    * @param oldIndexGrace how long an index that left both aliases is kept (longer than the
@@ -55,7 +56,7 @@ public record SearchProperties(
    */
   public record Index(
       @DefaultValue("0") int replicas,
-      @DefaultValue("2m") Duration pitKeepAlive,
+      @DefaultValue("1m") Duration pitKeepAlive,
       @DefaultValue("5s") Duration liveSettle,
       @DefaultValue("5m") Duration oldIndexGrace,
       @DefaultValue("1m") Duration janitorDelay) {}
@@ -63,8 +64,9 @@ public record SearchProperties(
   /**
    * Cursor signing.
    *
-   * @param secret the HMAC key of the search cursors, shared by every instance. Empty: a random key
-   *     per instance (cursors then only work on the instance that issued them)
+   * @param secret the HMAC key of the search cursors, shared by every instance, at least 32 bytes.
+   *     Empty: a random key per instance under a development profile (cursors then only work on the
+   *     instance that issued them); outside them the service refuses to start
    */
   public record Cursor(@DefaultValue("") String secret) {}
 
@@ -127,19 +129,21 @@ public record SearchProperties(
       @DefaultValue("200000") long maxScannedDocuments,
       @DefaultValue("10s") Duration timeout) {}
 
-  /** Token verification: the identity-service public key (inline or location) and audience. */
+  /**
+   * Token verification: the identity-service public key (inline or location) and audience. With
+   * neither set, the development key bundled with the service is used only under a development
+   * profile ({@link Profiles}); otherwise the service refuses to start.
+   */
   public record Jwt(
       @DefaultValue("aerotrace-api") String audience, String publicKey, String publicKeyLocation) {
 
-    /** The development public key that ships with the service, used when nothing is configured. */
-    public static final String DEFAULT_PUBLIC_KEY_LOCATION = "classpath:keys/public.pem";
+    /** The development public key that ships with the service (development profiles only). */
+    public static final String DEVELOPMENT_PUBLIC_KEY_LOCATION = "classpath:keys/public.pem";
 
-    public Jwt {
-      // An empty setting (an unset environment variable in a compose file) counts as not set.
-      if ((publicKey == null || publicKey.isBlank())
-          && (publicKeyLocation == null || publicKeyLocation.isBlank())) {
-        publicKeyLocation = DEFAULT_PUBLIC_KEY_LOCATION;
-      }
+    /** Whether a key is configured (an empty environment variable counts as not set). */
+    public boolean configured() {
+      return (publicKey != null && !publicKey.isBlank())
+          || (publicKeyLocation != null && !publicKeyLocation.isBlank());
     }
   }
 }
