@@ -74,6 +74,11 @@ class RebuildAgainstRealOwnersTest extends AbstractSearchTest {
   /** More than one export page in the test profile (page size 100). */
   private static final int CASES = 150;
 
+  /** Cases opened on journey legs (UUID leg ids), on top of {@link #CASES}. */
+  private static final int CASES_ON_JOURNEY_LEGS = 8;
+
+  private static final int ALL_CASES = CASES + CASES_ON_JOURNEY_LEGS;
+
   private static final int BAGS = 120;
 
   private static RealOwners owners;
@@ -241,6 +246,62 @@ class RebuildAgainstRealOwnersTest extends AbstractSearchTest {
     return tags;
   }
 
+  /** A case opened on a leg the journey-service issued, and what its leg says about it. */
+  private record LegCase(String caseId, String legId, String airport, String airline) {}
+
+  /**
+   * Opens cases on legs the journey-service issued, whose ids are 36 character UUIDs: the
+   * recovery-service accepts them (it refused anything over 32 characters before migration 012),
+   * and the rebuilt index must give each case the airport and airline of its leg.
+   */
+  private static List<LegCase> seedCasesOnJourneyLegs() throws Exception {
+    List<String[]> legs =
+        owners()
+            .query(
+                "SELECT b.bag_tag, l.id::text, l.origin, l.flight_number FROM journey.baggage b"
+                    + " JOIN journey.itinerary i ON i.baggage_id = b.id"
+                    + " JOIN journey.itinerary_leg l ON l.itinerary_id = i.id"
+                    + " ORDER BY b.bag_tag, l.id LIMIT "
+                    + CASES_ON_JOURNEY_LEGS,
+                r -> new String[] {r.getString(1), r.getString(2), r.getString(3), r.getString(4)});
+    assertThat(legs).hasSize(CASES_ON_JOURNEY_LEGS);
+    List<LegCase> cases = new ArrayList<>();
+    for (String[] leg : legs) {
+      assertThat(leg[1]).as("a journey leg id is a UUID").hasSize(36);
+      Map<String, Object> open = new LinkedHashMap<>();
+      open.put("bagTag", leg[0]);
+      open.put("legId", leg[1]);
+      open.put("reason", "e2e on a journey leg");
+      String caseId =
+          owners()
+              .call("recovery", "POST", "/api/v1/recovery-cases", open, "AGENT", Map.of(), 201)
+              .get("caseId")
+              .asString();
+      cases.add(new LegCase(caseId, leg[1], leg[2], leg[3].substring(0, 2)));
+    }
+    return cases;
+  }
+
+  @SuppressWarnings("rawtypes")
+  private void assertCasesCarryTheirLeg(List<LegCase> cases) throws Exception {
+    client.indices().refresh(r -> r.index(IndexFamily.CASES.readAlias()));
+    for (LegCase c : cases) {
+      await()
+          .atMost(Duration.ofSeconds(60))
+          .untilAsserted(
+              () -> {
+                Map source =
+                    client
+                        .get(g -> g.index(IndexFamily.CASES.readAlias()).id(c.caseId()), Map.class)
+                        .source();
+                assertThat(source).as("case %s on leg %s", c.caseId(), c.legId()).isNotNull();
+                assertThat(source.get("legId")).isEqualTo(c.legId());
+                assertThat(source.get("airport")).isEqualTo(c.airport());
+                assertThat(source.get("airline")).isEqualTo(c.airline());
+              });
+    }
+  }
+
   private static Map<String, Object> leg(
       String flight, String from, String to, Instant departure, Instant arrival) {
     Map<String, Object> leg = new LinkedHashMap<>();
@@ -380,15 +441,16 @@ class RebuildAgainstRealOwnersTest extends AbstractSearchTest {
   @SuppressWarnings("rawtypes")
   private void assertCasesEqualSource(JsonNode results) throws Exception {
     Map<String, Long> source = sourceCases();
-    assertThat(source).hasSize(CASES);
-    assertThat(results.get("sourceCount").asLong()).isEqualTo(CASES);
-    assertThat(results.get("indexedCount").asLong()).isEqualTo(CASES);
+    assertThat(source).hasSize(ALL_CASES);
+    assertThat(results.get("sourceCount").asLong()).isEqualTo(ALL_CASES);
+    assertThat(results.get("indexedCount").asLong()).isEqualTo(ALL_CASES);
     assertThat(results.get("missing").asLong()).isZero();
     List<Hit<Map>> hits = caseHits();
     List<String> ids = hits.stream().map(Hit::id).toList();
     // _count == N, the ids are the source's, no id twice.
-    assertThat(client.count(c -> c.index(IndexFamily.CASES.readAlias())).count()).isEqualTo(CASES);
-    assertThat(ids).hasSize(CASES).doesNotHaveDuplicates();
+    assertThat(client.count(c -> c.index(IndexFamily.CASES.readAlias())).count())
+        .isEqualTo(ALL_CASES);
+    assertThat(ids).hasSize(ALL_CASES).doesNotHaveDuplicates();
     assertThat(new HashSet<>(ids)).isEqualTo(source.keySet());
     assertNoDuplicateDocIds(IndexFamily.CASES.readAlias());
     // Stored versions equal the source versions.
@@ -454,6 +516,7 @@ class RebuildAgainstRealOwnersTest extends AbstractSearchTest {
   void at18RebuildFromTheRealOwners() throws Exception {
     List<SeededCase> seeded = seedCases();
     seedBags();
+    List<LegCase> onJourneyLegs = seedCasesOnJourneyLegs();
     owners().awaitOutboxesDrained();
     assertThat(seeded.stream().map(SeededCase::version).distinct())
         .containsExactlyInAnyOrder(1L, 2L, 3L, 5L);
@@ -506,6 +569,7 @@ class RebuildAgainstRealOwnersTest extends AbstractSearchTest {
     await().atMost(Duration.ofSeconds(60)).until(() -> storedVersion(movedByOwner.caseId()) == 2);
     assertThat(storedVersion(staleTarget.caseId())).isEqualTo(5);
     assertCasesEqualSource(one.get("results").get("cases"));
+    assertCasesCarryTheirLeg(onJourneyLegs);
     Map<String, Map> journeysAfterFirst =
         assertJourneysCoverSource(one.get("results").get("journeys"));
     // The rebuild wrote nothing at the source: only the owner's own move changed it.

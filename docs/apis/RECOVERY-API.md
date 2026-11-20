@@ -235,4 +235,4 @@ Redis only caches the policy. See [ADR 0001](../adr/0001-redis-policy-cache.md).
 | Assignee check | The assignee is checked for shape only: the identity-service is not asked whether that person exists or is an agent, and any agent or dispatcher may assign any case to any id |
 | Redis policy entry | An entry outside 0 to 720 minutes is dropped; Redis is still trusted to hold only what this service wrote, so keep it private (ACL or own instance per service) |
 | Airline policy | One `DEFAULT` policy; the events carry no airline |
-| Leg ids | `legId` must be 1 to 32 letters, digits, `-` or `_`. The journey-service's leg ids (in its scan and bag events) are 36-character UUIDs, so a risk event for such a leg is refused as unreadable and dead-lettered. Not changed by #29 (it needs a migration of `leg_id`); open |
+| Leg ids | `legId` must be 1 to 36 letters, digits, `-` or `_`, so the journey-service's 36-character UUID leg ids are accepted (migration `012` widened `leg_id` in `recovery_case` and `risk_event_clock` from 32 to 36; before it, a risk event for a journey leg was refused as unreadable and dead-lettered) |

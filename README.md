@@ -163,7 +163,7 @@ docker compose up -d
 | Staff accounts | Only an ADMIN token can create them |
 | API docs | On by default. `DOCS_ENABLED=false` turns them off |
 | Kafka UI | Port 8090, cluster `local` |
-| Elasticsearch | `ELASTIC_PASSWORD`, `SEARCH_CURSOR_SECRET` and `SEARCH_EXPORT_SERVICE_TOKEN` have dev-only defaults in `docker-compose.yml` (and `ELASTIC_PASSWORD` in `docker-compose-local.yml`): set your own in `.env` for anything shared. Port 9200 is not published (loopback only in `docker-compose-local.yml`). Both files use the image tag `latest` at the user's request, but **Elastic publishes no `latest` tag**, so the pull currently fails with `manifest unknown`: put a concrete tag such as `9.5.3` in the two `image:` lines (see [SEARCH-API.md](docs/apis/SEARCH-API.md#the-elasticsearch-image-tag)) |
+| Elasticsearch | `ELASTIC_PASSWORD`, `SEARCH_CURSOR_SECRET` and `SEARCH_EXPORT_SERVICE_TOKEN` have dev-only defaults in `docker-compose.yml` (and `ELASTIC_PASSWORD` in `docker-compose-local.yml`): set your own in `.env` for anything shared. Port 9200 is published on the host in both files (user `elastic`). Both files use the image tag `latest` at the user's request, but **Elastic publishes no `latest` tag**, so the pull currently fails with `manifest unknown`: put a concrete tag such as `9.5.3` in the two `image:` lines (see [SEARCH-API.md](docs/apis/SEARCH-API.md#the-elasticsearch-image-tag)) |
 
 ### Dev accounts
 
@@ -212,7 +212,7 @@ SELECT id, 'ADMIN' FROM identity.app_user WHERE username = 'your-username';
 | risk-streams-service (actuator only, no public API) | `http://localhost:1114` |
 | recovery-service (direct) | `http://localhost:1115` |
 | capacity-service (direct) | `http://localhost:1116` |
-| search-service (direct) | `http://localhost:1117` (loopback only) |
+| search-service (direct) | `http://localhost:1117` |
 
 In Compose, the one-shot `kafka-init` job creates the Kafka topics before journey-service, risk-streams-service and recovery-service start (idempotent, `--if-not-exists`):
 

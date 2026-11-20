@@ -67,8 +67,8 @@ services:
 
   # The search read models (search-service only). Single node, security on. The tag is latest at
   # the user's request, but Elastic publishes no latest tag, so the pull fails until a concrete tag
-  # (e.g. 9.5.3) is set (README). ELASTIC_PASSWORD has a dev-only default (set your own). Port 9200 is not
-  # published; only containers on the network reach it. TLS is off on this internal network.
+  # (e.g. 9.5.3) is set (README). ELASTIC_PASSWORD has a dev-only default (set your own). Port 9200 is
+  # published (http://localhost:9200, user elastic). TLS is off.
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:latest
     container_name: elasticsearch
@@ -81,6 +81,8 @@ services:
       xpack.ml.enabled: "false"
       ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-dev-only-elastic-password}
       ES_JAVA_OPTS: ${ELASTICSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
+    ports:
+      - "9200:9200"
     volumes:
       - elasticsearch-data:/usr/share/elasticsearch/data
     healthcheck:
@@ -306,10 +308,9 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
-    # Clients reach it through the gateway (/api/v1/bags/**, /api/v1/scans/**); 1113 is its own port,
-    # on loopback only: it also answers the internal export, whose token has a public dev default.
+    # Clients reach it through the gateway (/api/v1/bags/**, /api/v1/scans/**); 1113 is its own port.
     ports:
-      - "127.0.0.1:1113:1113"
+      - "1113:1113"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:1113/actuator/health"]
       interval: 10s
@@ -364,9 +365,9 @@ services:
       redis:
         condition: service_healthy
     # Clients reach it through the gateway (/api/v1/recovery-cases/**, /api/v1/recovery-policy);
-    # 1115 is its own port, on loopback only (the internal export, token with a public dev default).
+    # 1115 is its own port.
     ports:
-      - "127.0.0.1:1115:1115"
+      - "1115:1115"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:1115/actuator/health"]
       interval: 10s
@@ -468,10 +469,9 @@ services:
       kafka-init:
         condition: service_completed_successfully
     # Clients reach it through the gateway (/api/v1/search/**, /api/v1/reports/**,
-    # /api/v1/admin/search/**), which finds it over the Compose network. 1117 is published on
-    # loopback only, for local debugging; it is never reachable from other hosts.
+    # /api/v1/admin/search/**), which finds it over the Compose network. 1117 is its own port.
     ports:
-      - "127.0.0.1:1117:1117"
+      - "1117:1117"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:1117/actuator/health"]
       interval: 10s
@@ -553,7 +553,7 @@ services:
       identity-service:
         condition: service_healthy
     ports:
-      # Loopback only: put a reverse proxy with TLS in front of it to expose it further.
+      # Published on every interface: put a reverse proxy with TLS in front of it to expose it further.
       - "8080:8080"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
@@ -603,7 +603,7 @@ services:
     image: prom/pushgateway:latest
     container_name: pushgateway
     restart: unless-stopped
-    # Anyone who can reach it could push fake numbers: loopback only (the script runs on the host).
+    # Anyone who can reach it could push fake numbers: keep it on a trusted network (the script runs on the host).
     ports:
       - "9091:9091"
     networks:
