@@ -311,13 +311,13 @@ Elasticsearch read models for journey and case search. Derived data: it can be d
 
 **Acceptance criteria**
 - [ ] AT-18 with an Elasticsearch Testcontainer (pinned image), as described above.
-- [ ] Idempotent indexer: the same `recovery.case.changed.v1` twice, or an older version after a newer one, leaves one document at the newest version; replay and snapshot overlap give the same documents.
-- [ ] One test per filter and a combined-filter test; `search_after` paging over a fixed data set has no duplicates and no gaps; forged and expired cursors are rejected.
+- [x] Idempotent indexer: the same `recovery.case.changed.v1` twice, or an older version after a newer one, leaves one document at the newest version; replay and snapshot overlap give the same documents.
+- [x] One test per filter and a combined-filter test; `search_after` paging over a fixed data set has no duplicates and no gaps; forged and expired cursors are rejected.
 - [ ] Alias-swap rebuild without downtime: searches during a rebuild return results without error, and the read alias moves only when the new index is complete and its counts match.
-- [ ] Report: validation (IATA, `from <= to`, maximum range), zero-filled hours, `null` mean when nothing resolved, definitions as in the ADR.
-- [ ] Roles: expired or missing token `401`, wrong role `403`, `PASSENGER` refused on every search and report endpoint, reindex `ADMIN` only.
+- [x] Report: validation (IATA, `from <= to`, maximum range), zero-filled hours, `null` mean when nothing resolved, definitions as in the ADR.
+- [x] Roles: expired or missing token `401`, wrong role `403`, `PASSENGER` refused on every search and report endpoint, reindex `ADMIN` only.
 - [ ] Lag metric exposed and visible in Grafana (panel added with #19).
-- [ ] `docs/requirements/TRACEABILITY.md` updated (AT-18 Test column).
+- [x] `docs/requirements/TRACEABILITY.md` updated (AT-18 Test column).
 
 ---
 
