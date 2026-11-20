@@ -59,13 +59,14 @@
         </dependency>
 
         <!--
-            The plain co.elastic.clients Java API client (with Spring Boot's client auto-configuration).
-            No Spring Data Elasticsearch: its repositories hide external versioning and scripted
-            upserts, which the idempotent indexer depends on (ADR 0004). No JPA, no datasource.
+            Spring Data Elasticsearch: repositories for the read-model documents and the job documents,
+            and ElasticsearchOperations (its own API, over the same Java API client) for what a
+            repository cannot say: external versioning, scripted upserts, conditional writes, point-in-
+            time paging, aggregations and alias swaps (ADR 0004). No JPA, no datasource.
         -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-elasticsearch</artifactId>
+            <artifactId>spring-boot-starter-data-elasticsearch</artifactId>
         </dependency>
 
         <!-- OpenAPI definition only (/v3/api-docs); the Swagger UI is served by the api-gateway. -->

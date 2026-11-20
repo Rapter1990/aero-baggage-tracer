@@ -3,6 +3,9 @@ package com.aerotrace.search.elastic;
 import co.elastic.clients.elasticsearch._types.ElasticsearchException;
 import java.io.IOException;
 import java.time.Instant;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.data.elasticsearch.ResourceNotFoundException;
 
 /** Small helpers around the Elasticsearch client. */
 public final class Elastic {
@@ -29,7 +32,41 @@ public final class Elastic {
         throw new SearchUnavailableException(e);
       }
       throw e;
+    } catch (DataAccessException e) {
+      // Spring Data wraps the client's failures (repositories and ElasticsearchOperations).
+      if (unavailable(e)) {
+        throw new SearchUnavailableException(e);
+      }
+      throw e;
     }
+  }
+
+  /**
+   * Whether a Spring Data exception means the cluster cannot serve now: it did not answer, or its
+   * answer was a 429 or a 5xx.
+   */
+  public static boolean unavailable(DataAccessException e) {
+    if (e instanceof DataAccessResourceFailureException) {
+      return true;
+    }
+    Integer status = status(e);
+    return status != null && isTransient(status);
+  }
+
+  /** The HTTP status of the Elasticsearch error behind an exception, or null if there is none. */
+  public static Integer status(Throwable e) {
+    for (Throwable t = e; t != null; t = t.getCause()) {
+      if (t instanceof ElasticsearchException ee) {
+        return ee.status();
+      }
+      if (t instanceof ResourceNotFoundException) {
+        return 404;
+      }
+      if (t instanceof IOException) {
+        return 503;
+      }
+    }
+    return null;
   }
 
   /** 429 (too many requests) and 5xx may pass; a retry can succeed. */

@@ -4,10 +4,12 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.ElasticsearchException;
 import co.elastic.clients.elasticsearch.core.GetResponse;
 import com.aerotrace.search.config.SearchProperties;
+import com.aerotrace.search.document.JobDocument;
 import com.aerotrace.search.elastic.Elastic;
 import com.aerotrace.search.elastic.SupportIndex;
 import com.aerotrace.search.reindex.ReindexJob.Scope;
 import com.aerotrace.search.reindex.ReindexJob.Status;
+import com.aerotrace.search.repository.ReindexJobRepository;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -18,7 +20,6 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +40,10 @@ import org.springframework.stereotype.Component;
  *       refused; keys expire after {@code key-ttl};
  *   <li>{@code job:<jobId>}: the job itself.
  * </ul>
+ *
+ * The job documents are read and written through {@link ReindexJobRepository}; the lock and the
+ * keys need {@code op_type=create} and conditional writes, which a repository does not offer, so
+ * they use the client.
  */
 @Component
 public class ReindexJobStore {
@@ -63,11 +68,17 @@ public class ReindexJobStore {
   public record KeyBinding(String jobId, Scope scope, String requestedBy, Instant createdAt) {}
 
   private final ElasticsearchClient client;
+  private final ReindexJobRepository jobs;
   private final Clock clock;
   private final Duration keyTtl;
 
-  public ReindexJobStore(ElasticsearchClient client, Clock clock, SearchProperties properties) {
+  public ReindexJobStore(
+      ElasticsearchClient client,
+      ReindexJobRepository jobs,
+      Clock clock,
+      SearchProperties properties) {
     this.client = client;
+    this.jobs = jobs;
     this.clock = clock;
     this.keyTtl = properties.reindex().keyTtl();
   }
@@ -251,38 +262,34 @@ public class ReindexJobStore {
     }
   }
 
-  public void save(ReindexJob job) throws IOException {
-    Map<String, Object> doc = new LinkedHashMap<>();
-    doc.put("kind", "JOB");
-    doc.put("jobId", job.jobId());
-    doc.put("status", job.status().name());
-    doc.put("scope", job.scope().name());
-    doc.put("requestedBy", job.requestedBy());
-    doc.put("startedAt", Elastic.millis(job.startedAt()));
-    doc.put("finishedAt", Elastic.millis(job.finishedAt()));
-    doc.put("error", job.error());
-    doc.put("results", job.results());
-    doc.values().removeIf(Objects::isNull);
-    client.index(i -> i.index(index()).id(JOB + job.jobId()).document(doc));
+  public void save(ReindexJob job) {
+    jobs.save(
+        new JobDocument(
+            JobDocument.ID_PREFIX + job.jobId(),
+            JobDocument.KIND,
+            job.jobId(),
+            job.status().name(),
+            job.scope().name(),
+            job.requestedBy(),
+            job.startedAt(),
+            job.finishedAt(),
+            job.error(),
+            job.results()));
   }
 
-  @SuppressWarnings({"rawtypes", "unchecked"})
-  public Optional<ReindexJob> find(String jobId) throws IOException {
-    GetResponse<Map> get = client.get(g -> g.index(index()).id(JOB + jobId), Map.class);
-    if (!get.found()) {
-      return Optional.empty();
-    }
-    Map<String, Object> s = get.source();
-    return Optional.of(
-        new ReindexJob(
-            (String) s.get("jobId"),
-            Status.valueOf((String) s.get("status")),
-            Scope.valueOf((String) s.get("scope")),
-            (String) s.get("requestedBy"),
-            Elastic.instant(s.get("startedAt")),
-            Elastic.instant(s.get("finishedAt")),
-            (String) s.get("error"),
-            (Map<String, Object>) s.getOrDefault("results", Map.of())));
+  public Optional<ReindexJob> find(String jobId) {
+    return jobs.findById(JobDocument.ID_PREFIX + jobId)
+        .map(
+            d ->
+                new ReindexJob(
+                    d.jobId(),
+                    Status.valueOf(d.status()),
+                    Scope.valueOf(d.scope()),
+                    d.requestedBy(),
+                    d.startedAt(),
+                    d.finishedAt(),
+                    d.error(),
+                    d.results() == null ? Map.of() : d.results()));
   }
 
   /** Keys are stored hashed: a client's key is never written back or used as an id as it is. */

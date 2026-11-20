@@ -16,6 +16,7 @@ import co.elastic.clients.json.JsonData;
 import com.aerotrace.common.event.CaseChangedPayload;
 import com.aerotrace.common.event.LegSnapshot;
 import com.aerotrace.common.model.RecoveryState;
+import com.aerotrace.search.document.LegDocument;
 import com.aerotrace.search.elastic.Elastic;
 import com.aerotrace.search.elastic.IndexAdmin;
 import com.aerotrace.search.elastic.IndexFamily;
@@ -41,6 +42,10 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.data.elasticsearch.client.elc.NativeQuery;
+import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
+import org.springframework.data.elasticsearch.core.MultiGetItem;
+import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
 import org.springframework.stereotype.Component;
 
 /**
@@ -106,9 +111,15 @@ public class ReadModelWriter {
   private final ElasticsearchClient client;
   private final BulkExecutor bulk;
   private final IndexAdmin admin;
+  private final ElasticsearchOperations operations;
 
-  public ReadModelWriter(ElasticsearchClient client, BulkExecutor bulk, IndexAdmin admin) {
+  public ReadModelWriter(
+      ElasticsearchClient client,
+      BulkExecutor bulk,
+      IndexAdmin admin,
+      ElasticsearchOperations operations) {
     this.client = client;
+    this.operations = operations;
     this.bulk = bulk;
     this.admin = admin;
   }
@@ -311,29 +322,34 @@ public class ReadModelWriter {
 
   // ------------------------------------------------------------------ legs and risk hours
 
-  /** The leg lookup for these legs (realtime: what was just written is seen). */
-  @SuppressWarnings({"rawtypes", "unchecked"})
-  public Map<String, LegSnapshot> legsById(Collection<String> legIds) throws IOException {
+  /**
+   * The leg lookup for these legs: one realtime multi-get, so a leg that was just written is seen.
+   * (A repository's {@code findAllById} is an ids search, not realtime, so it is not used here.)
+   */
+  public Map<String, LegSnapshot> legsById(Collection<String> legIds) {
     List<String> ids = legIds.stream().filter(Objects::nonNull).distinct().toList();
     if (ids.isEmpty()) {
       return Map.of();
     }
-    MgetResponse<Map> response =
-        client.mget(m -> m.index(SupportIndex.LEGS.index()).ids(ids), Map.class);
     Map<String, LegSnapshot> legs = new HashMap<>();
-    for (MultiGetResponseItem<Map> item : response.docs()) {
-      if (item.isResult() && item.result().found()) {
-        Map<String, Object> source = item.result().source();
-        legs.put(
-            item.result().id(),
-            new LegSnapshot(
-                (String) source.get("legId"),
-                (String) source.get("flightNumber"),
-                (String) source.get("airline"),
-                (String) source.get("origin"),
-                (String) source.get("destination"),
-                Elastic.instant(source.get("departureAt"))));
+    for (MultiGetItem<LegDocument> item :
+        operations.multiGet(
+            NativeQuery.builder().withIds(ids).build(),
+            LegDocument.class,
+            IndexCoordinates.of(SupportIndex.LEGS.index()))) {
+      if (!item.hasItem()) {
+        continue;
       }
+      LegDocument leg = item.getItem();
+      legs.put(
+          leg.legId(),
+          new LegSnapshot(
+              leg.legId(),
+              leg.flightNumber(),
+              leg.airline(),
+              leg.origin(),
+              leg.destination(),
+              leg.departureAt()));
     }
     return legs;
   }

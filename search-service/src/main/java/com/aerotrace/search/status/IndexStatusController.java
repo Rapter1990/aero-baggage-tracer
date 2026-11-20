@@ -1,11 +1,12 @@
 package com.aerotrace.search.status;
 
-import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import com.aerotrace.common.api.ApiResponse;
 import com.aerotrace.search.constant.ApiPaths;
 import com.aerotrace.search.elastic.Elastic;
 import com.aerotrace.search.elastic.IndexAdmin;
 import com.aerotrace.search.elastic.IndexFamily;
+import com.aerotrace.search.repository.CaseRepository;
+import com.aerotrace.search.repository.JourneyRepository;
 import com.aerotrace.search.status.LagMonitor.Lag;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -40,12 +41,15 @@ class IndexStatusController {
 
   private final LagMonitor lag;
   private final IndexAdmin admin;
-  private final ElasticsearchClient client;
+  private final CaseRepository cases;
+  private final JourneyRepository journeys;
 
-  IndexStatusController(LagMonitor lag, IndexAdmin admin, ElasticsearchClient client) {
+  IndexStatusController(
+      LagMonitor lag, IndexAdmin admin, CaseRepository cases, JourneyRepository journeys) {
     this.lag = lag;
     this.admin = admin;
-    this.client = client;
+    this.cases = cases;
+    this.journeys = journeys;
   }
 
   @GetMapping(ApiPaths.INDEX_STATUS)
@@ -64,12 +68,19 @@ class IndexStatusController {
           Elastic.call(
               () -> {
                 String read = admin.readIndex(family);
-                return new IndexState(
-                    read, admin.liveIndexes(family), client.count(c -> c.index(read)).count());
+                return new IndexState(read, admin.liveIndexes(family), documents(family));
               }));
     }
     return ApiResponse.success(
         new IndexStatus(
             now.lagEvents(), now.lagSeconds(), now.indexedThrough(), now.checkedAt(), indexes));
+  }
+
+  /** The documents behind the read alias, counted by the family's repository. */
+  private long documents(IndexFamily family) {
+    return switch (family) {
+      case CASES -> cases.count();
+      case JOURNEYS -> journeys.count();
+    };
   }
 }

@@ -44,6 +44,9 @@ import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
+import org.springframework.data.elasticsearch.client.elc.NativeQuery;
+import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
+import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
 import org.springframework.stereotype.Service;
 
 /**
@@ -88,6 +91,7 @@ public class ReindexService implements DisposableBean {
   private final IndexAdmin admin;
   private final ReindexJobStore store;
   private final ElasticsearchClient client;
+  private final ElasticsearchOperations operations;
   private final MeterRegistry meters;
   private final SearchProperties properties;
   private final Clock clock;
@@ -103,6 +107,7 @@ public class ReindexService implements DisposableBean {
       IndexAdmin admin,
       ReindexJobStore store,
       ElasticsearchClient client,
+      ElasticsearchOperations operations,
       MeterRegistry meters,
       SearchProperties properties,
       Clock clock) {
@@ -113,6 +118,7 @@ public class ReindexService implements DisposableBean {
     this.admin = admin;
     this.store = store;
     this.client = client;
+    this.operations = operations;
     this.meters = meters;
     this.properties = properties;
     this.clock = clock;
@@ -398,7 +404,10 @@ public class ReindexService implements DisposableBean {
         IndexFamily family, String index, String name, Map<String, Object> extra)
         throws IOException {
       admin.refresh(index);
-      long indexed = client.count(c -> c.index(index)).count();
+      long indexed =
+          operations.count(
+              NativeQuery.builder().withQuery(q -> q.matchAll(m -> m)).build(),
+              IndexCoordinates.of(index));
       Map<String, Object> summary = new LinkedHashMap<>();
       summary.put("index", index);
       summary.put("previousIndex", admin.readIndex(family));

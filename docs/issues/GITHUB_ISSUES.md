@@ -302,7 +302,7 @@ Elasticsearch read models for journey and case search. Derived data: it can be d
 - Indexing lag: `search.index.lag`, `search.index.lag.events`, `search.index.events`, `search.index.delay`; `GET /api/v1/search/index/status` (DISPATCHER, ADMIN).
 - `GET /api/v1/reports/airport/{iata}?from=&to=`: hourly UTC buckets over `[from, to)` (maximum 31 days, zero-filled) with risky bags, resolved recoveries, retries and mean resolution time as defined in the ADR; `indexedThrough` and `lagSeconds` in the response; unknown airport with no data is `200`.
 - Gateway routes `/api/v1/search/**` and `/api/v1/admin/search/**`; roles: `AGENT`, `DISPATCHER`, `ADMIN` search and report, `PASSENGER` always `403` (no `passengerRef` in the index); new error codes `SEARCH_UNAVAILABLE` (503), `REINDEX_IN_PROGRESS` (409).
-- No JPA, no datasource; plain `co.elastic.clients` client; nothing Elasticsearch-related in `common-module`. Elasticsearch in both Compose files (pinned image, security on, no default password, port not published).
+- No JPA, no datasource; Spring Data Elasticsearch repositories for the documents plus `ElasticsearchOperations` and the Java API client for what a repository cannot express (external versioning, scripted upserts, aliases); nothing Elasticsearch-related in `common-module`. Elasticsearch in both Compose files (pinned image, security on, no default password, port not published).
 - `docs/apis/SEARCH-API.md`, a Search folder in the Postman collection.
 
 **Requirement coverage**

@@ -1,13 +1,10 @@
 package com.aerotrace.search.search;
 
-import co.elastic.clients.elasticsearch.ElasticsearchClient;
-import co.elastic.clients.elasticsearch._types.ElasticsearchException;
-import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
-import co.elastic.clients.elasticsearch.core.SearchResponse;
-import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.aerotrace.search.config.SearchProperties;
+import com.aerotrace.search.document.JourneyDocument;
+import com.aerotrace.search.document.JourneyDocument.LatestScan;
 import com.aerotrace.search.elastic.Elastic;
 import com.aerotrace.search.elastic.IndexFamily;
 import com.aerotrace.search.search.BagSearchModels.BagSummary;
@@ -19,7 +16,12 @@ import com.aerotrace.search.search.CursorCodec.Cursor;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+import org.springframework.data.elasticsearch.client.elc.NativeQuery;
+import org.springframework.data.elasticsearch.client.elc.NativeQueryBuilder;
+import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
+import org.springframework.data.elasticsearch.core.SearchHit;
+import org.springframework.data.elasticsearch.core.SearchHits;
+import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
 import org.springframework.stereotype.Service;
 
 /**
@@ -36,14 +38,17 @@ import org.springframework.stereotype.Service;
 @Service
 public class BagSearchService {
 
-  private final ElasticsearchClient client;
+  private final ElasticsearchOperations operations;
   private final CursorCodec cursors;
   private final SearchProperties.Index index;
   private final Clock clock;
 
   public BagSearchService(
-      ElasticsearchClient client, CursorCodec cursors, SearchProperties properties, Clock clock) {
-    this.client = client;
+      ElasticsearchOperations operations,
+      CursorCodec cursors,
+      SearchProperties properties,
+      Clock clock) {
+    this.operations = operations;
     this.cursors = cursors;
     this.index = properties.index();
     this.clock = clock;
@@ -52,70 +57,50 @@ public class BagSearchService {
   public Page search(Criteria criteria, int size, String cursorToken) {
     String fingerprint = criteria.fingerprint();
     Cursor cursor = cursorToken == null ? null : cursors.decode(cursorToken, fingerprint);
-    String keepAlive = index.pitKeepAlive().toSeconds() + "s";
     String pit = cursor != null ? cursor.pit() : null;
-    List<FieldValue> after =
-        cursor == null ? List.of() : cursor.after().stream().map(BagSearchService::value).toList();
-    Query query = query(criteria);
-    SearchResponse<Map> response;
+    NativeQueryBuilder request =
+        NativeQuery.builder()
+            .withQuery(query(criteria))
+            .withMaxResults(size + 1)
+            .withTrackTotalHits(false)
+            .withSort(
+                o -> o.field(f -> f.field("updatedAt").order(SortOrder.Desc).missing("_last")))
+            .withSort(o -> o.field(f -> f.field("docId").order(SortOrder.Asc)));
+    if (pit != null) {
+      request.withPointInTime(
+          new org.springframework.data.elasticsearch.core.query.Query.PointInTime(
+              pit, index.pitKeepAlive()));
+    }
+    if (cursor != null && !cursor.after().isEmpty()) {
+      request.withSearchAfter(cursor.after().stream().map(BagSearchService::value).toList());
+    }
+    SearchHits<JourneyDocument> response;
     try {
-      response =
-          Elastic.call(
-              () ->
-                  client.search(
-                      s -> {
-                        if (pit != null) {
-                          s.pit(p -> p.id(pit).keepAlive(t -> t.time(keepAlive)));
-                        } else {
-                          s.index(IndexFamily.JOURNEYS.readAlias());
-                        }
-                        s.query(query)
-                            .size(size + 1)
-                            .trackTotalHits(t -> t.enabled(false))
-                            .sort(
-                                o ->
-                                    o.field(
-                                        f ->
-                                            f.field("updatedAt")
-                                                .order(SortOrder.Desc)
-                                                .missing("_last")))
-                            .sort(o -> o.field(f -> f.field("docId").order(SortOrder.Asc)));
-                        if (!after.isEmpty()) {
-                          s.searchAfter(after);
-                        }
-                        return s;
-                      },
-                      Map.class));
-    } catch (ElasticsearchException e) {
-      if (cursor != null && e.status() == 404) {
+      // Without a point-in-time the search reads the repository's index, the journeys-read alias.
+      response = Elastic.call(() -> operations.search(request.build(), JourneyDocument.class));
+    } catch (RuntimeException e) {
+      if (cursor != null && Integer.valueOf(404).equals(Elastic.status(e))) {
         // The point-in-time is gone (kept alive too long ago, or the node restarted).
         throw CursorCodec.expired();
       }
       throw e;
     }
-    List<Hit<Map>> hits = response.hits().hits();
+    List<SearchHit<JourneyDocument>> hits = response.getSearchHits();
     boolean hasMore = hits.size() > size;
-    List<Hit<Map>> page = hasMore ? hits.subList(0, size) : hits;
-    List<BagSummary> items = page.stream().map(BagSearchService::summary).toList();
+    List<SearchHit<JourneyDocument>> page = hasMore ? hits.subList(0, size) : hits;
+    List<BagSummary> items = page.stream().map(h -> summary(h.getContent())).toList();
     String next = null;
-    String currentPit = response.pitId() != null ? response.pitId() : pit;
+    String currentPit = response.getPointInTimeId() != null ? response.getPointInTimeId() : pit;
     if (hasMore && currentPit == null) {
       // The first page has a next one: only now is a point-in-time needed.
       currentPit =
           Elastic.call(
               () ->
-                  client
-                      .openPointInTime(
-                          p ->
-                              p.index(IndexFamily.JOURNEYS.readAlias())
-                                  .keepAlive(t -> t.time(keepAlive)))
-                      .id());
+                  operations.openPointInTime(
+                      IndexCoordinates.of(IndexFamily.JOURNEYS.readAlias()), index.pitKeepAlive()));
     }
     if (hasMore) {
-      List<Object> sort = new ArrayList<>();
-      for (FieldValue value : page.get(page.size() - 1).sort()) {
-        sort.add(value._get());
-      }
+      List<Object> sort = new ArrayList<>(page.get(page.size() - 1).getSortValues());
       next =
           cursors.encode(
               new Cursor(
@@ -131,18 +116,19 @@ public class BagSearchService {
 
   private void close(String pit) {
     try {
-      client.closePointInTime(c -> c.id(pit));
+      operations.closePointInTime(pit);
     } catch (Exception ignored) {
       // It expires on its own.
     }
   }
 
-  private static FieldValue value(Object value) {
+  /** A sort value of the cursor (signed, but still checked): a number or text, nothing else. */
+  private static Object value(Object value) {
     if (value instanceof Number number) {
-      return FieldValue.of(number.longValue());
+      return number.longValue();
     }
     if (value instanceof String text) {
-      return FieldValue.of(text);
+      return text;
     }
     throw CursorCodec.invalid();
   }
@@ -189,34 +175,26 @@ public class BagSearchService {
     return Query.of(q -> q.nested(n -> n.path("legs").query(inner)));
   }
 
-  @SuppressWarnings("unchecked")
-  private static BagSummary summary(Hit<Map> hit) {
-    Map<String, Object> source = hit.source();
-    Map<String, Object> scan = (Map<String, Object>) source.get("latestScan");
-    List<Map<String, Object>> legs =
-        (List<Map<String, Object>>) source.getOrDefault("legs", List.of());
+  private static BagSummary summary(JourneyDocument doc) {
+    LatestScan scan = doc.latestScan();
+    List<JourneyDocument.Leg> legs = doc.legs() == null ? List.of() : doc.legs();
     return new BagSummary(
-        (String) source.get("bagTag"),
-        Elastic.instant(source.get("updatedAt")),
-        scan == null
-            ? null
-            : new ScanSummary(
-                (String) scan.get("airport"),
-                (String) scan.get("checkpoint"),
-                Elastic.instant(scan.get("occurredAt"))),
+        doc.bagTag(),
+        doc.updatedAt(),
+        scan == null ? null : new ScanSummary(scan.airport(), scan.checkpoint(), scan.occurredAt()),
         legs.stream()
             .map(
                 leg ->
                     new LegSummary(
-                        (String) leg.get("legId"),
-                        (String) leg.get("flightNumber"),
-                        (String) leg.get("airline"),
-                        (String) leg.get("origin"),
-                        (String) leg.get("destination"),
-                        Elastic.instant(leg.get("departureAt")),
-                        (String) leg.get("riskLevel"),
-                        (String) leg.get("caseId"),
-                        (String) leg.get("caseState")))
+                        leg.legId(),
+                        leg.flightNumber(),
+                        leg.airline(),
+                        leg.origin(),
+                        leg.destination(),
+                        leg.departureAt(),
+                        leg.riskLevel(),
+                        leg.caseId(),
+                        leg.caseState()))
             .toList());
   }
 }

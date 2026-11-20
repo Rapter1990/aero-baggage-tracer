@@ -7,6 +7,7 @@ import com.aerotrace.common.error.ErrorCode;
 import com.aerotrace.search.elastic.Elastic;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -38,6 +39,15 @@ class SearchExceptionHandler extends BaseExceptionHandler {
   ResponseEntity<ApiError> handleElasticsearch(
       ElasticsearchException ex, HttpServletRequest request) {
     if (Elastic.isTransient(ex.status())) {
+      return unavailable(request);
+    }
+    return handleUnexpected(ex, request);
+  }
+
+  /** The same for the calls made through Spring Data, which wraps the client's exceptions. */
+  @ExceptionHandler(DataAccessException.class)
+  ResponseEntity<ApiError> handleDataAccess(DataAccessException ex, HttpServletRequest request) {
+    if (Elastic.unavailable(ex)) {
       return unavailable(request);
     }
     return handleUnexpected(ex, request);
