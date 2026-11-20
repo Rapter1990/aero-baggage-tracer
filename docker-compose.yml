@@ -69,7 +69,7 @@ services:
   # the Java client's version. ELASTIC_PASSWORD has no default: set it in .env. Port 9200 is not
   # published; only containers on the network reach it. TLS is off on this internal network.
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:9.2.8
+    image: docker.elastic.co/elasticsearch/elasticsearch:latest
     container_name: elasticsearch
     restart: unless-stopped
     environment:

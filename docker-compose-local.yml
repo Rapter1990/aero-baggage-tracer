@@ -68,7 +68,7 @@ services:
   # ELASTIC_PASSWORD has no default (set it in .env). Bound to loopback only, for the
   # search-service run from the IDE (http://localhost:9200, user elastic).
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:9.2.8
+    image: docker.elastic.co/elasticsearch/elasticsearch:latest
     container_name: elasticsearch
     environment:
       discovery.type: single-node
