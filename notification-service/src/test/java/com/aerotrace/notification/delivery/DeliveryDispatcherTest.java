@@ -1,0 +1,382 @@
+package com.aerotrace.notification.delivery;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+import com.aerotrace.common.event.DeadLetterPayload;
+import com.aerotrace.common.event.EventEnvelope;
+import com.aerotrace.common.event.EventJson;
+import com.aerotrace.common.event.Topics;
+import com.aerotrace.notification.base.AbstractNotificationTest;
+import com.aerotrace.notification.base.CaseEvents;
+import com.aerotrace.notification.model.entity.NotificationEntity;
+import com.aerotrace.notification.model.entity.NotificationStatus;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
+/**
+ * Delivery against a real PostgreSQL, a clock the test moves and a mock Kafka producer. The
+ * dispatcher is driven by hand; the scheduler only fires once an hour. Defaults of the test
+ * profile: 5 attempts, 2 s base, 5 min maximum, no jitter.
+ */
+@SpringBootTest
+class DeliveryDispatcherTest extends AbstractNotificationTest {
+
+  private static final int MAX_ATTEMPTS = 5;
+
+  @Autowired DeliveryDispatcher dispatcher;
+  @MockitoBean KafkaTemplate<String, String> kafka;
+
+  @BeforeEach
+  void deadLetterTopicAcknowledges() {
+    when(kafka.send(eq(Topics.DEAD_LETTER), anyString(), anyString()))
+        .thenReturn(CompletableFuture.completedFuture(mock(SendResult.class)));
+  }
+
+  /** Every attempt is due, whatever the backoff was: the clock jumps past the longest wait. */
+  private void runUntilExhausted() {
+    for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      dispatcher.dispatchDue();
+      clock.advance(Duration.ofMinutes(10));
+    }
+  }
+
+  // ------------------------------------------------------------------ sending
+
+  @Test
+  @DisplayName("BR-08 a due notification is sent once and marked SENT")
+  void dueNotificationIsSent() {
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+
+    int processed = dispatcher.dispatchDue();
+
+    assertThat(processed).isEqualTo(1);
+    assertThat(provider.sentIds()).containsExactly(id);
+    NotificationEntity sent = row(id);
+    assertThat(sent.getStatus()).isEqualTo(NotificationStatus.SENT);
+    assertThat(sent.getAttempts()).isEqualTo(1);
+    assertThat(sent.getSentAt()).isEqualTo(clock.instant());
+    verifyNoInteractions(kafka);
+  }
+
+  @Test
+  @DisplayName("BR-08 a sent notification is never sent again")
+  void sentNotificationIsNotSentAgain() {
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    dispatcher.dispatchDue();
+
+    clock.advance(Duration.ofHours(1));
+    int processed = dispatcher.dispatchDue();
+
+    assertThat(processed).isZero();
+    assertThat(provider.attemptedIds()).containsExactly(id);
+  }
+
+  @Test
+  @DisplayName("BR-08 a notification that is not due yet is left alone")
+  void notDueNotificationIsLeftAlone() {
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant().plusSeconds(3600));
+
+    int processed = dispatcher.dispatchDue();
+
+    assertThat(processed).isZero();
+    assertThat(provider.attemptedIds()).isEmpty();
+    assertThat(row(id).getAttempts()).isZero();
+  }
+
+  // ------------------------------------------------------------------ BR-08 retries
+
+  @Test
+  @DisplayName("BR-08 delivery retries update the same row and never create a second notification")
+  void retriesNeverCreateASecondRow() {
+    String eventId = CaseEvents.eventId();
+    UUID id = seed("handler-a", eventId, "CASE_OPENED", clock.instant());
+    provider.failAll();
+
+    for (int attempt = 1; attempt < MAX_ATTEMPTS; attempt++) {
+      dispatcher.dispatchDue();
+      clock.advance(Duration.ofMinutes(10));
+
+      assertThat(rowsOf(eventId)).singleElement().satisfies(n -> assertThat(n.getId()).isEqualTo(id));
+      assertThat(notifications.count()).isEqualTo(1);
+    }
+    assertThat(row(id).getAttempts()).isEqualTo(MAX_ATTEMPTS - 1);
+  }
+
+  @Test
+  @DisplayName("BR-08 after a failure the next attempt is scheduled with a doubling wait")
+  void failureSchedulesTheNextAttempt() {
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    provider.failAll();
+    var start = clock.instant();
+
+    dispatcher.dispatchDue();
+    assertThat(row(id).getStatus()).isEqualTo(NotificationStatus.PENDING);
+    assertThat(row(id).getAttempts()).isEqualTo(1);
+    assertThat(row(id).getNextAttemptAt()).isEqualTo(start.plusSeconds(2));
+
+    clock.set(start.plusSeconds(2));
+    dispatcher.dispatchDue();
+    assertThat(row(id).getAttempts()).isEqualTo(2);
+    assertThat(row(id).getNextAttemptAt()).isEqualTo(start.plusSeconds(2 + 4));
+
+    clock.set(start.plusSeconds(2 + 4));
+    dispatcher.dispatchDue();
+    assertThat(row(id).getAttempts()).isEqualTo(3);
+    assertThat(row(id).getNextAttemptAt()).isEqualTo(start.plusSeconds(2 + 4 + 8));
+
+    clock.set(start.plusSeconds(2 + 4 + 8));
+    dispatcher.dispatchDue();
+    assertThat(row(id).getAttempts()).isEqualTo(4);
+    assertThat(row(id).getNextAttemptAt()).isEqualTo(start.plusSeconds(2 + 4 + 8 + 16));
+  }
+
+  @Test
+  @DisplayName("BR-08 a notification is not retried before its next attempt is due")
+  void notRetriedBeforeItIsDue() {
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    provider.failAll();
+    dispatcher.dispatchDue();
+
+    clock.advance(Duration.ofSeconds(1));
+    int early = dispatcher.dispatchDue();
+
+    assertThat(early).isZero();
+    assertThat(provider.attemptedIds()).containsExactly(id);
+    clock.advance(Duration.ofSeconds(1));
+    assertThat(dispatcher.dispatchDue()).isEqualTo(1);
+    assertThat(provider.attemptedIds()).containsExactly(id, id);
+  }
+
+  @Test
+  @DisplayName("BR-08 a delivery that fails twice and then works ends SENT, on the same row")
+  void failsTwiceThenSucceeds() {
+    String eventId = CaseEvents.eventId();
+    UUID id = seed("handler-a", eventId, "CASE_OPENED", clock.instant());
+    provider.failNext(2);
+
+    for (int i = 0; i < 3; i++) {
+      dispatcher.dispatchDue();
+      clock.advance(Duration.ofMinutes(10));
+    }
+
+    NotificationEntity stored = row(id);
+    assertThat(stored.getStatus()).isEqualTo(NotificationStatus.SENT);
+    assertThat(stored.getAttempts()).isEqualTo(3);
+    assertThat(provider.sentIds()).containsExactly(id);
+    assertThat(rowsOf(eventId)).hasSize(1);
+    verifyNoInteractions(kafka);
+  }
+
+  // ------------------------------------------------------------------ exhaustion
+
+  @Test
+  @DisplayName("BR-08 after the last attempt the notification is FAILED and dead-lettered once")
+  void exhaustedNotificationIsFailedAndDeadLetteredOnce() {
+    String eventId = CaseEvents.eventId();
+    UUID id = seed("handler-a", eventId, "CASE_OPENED", clock.instant());
+    provider.failAll();
+
+    runUntilExhausted();
+
+    NotificationEntity failed = row(id);
+    assertThat(failed.getStatus()).isEqualTo(NotificationStatus.FAILED);
+    assertThat(failed.getAttempts()).isEqualTo(MAX_ATTEMPTS);
+    assertThat(failed.getDeadLetteredAt()).isNotNull();
+    assertThat(provider.attemptedIds()).hasSize(MAX_ATTEMPTS);
+
+    ArgumentCaptor<String> value = ArgumentCaptor.forClass(String.class);
+    verify(kafka, times(1)).send(eq(Topics.DEAD_LETTER), eq(eventId), value.capture());
+    EventEnvelope<DeadLetterPayload> envelope =
+        EventJson.read(value.getValue(), DeadLetterPayload.class);
+    assertThat(envelope.eventType()).isEqualTo("baggage.dead-letter");
+    assertThat(envelope.payload().originalTopic()).isEqualTo(Topics.CASE_CHANGED);
+    assertThat(envelope.payload().originalEventId()).isEqualTo(eventId);
+    assertThat(envelope.payload().reason()).isEqualTo("DELIVERY_EXHAUSTED");
+    assertThat(envelope.payload().attempts()).isEqualTo(MAX_ATTEMPTS);
+    // The dead letter says what failed, never what the notification said or who it was for.
+    assertThat(envelope.payload().rawPayload()).isNull();
+    assertThat(value.getValue()).doesNotContain("handler-a");
+  }
+
+  @Test
+  @DisplayName("BR-08 an exhausted notification is neither retried nor dead-lettered again")
+  void exhaustedNotificationIsLeftAlone() {
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    provider.failAll();
+    runUntilExhausted();
+
+    for (int i = 0; i < 3; i++) {
+      clock.advance(Duration.ofHours(1));
+      dispatcher.dispatchDue();
+    }
+
+    assertThat(provider.attemptedIds()).hasSize(MAX_ATTEMPTS);
+    verify(kafka, times(1)).send(eq(Topics.DEAD_LETTER), anyString(), anyString());
+    assertThat(row(id).getStatus()).isEqualTo(NotificationStatus.FAILED);
+  }
+
+  @Test
+  @DisplayName("BR-08 a failed dead-letter publish is retried, and not published twice")
+  void failedDeadLetterPublishIsRetriedNotDuplicated() {
+    String eventId = CaseEvents.eventId();
+    UUID id = seed("handler-a", eventId, "CASE_OPENED", clock.instant());
+    provider.failAll();
+    when(kafka.send(eq(Topics.DEAD_LETTER), anyString(), anyString()))
+        .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("broker is down")))
+        .thenReturn(CompletableFuture.completedFuture(mock(SendResult.class)));
+
+    runUntilExhausted();
+
+    // Kafka did not acknowledge: the notification is FAILED but not yet dead-lettered.
+    assertThat(row(id).getStatus()).isEqualTo(NotificationStatus.FAILED);
+    assertThat(row(id).getDeadLetteredAt()).isNull();
+    verify(kafka, times(1)).send(eq(Topics.DEAD_LETTER), eq(eventId), anyString());
+
+    // The next run tries again, and only the dead letter: the delivery is not attempted again.
+    clock.advance(Duration.ofMinutes(10));
+    dispatcher.dispatchDue();
+    assertThat(row(id).getDeadLetteredAt()).isEqualTo(clock.instant());
+    verify(kafka, times(2)).send(eq(Topics.DEAD_LETTER), eq(eventId), anyString());
+    assertThat(provider.attemptedIds()).hasSize(MAX_ATTEMPTS);
+
+    // Acknowledged once, so it is never published again.
+    for (int i = 0; i < 3; i++) {
+      clock.advance(Duration.ofMinutes(10));
+      dispatcher.dispatchDue();
+    }
+    verify(kafka, times(2)).send(eq(Topics.DEAD_LETTER), eq(eventId), anyString());
+  }
+
+  @Test
+  @DisplayName("BR-08 a dead-letter publish that throws does not break the dispatcher")
+  void throwingDeadLetterPublishDoesNotBreakTheDispatcher() {
+    UUID failing = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    provider.failAll();
+    when(kafka.send(eq(Topics.DEAD_LETTER), anyString(), anyString()))
+        .thenThrow(new IllegalStateException("producer is closed"));
+    runUntilExhausted();
+    provider.reset();
+
+    UUID healthy = seed("handler-b", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    dispatcher.dispatchDue();
+
+    assertThat(row(failing).getDeadLetteredAt()).isNull();
+    assertThat(row(healthy).getStatus()).isEqualTo(NotificationStatus.SENT);
+  }
+
+  // ------------------------------------------------------------------ concurrency
+
+  @Test
+  @DisplayName("BR-08 a second dispatcher running while the first is sending never sends its rows")
+  void secondDispatcherSkipsRowsTheFirstHolds() throws Exception {
+    int rows = 20;
+    List<UUID> ids = new ArrayList<>();
+    for (int i = 0; i < rows; i++) {
+      ids.add(seed("handler-" + i, CaseEvents.eventId(), "CASE_OPENED", clock.instant()));
+    }
+    CountDownLatch firstIsSending = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    AtomicBoolean first = new AtomicBoolean(true);
+    provider.onSend(
+        message -> {
+          if (first.compareAndSet(true, false)) {
+            firstIsSending.countDown();
+            await(release);
+          }
+        });
+    ExecutorService pool = Executors.newSingleThreadExecutor();
+    try {
+      Future<Integer> firstRun = pool.submit(dispatcher::dispatchDue);
+      assertThat(firstIsSending.await(30, TimeUnit.SECONDS)).isTrue();
+
+      // The first dispatcher is stuck inside the provider and holds its rows.
+      int secondRun = dispatcher.dispatchDue();
+      release.countDown();
+      int processed = secondRun + firstRun.get(30, TimeUnit.SECONDS);
+
+      assertThat(processed).isEqualTo(rows);
+      assertThat(provider.attemptedIds()).hasSize(rows).doesNotHaveDuplicates();
+      assertThat(provider.attemptedIds()).containsExactlyInAnyOrderElementsOf(ids);
+    } finally {
+      release.countDown();
+      pool.shutdownNow();
+    }
+  }
+
+  @Test
+  @DisplayName("BR-08 two dispatchers started together send every row exactly once")
+  void twoDispatchersNeverSendTheSameRow() throws Exception {
+    int rows = 40;
+    List<UUID> ids = new ArrayList<>();
+    for (int i = 0; i < rows; i++) {
+      ids.add(seed("handler-" + i, CaseEvents.eventId(), "CASE_OPENED", clock.instant()));
+    }
+    CountDownLatch ready = new CountDownLatch(2);
+    CountDownLatch go = new CountDownLatch(1);
+    ExecutorService pool = Executors.newFixedThreadPool(2);
+    try {
+      List<Future<Integer>> runs = new ArrayList<>();
+      for (int i = 0; i < 2; i++) {
+        runs.add(
+            pool.submit(
+                () -> {
+                  ready.countDown();
+                  go.await();
+                  return dispatcher.dispatchDue();
+                }));
+      }
+      assertThat(ready.await(30, TimeUnit.SECONDS)).isTrue();
+      go.countDown();
+      int processed = 0;
+      for (Future<Integer> run : runs) {
+        processed += run.get(60, TimeUnit.SECONDS);
+      }
+
+      assertThat(processed).isEqualTo(rows);
+      assertThat(new HashSet<>(provider.attemptedIds())).hasSize(rows);
+      assertThat(provider.attemptedIds()).hasSize(rows);
+      assertThat(provider.attemptedIds()).containsExactlyInAnyOrderElementsOf(ids);
+      assertThat(notifications.findAll())
+          .allSatisfy(n -> assertThat(n.getStatus()).isEqualTo(NotificationStatus.SENT));
+    } finally {
+      pool.shutdownNow();
+    }
+  }
+
+  private static void await(CountDownLatch latch) {
+    try {
+      if (!latch.await(60, TimeUnit.SECONDS)) {
+        throw new AssertionError("the test never released the provider");
+      }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(e);
+    }
+  }
+}
