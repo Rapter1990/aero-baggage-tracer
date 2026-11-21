@@ -24,9 +24,9 @@ import org.testcontainers.DockerClientFactory;
 import org.testcontainers.kafka.KafkaContainer;
 
 /**
- * A real Kafka broker with {@code recovery.case.changed.v1} and {@code baggage.dead-letter.v1}
- * (one partition each), plus the producer and reader helpers the tests need. {@link #shared()} is
- * one broker for the whole JVM; {@link #dedicated()} is a broker a test may pause.
+ * A real Kafka broker with {@code recovery.case.changed.v1} and {@code baggage.dead-letter.v1} (one
+ * partition each), plus the producer and reader helpers the tests need. {@link #shared()} is one
+ * broker for the whole JVM; {@link #dedicated()} is a broker a test may pause.
  */
 public final class KafkaFixture {
 

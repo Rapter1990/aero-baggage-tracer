@@ -100,7 +100,8 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   @Test
   @DisplayName("BR-08 a notification that is not due yet is left alone")
   void notDueNotificationIsLeftAlone() {
-    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant().plusSeconds(3600));
+    UUID id =
+        seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant().plusSeconds(3600));
 
     int processed = dispatcher.dispatchDue();
 
@@ -122,7 +123,9 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
       dispatcher.dispatchDue();
       clock.advance(Duration.ofMinutes(10));
 
-      assertThat(rowsOf(eventId)).singleElement().satisfies(n -> assertThat(n.getId()).isEqualTo(id));
+      assertThat(rowsOf(eventId))
+          .singleElement()
+          .satisfies(n -> assertThat(n.getId()).isEqualTo(id));
       assertThat(notifications.count()).isEqualTo(1);
     }
     assertThat(row(id).getAttempts()).isEqualTo(MAX_ATTEMPTS - 1);

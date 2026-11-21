@@ -69,7 +69,9 @@ class NotificationApiTest extends AbstractNotificationTest {
     return "user-" + UUID.randomUUID();
   }
 
-  /** One notification per minute for {@code recipient}, oldest first; returns the ids in that order. */
+  /**
+   * One notification per minute for {@code recipient}, oldest first; returns the ids in that order.
+   */
   private List<UUID> seedFor(String recipient, int count) {
     List<UUID> ids = new ArrayList<>();
     for (int i = 0; i < count; i++) {
@@ -108,8 +110,7 @@ class NotificationApiTest extends AbstractNotificationTest {
     List<String> listed = new ArrayList<>();
     items.forEach(item -> listed.add(item.get("id").asString()));
     assertThat(listed)
-        .containsExactly(
-            mine.get(2).toString(), mine.get(1).toString(), mine.get(0).toString());
+        .containsExactly(mine.get(2).toString(), mine.get(1).toString(), mine.get(0).toString());
     assertThat(data(result).get("totalElements").asLong()).isEqualTo(3);
   }
 
@@ -202,7 +203,8 @@ class NotificationApiTest extends AbstractNotificationTest {
             .getContentAsString();
 
     assertThat(json.readTree(foreign).get("code")).isEqualTo(json.readTree(unknown).get("code"));
-    assertThat(json.readTree(foreign).get("status")).isEqualTo(json.readTree(unknown).get("status"));
+    assertThat(json.readTree(foreign).get("status"))
+        .isEqualTo(json.readTree(unknown).get("status"));
   }
 
   // ------------------------------------------------------------------ security matrix
@@ -215,9 +217,7 @@ class NotificationApiTest extends AbstractNotificationTest {
     UUID id = seedFor(me, 1).getFirst();
 
     list(as(role, me)).andExpect(status().isOk());
-    mockMvc
-        .perform(get(NOTIFICATIONS + "/{id}", id).with(as(role, me)))
-        .andExpect(status().isOk());
+    mockMvc.perform(get(NOTIFICATIONS + "/{id}", id).with(as(role, me))).andExpect(status().isOk());
   }
 
   @ParameterizedTest
@@ -257,7 +257,11 @@ class NotificationApiTest extends AbstractNotificationTest {
         .perform(post(NOTIFICATIONS).with(admin).contentType("application/json").content("{}"))
         .andExpect(status().is4xxClientError());
     mockMvc
-        .perform(put(NOTIFICATIONS + "/{id}", id).with(admin).contentType("application/json").content("{}"))
+        .perform(
+            put(NOTIFICATIONS + "/{id}", id)
+                .with(admin)
+                .contentType("application/json")
+                .content("{}"))
         .andExpect(status().is4xxClientError());
     mockMvc
         .perform(delete(NOTIFICATIONS + "/{id}", id).with(admin))

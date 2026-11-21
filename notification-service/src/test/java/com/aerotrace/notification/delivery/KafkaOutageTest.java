@@ -24,8 +24,8 @@ import org.springframework.test.context.DynamicPropertySource;
 /**
  * Kafka becomes unreachable while a notification is dead-lettered. The row is FAILED and stays
  * undelivered to the dead-letter topic ({@code dead_lettered_at} is null) until the broker
- * acknowledges; when it is back the dead letter is published and the row is marked. The outage is
- * a paused container: connections hang, as they do when a broker is gone from the network.
+ * acknowledges; when it is back the dead letter is published and the row is marked. The outage is a
+ * paused container: connections hang, as they do when a broker is gone from the network.
  */
 @SpringBootTest
 class KafkaOutageTest extends AbstractNotificationTest {
@@ -59,7 +59,8 @@ class KafkaOutageTest extends AbstractNotificationTest {
   }
 
   @Test
-  @DisplayName("BR-08 a dead letter that Kafka could not take is published after the outage, not lost")
+  @DisplayName(
+      "BR-08 a dead letter that Kafka could not take is published after the outage, not lost")
   void deadLetterSurvivesAKafkaOutage() {
     String eventId = CaseEvents.eventId();
     UUID id = seed("handler-a", eventId, "CASE_OPENED", clock.instant());

@@ -69,7 +69,8 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
   }
 
   @Test
-  @DisplayName("AT-13 the same recovery.case.changed.v1 event handled twice leaves one notification")
+  @DisplayName(
+      "AT-13 the same recovery.case.changed.v1 event handled twice leaves one notification")
   void sameEventTwiceLeavesOneNotification() {
     String eventId = CaseEvents.eventId();
     String json =
@@ -183,7 +184,9 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
                   "reason",
                   CaseEvents.handler()));
 
-      assertThat(outcome).as("outcome for %s", state).isEqualTo(CaseChangedHandler.Outcome.NOTIFICATION_CREATED);
+      assertThat(outcome)
+          .as("outcome for %s", state)
+          .isEqualTo(CaseChangedHandler.Outcome.NOTIFICATION_CREATED);
       assertThat(rowsOf(eventId))
           .as("row for %s", state)
           .singleElement()
@@ -262,8 +265,7 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
   @Test
   @DisplayName("BR-08 text that is not an event is poison, refused for good")
   void garbageIsPoison() {
-    assertThatThrownBy(() -> handler.handle("garbage {"))
-        .isInstanceOf(PoisonEventException.class);
+    assertThatThrownBy(() -> handler.handle("garbage {")).isInstanceOf(PoisonEventException.class);
   }
 
   @Test

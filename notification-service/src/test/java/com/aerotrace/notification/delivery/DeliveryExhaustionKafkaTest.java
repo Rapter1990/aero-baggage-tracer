@@ -45,7 +45,8 @@ class DeliveryExhaustionKafkaTest extends AbstractNotificationTest {
   @Autowired DeliveryDispatcher dispatcher;
 
   @Test
-  @DisplayName("BR-08 retry exhaustion marks the row FAILED and dead-letters it once to baggage.dead-letter.v1")
+  @DisplayName(
+      "BR-08 retry exhaustion marks the row FAILED and dead-letters it once to baggage.dead-letter.v1")
   void exhaustionIsDeadLetteredOnce() {
     String eventId = CaseEvents.eventId();
     UUID id = seed("handler-a", eventId, "CASE_OPENED", clock.instant());

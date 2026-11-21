@@ -30,10 +30,10 @@ import org.springframework.kafka.support.SendResult;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
- * Personal data stays out of logs and out of the database (ADR 0005, decision 4): the recipient,
- * a passenger reference and the case's free-text reason are never logged or stored. Debug logging
- * is switched on so that nothing hides behind a level; the log must still show the case id, the
- * event id and the template, so the test cannot pass by the service logging nothing at all.
+ * Personal data stays out of logs and out of the database (ADR 0005, decision 4): the recipient, a
+ * passenger reference and the case's free-text reason are never logged or stored. Debug logging is
+ * switched on so that nothing hides behind a level; the log must still show the case id, the event
+ * id and the template, so the test cannot pass by the service logging nothing at all.
  */
 @SpringBootTest(properties = "logging.level.com.aerotrace.notification=DEBUG")
 @ExtendWith(OutputCaptureExtension.class)
@@ -44,8 +44,7 @@ class PiiLoggingTest extends AbstractNotificationTest {
   private static final String REASON =
       "Maria Gonzalez (passport P1234567, " + PASSENGER_REF + ") is waiting at gate B12";
   private static final List<String> SECRETS =
-      List.of(
-          RECIPIENT, PASSENGER_REF, "Maria", "Gonzalez", "P1234567", "gate B12", REASON);
+      List.of(RECIPIENT, PASSENGER_REF, "Maria", "Gonzalez", "P1234567", "gate B12", REASON);
 
   @Autowired CaseChangedHandler handler;
   @Autowired DeliveryDispatcher dispatcher;
@@ -59,7 +58,8 @@ class PiiLoggingTest extends AbstractNotificationTest {
   }
 
   @Test
-  @DisplayName("BR-08 handling, duplicates, failed deliveries and dead letters never log personal data")
+  @DisplayName(
+      "BR-08 handling, duplicates, failed deliveries and dead letters never log personal data")
   void logsCarryNoPersonalData(CapturedOutput output) {
     when(kafka.send(eq(Topics.DEAD_LETTER), anyString(), anyString()))
         .thenReturn(CompletableFuture.completedFuture(mock(SendResult.class)));
@@ -125,7 +125,13 @@ class PiiLoggingTest extends AbstractNotificationTest {
     String eventId = CaseEvents.eventId();
     handler.handle(
         CaseEvents.event(
-            eventId, "case-pii-store", CaseEvents.bagTag(), RecoveryState.OPEN, 1, REASON, RECIPIENT));
+            eventId,
+            "case-pii-store",
+            CaseEvents.bagTag(),
+            RecoveryState.OPEN,
+            1,
+            REASON,
+            RECIPIENT));
 
     List<String> rows =
         jdbc.queryForList(

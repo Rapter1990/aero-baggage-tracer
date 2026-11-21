@@ -100,13 +100,15 @@ class CaseChangedKafkaTest extends AbstractNotificationTest {
 
   private static List<ConsumerRecord<String, String>> deadLetters(String key, int expected) {
     return kafka()
-        .readByKey(Topics.DEAD_LETTER, key, expected, Duration.ofSeconds(3), Duration.ofSeconds(60));
+        .readByKey(
+            Topics.DEAD_LETTER, key, expected, Duration.ofSeconds(3), Duration.ofSeconds(60));
   }
 
   // ------------------------------------------------------------------ AT-13
 
   @Test
-  @DisplayName("AT-13 the same recovery.case.changed.v1 event published twice makes one notification")
+  @DisplayName(
+      "AT-13 the same recovery.case.changed.v1 event published twice makes one notification")
   void eventPublishedTwiceMakesOneNotification() throws Exception {
     String eventId = CaseEvents.eventId();
     String json = event(eventId, CaseEvents.handler());
@@ -120,7 +122,8 @@ class CaseChangedKafkaTest extends AbstractNotificationTest {
   }
 
   @Test
-  @DisplayName("AT-13 an event redelivered after the consumer restarts makes no second notification")
+  @DisplayName(
+      "AT-13 an event redelivered after the consumer restarts makes no second notification")
   void redeliveryAfterRestartMakesNoSecondNotification() throws Exception {
     String eventId = CaseEvents.eventId();
     String json = event(eventId, CaseEvents.handler());
@@ -146,7 +149,8 @@ class CaseChangedKafkaTest extends AbstractNotificationTest {
   void unknownStateIsDeadLetteredAtOnce() throws Exception {
     String eventId = CaseEvents.eventId();
     String json =
-        event(eventId, CaseEvents.handler()).replace("\"state\":\"OPEN\"", "\"state\":\"TELEPORTED\"");
+        event(eventId, CaseEvents.handler())
+            .replace("\"state\":\"OPEN\"", "\"state\":\"TELEPORTED\"");
 
     publish(eventId, json);
 
@@ -161,7 +165,8 @@ class CaseChangedKafkaTest extends AbstractNotificationTest {
   }
 
   @Test
-  @DisplayName("BR-08 text that is not an event is dead-lettered at once and does not block the next")
+  @DisplayName(
+      "BR-08 text that is not an event is dead-lettered at once and does not block the next")
   void garbageIsDeadLetteredAtOnceAndDoesNotBlock() throws Exception {
     String garbage = "garbage { " + UUID.randomUUID();
 
