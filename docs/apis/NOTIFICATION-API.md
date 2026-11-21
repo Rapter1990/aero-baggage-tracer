@@ -88,7 +88,7 @@ A page past the end is `200` with empty `items`, not an error.
 | One notification per event | The key is `(recipient, eventId, template)`. A repeated event, or a delivery retry, never makes a second one |
 | Replays | A replayed older case version makes its own notification; there is no ordering filter |
 | Delivery retry | The same row is updated: `attempts` rises, `status` stays `PENDING`, until `SENT` or, after 5 tries, `FAILED` |
-| Retention | Meant to be 90 days; no purge job yet |
+| Retention | 90 days (`aerotrace.notification.retention`). A scheduled purge deletes only finished rows (`SENT`, or `FAILED` once its dead letter is acknowledged) in bounded batches. Purging removes the dedupe key, so a replay older than the retention would notify again |
 
 ## Errors
 
@@ -176,9 +176,9 @@ These are also the OpenAPI examples of the two operations.
   "message": "Validation failed",
   "status": 400,
   "path": "/api/v1/notifications",
-  "validationErrors": [
-    { "field": "size", "message": "size must be between 1 and 100" }
-  ],
+  "validationErrors": {
+    "size": "size must be between 1 and 100"
+  },
   "timestamp": "2026-11-03T10:00:00Z",
   "correlationId": "5f1c9e0a-7b3d-4e2a-8c64-0d9a2b7e1f38"
 }
@@ -192,7 +192,7 @@ These are also the OpenAPI examples of the two operations.
   "message": "Authentication is required",
   "status": 401,
   "path": "/api/v1/notifications",
-  "validationErrors": [],
+  "validationErrors": {},
   "timestamp": "2026-11-03T10:00:00Z",
   "correlationId": "5f1c9e0a-7b3d-4e2a-8c64-0d9a2b7e1f38"
 }
@@ -206,7 +206,7 @@ These are also the OpenAPI examples of the two operations.
   "message": "Notification not found",
   "status": 404,
   "path": "/api/v1/notifications/7c1d3a52-9f0e-4b7e-8a41-5d2c6e9b0f13",
-  "validationErrors": [],
+  "validationErrors": {},
   "timestamp": "2026-11-03T10:00:00Z",
   "correlationId": "5f1c9e0a-7b3d-4e2a-8c64-0d9a2b7e1f38"
 }
@@ -245,14 +245,15 @@ The payload is `CaseChangedPayload` in `common-module`; the full field list and 
 |---|---|
 | Same `eventId` twice (outbox at-least-once) | One notification: the unique key and `INSERT ... ON CONFLICT DO NOTHING` |
 | Transient failure (database, broker) | Retried with exponential backoff, then dead-lettered |
-| No `eventId`, unknown `state`, unparsable body | Dead-lettered at once, no retry. `reason` is the failure class, `attempts` is 1 |
+| A `state` this version does not know | Not an error: notified with template `CASE_UPDATED` and counted as `unknown_state` |
+| No `eventId`, unparsable body, non-UUID `caseId`, `assignedTo` over 100 characters, missing or over-long `bagTag`, negative `version`, wrong event type, no payload | Dead-lettered at once, no retry. `reason` is the failure class, `attempts` is 1 |
 | Offset | Committed only after the database transaction commits |
 
 Logs carry only `caseId`, `eventId` and `template`; the recipient and `reason` are never logged.
 
 ### Published: delivery exhausted
 
-After the last delivery attempt (default 5, see `notification.delivery.*`) the notification becomes `FAILED` and one message goes to `baggage.dead-letter.v1`. The envelope is the shared one; the payload is `DeadLetterPayload` from `common-module`.
+After the last delivery attempt (default 5, see `aerotrace.notification.delivery.*`) the notification becomes `FAILED` and one message goes to `baggage.dead-letter.v1`. The envelope is the shared one; the payload is `DeadLetterPayload` from `common-module`.
 
 | Envelope field | Value |
 |---|---|
@@ -297,8 +298,8 @@ The message is published at least once: `dead_lettered_at` is set only after Kaf
 | Topic | State |
 |---|---|
 | Recipient | Only the assigned handler; the passenger is not notified (needs an owner lookup in the journey-service) |
-| Assignment | An assignment-only event repeats the previous state, so the template cannot tell "assigned" from "state changed" |
+| Assignment | Cases start unassigned, so the opening event reaches nobody and a handler's first notification is the assignment event, shown with the state's template. An assignment-only event repeats the previous state, so the template cannot tell "assigned" from "state changed"; a previous handler is not told of a reassignment. A revision 3 field on the case event is the planned fix |
 | Mark as read, ADMIN access | Not offered |
-| Retention | 90 days intended, no purge job; the table grows |
+| Retention | 90 days, purged by a scheduled job (see above) |
 | Delivery | A mock provider that can be told to fail; no real channel |
-| Gateway | The route `/api/v1/notifications/**` and the Kubernetes manifests come with the build and #18 |
+| Gateway | The route `/api/v1/notifications/**` and its docs route are in the gateway; the Kubernetes manifests come with #18 |
