@@ -7,8 +7,6 @@ import com.aerotrace.notification.repository.DeliveryRepository;
 import com.aerotrace.notification.repository.DeliveryRepository.Claim;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
-import java.time.Clock;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -35,9 +33,10 @@ import org.springframework.stereotype.Component;
  *       retry after a doubling wait, or FAILED after the last attempt.
  * </ol>
  *
- * A retry updates the same row; it never inserts one. A crash between the send and the finish sends
- * again after the lease: delivery is at least once, keyed by the notification id. Exhausted rows
- * are dead-lettered by the separate {@link DeadLetterPublisher}, so a Kafka outage never holds up
+ * Every time (lease end, due time, sent and failed time) is the database's {@code now()}. A retry
+ * updates the same row; it never inserts one. A crash between the send and the finish sends again
+ * after the lease: delivery is at least once, keyed by the notification id. Exhausted rows are
+ * dead-lettered by the separate {@link DeadLetterPublisher}, so a Kafka outage never holds up
  * sending.
  */
 @Component
@@ -53,7 +52,6 @@ public class DeliveryDispatcher {
   private final BackoffPolicy backoff;
   private final NotificationProperties.Delivery settings;
   private final MeterRegistry meters;
-  private final Clock clock;
   private final ExecutorService senders = Executors.newVirtualThreadPerTaskExecutor();
 
   public DeliveryDispatcher(
@@ -62,15 +60,13 @@ public class DeliveryDispatcher {
       DeadLetterPublisher deadLetters,
       BackoffPolicy backoff,
       NotificationProperties properties,
-      MeterRegistry meters,
-      Clock clock) {
+      MeterRegistry meters) {
     this.deliveries = deliveries;
     this.provider = provider;
     this.deadLetters = deadLetters;
     this.backoff = backoff;
     this.settings = properties.delivery();
     this.meters = meters;
-    this.clock = clock;
   }
 
   @Scheduled(
@@ -107,8 +103,7 @@ public class DeliveryDispatcher {
    * @return how many were attempted
    */
   public int sendDue() {
-    Instant now = clock.instant();
-    int expired = deliveries.expireLeases(now, settings.maxAttempts());
+    int expired = deliveries.expireLeases(settings.maxAttempts());
     if (expired > 0) {
       LOG.warn("{} notifications failed: their lease expired after the last attempt", expired);
       meters
@@ -116,8 +111,7 @@ public class DeliveryDispatcher {
           .increment(expired);
     }
     List<Claim> claims =
-        deliveries.claimDue(
-            now, now.plus(settings.lease()), settings.maxAttempts(), settings.batchSize());
+        deliveries.claimDue(settings.lease(), settings.maxAttempts(), settings.batchSize());
     if (claims.isEmpty()) {
       return 0;
     }
@@ -168,19 +162,18 @@ public class DeliveryDispatcher {
 
   private void finish(Claim claim, String error) {
     try (CorrelationScope ignored = CorrelationScope.of(claim.correlationId())) {
-      Instant now = clock.instant();
       int updated;
       String outcome;
       if (error == null) {
-        updated = deliveries.markSent(claim.id(), claim.version(), now);
+        updated = deliveries.markSent(claim.id(), claim.version());
         outcome = MetricNames.SENT;
       } else if (claim.attempts() >= settings.maxAttempts()) {
-        updated = deliveries.markFailed(claim.id(), claim.version(), now, error);
+        updated = deliveries.markFailed(claim.id(), claim.version(), error);
         outcome = MetricNames.FAILED;
       } else {
         updated =
             deliveries.markRetry(
-                claim.id(), claim.version(), backoff.nextAttemptAt(clock, claim.attempts()), error);
+                claim.id(), claim.version(), backoff.delayAfter(claim.attempts()), error);
         outcome = MetricNames.RETRY;
       }
       if (updated == 0) {

@@ -20,8 +20,9 @@ CREATE TABLE notification.notification (
     correlation_id   varchar(64),
     status           varchar(16)  NOT NULL DEFAULT 'PENDING',
     attempts         int          NOT NULL DEFAULT 0,
-    -- When the next attempt is due; while a replica holds a claim, the end of its lease.
-    next_attempt_at  timestamptz  NOT NULL,
+    -- When the next attempt is due; while a replica holds a claim, the end of its lease. Every
+    -- time in this table is the database's now() (ADR 0005, decision 9), never a replica's clock.
+    next_attempt_at  timestamptz  NOT NULL DEFAULT now(),
     -- An error code or exception class name only, never a provider message.
     last_error       varchar(100),
     sent_at          timestamptz,
@@ -29,7 +30,7 @@ CREATE TABLE notification.notification (
     failed_at        timestamptz,
     -- Set only after Kafka acknowledged the dead letter.
     dead_lettered_at timestamptz,
-    created_at       timestamptz  NOT NULL,
+    created_at       timestamptz  NOT NULL DEFAULT now(),
     -- Optimistic lock: the claim raises it, and the finish only applies to the version it claimed.
     version          bigint       NOT NULL DEFAULT 0,
     CONSTRAINT uq_notification_recipient_event_template UNIQUE (recipient, event_id, template),

@@ -39,7 +39,8 @@ aerotrace:
       retry-attempts: 3
       retry-backoff: 50ms
     delivery:
-      # Tests drive the dispatcher by hand with a mutable clock; the scheduler fires once an hour.
+      # Tests drive the dispatcher by hand and move the stored times (the database's now() decides
+      # what is due); the scheduler fires once an hour.
       dispatch-delay: 1h
       max-attempts: 5
       base-delay: 2s

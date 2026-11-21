@@ -75,12 +75,9 @@ class NotificationApiTest extends AbstractNotificationTest {
   private List<UUID> seedFor(String recipient, int count) {
     List<UUID> ids = new ArrayList<>();
     for (int i = 0; i < count; i++) {
-      ids.add(
-          seed(
-              recipient,
-              CaseEvents.eventId(),
-              "CASE_OPENED",
-              clock.instant().plus(Duration.ofMinutes(i))));
+      UUID id = seed(recipient, CaseEvents.eventId(), "CASE_OPENED");
+      createdAgo(id, Duration.ofMinutes(count - i));
+      ids.add(id);
     }
     return ids;
   }

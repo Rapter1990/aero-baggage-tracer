@@ -24,7 +24,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -48,7 +47,6 @@ class PiiLoggingTest extends AbstractNotificationTest {
 
   @Autowired CaseChangedHandler handler;
   @Autowired DeliveryDispatcher dispatcher;
-  @Autowired JdbcTemplate jdbc;
   @MockitoBean KafkaTemplate<String, String> kafka;
 
   private static void assertNoSecrets(String text) {
@@ -74,7 +72,7 @@ class PiiLoggingTest extends AbstractNotificationTest {
     provider.failAll();
     for (int attempt = 1; attempt <= 5; attempt++) {
       dispatcher.dispatchDue();
-      clock.advance(Duration.ofMinutes(10));
+      elapse(Duration.ofMinutes(10));
     }
     // A state this service does not know is notified (CASE_UPDATED) and logged as such.
     handler.handle(

@@ -63,14 +63,14 @@ class KafkaOutageTest extends AbstractNotificationTest {
       "BR-08 a dead letter that Kafka could not take is published after the outage, not lost")
   void deadLetterSurvivesAKafkaOutage() {
     String eventId = CaseEvents.eventId();
-    UUID id = seed("handler-a", eventId, "CASE_OPENED", clock.instant());
+    UUID id = seed("handler-a", eventId, "CASE_OPENED");
     provider.failAll();
 
     kafka().pause();
     for (int attempt = 1; attempt <= 5; attempt++) {
       // The dispatcher must not throw because Kafka is down.
       dispatcher.dispatchDue();
-      clock.advance(Duration.ofMinutes(10));
+      elapse(Duration.ofMinutes(10));
     }
 
     assertThat(row(id).getStatus()).isEqualTo(NotificationStatus.FAILED);
@@ -82,12 +82,12 @@ class KafkaOutageTest extends AbstractNotificationTest {
         .pollInterval(Duration.ofSeconds(1))
         .untilAsserted(
             () -> {
-              clock.advance(Duration.ofMinutes(10));
+              elapse(Duration.ofMinutes(10));
               dispatcher.dispatchDue();
               assertThat(row(id).getDeadLetteredAt()).isNotNull();
             });
     // More runs publish nothing again.
-    clock.advance(Duration.ofMinutes(10));
+    elapse(Duration.ofMinutes(10));
     dispatcher.dispatchDue();
     dispatcher.dispatchDue();
 

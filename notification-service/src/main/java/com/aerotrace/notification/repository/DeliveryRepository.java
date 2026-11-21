@@ -4,9 +4,9 @@ import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.notification.constant.NotificationRules;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -20,7 +20,9 @@ import org.springframework.stereotype.Repository;
  * time and the lease deadline of a claim; {@code version} guards every finish, so the result of a
  * replica whose lease was taken over is dropped.
  *
- * <p>Times come from the application clock and are passed in, so they can be tested with a fake.
+ * <p>Every time is the database's {@code now()}, never a replica's clock: replicas whose clocks
+ * drift apart still agree on what is due and when a lease ends. Waits (lease, backoff, retention)
+ * are passed as durations and added in the statement.
  */
 @Repository
 public class DeliveryRepository {
@@ -62,23 +64,24 @@ public class DeliveryRepository {
       String correlationId) {}
 
   /**
-   * Claims up to {@code batch} due PENDING rows: each gets {@code next_attempt_at = leaseUntil}
+   * Claims up to {@code batch} due PENDING rows: each gets {@code next_attempt_at = now() + lease}
    * (the lease), one more attempt and a new version. Rows another replica has locked are skipped.
    */
-  public List<Claim> claimDue(Instant now, Instant leaseUntil, int maxAttempts, int batch) {
+  public List<Claim> claimDue(Duration lease, int maxAttempts, int batch) {
     return jdbc.query(
         "UPDATE "
             + TABLE
-            + " SET next_attempt_at = :leaseUntil, attempts = attempts + 1, version = version + 1"
+            + " SET next_attempt_at = "
+            + later("lease")
+            + ", attempts = attempts + 1, version = version + 1"
             + " WHERE id IN (SELECT id FROM "
             + TABLE
-            + " WHERE status = 'PENDING' AND next_attempt_at <= :now AND attempts < :max"
+            + " WHERE status = 'PENDING' AND next_attempt_at <= now() AND attempts < :max"
             + " ORDER BY next_attempt_at LIMIT :batch FOR UPDATE SKIP LOCKED)"
             + " RETURNING id, recipient, template, case_id, bag_tag, state, case_version,"
             + " attempts, version, correlation_id",
         new MapSqlParameterSource()
-            .addValue("now", at(now))
-            .addValue("leaseUntil", at(leaseUntil))
+            .addValue("lease", seconds(lease))
             .addValue("max", maxAttempts)
             .addValue("batch", batch),
         (rs, row) ->
@@ -96,73 +99,73 @@ public class DeliveryRepository {
   }
 
   /** The attempt worked. Returns 0 when the claim was lost to another replica. */
-  public int markSent(UUID id, long claimedVersion, Instant now) {
+  public int markSent(UUID id, long claimedVersion) {
     return jdbc.update(
         "UPDATE "
             + TABLE
-            + " SET status = 'SENT', sent_at = :now, last_error = NULL, version = version + 1"
+            + " SET status = 'SENT', sent_at = now(), last_error = NULL, version = version + 1"
             + " WHERE id = :id AND status = 'PENDING' AND version = :version",
-        guard(id, claimedVersion).addValue("now", at(now)));
+        guard(id, claimedVersion));
   }
 
-  /** The attempt failed and another one is due at {@code nextAttemptAt}. */
-  public int markRetry(UUID id, long claimedVersion, Instant nextAttemptAt, String error) {
+  /** The attempt failed and another one is due {@code delay} from now. */
+  public int markRetry(UUID id, long claimedVersion, Duration delay, String error) {
     return jdbc.update(
         "UPDATE "
             + TABLE
-            + " SET next_attempt_at = :next, last_error = :error, version = version + 1"
+            + " SET next_attempt_at = "
+            + later("delay")
+            + ", last_error = :error, version = version + 1"
             + " WHERE id = :id AND status = 'PENDING' AND version = :version",
         guard(id, claimedVersion)
-            .addValue("next", at(nextAttemptAt))
+            .addValue("delay", seconds(delay))
             .addValue("error", error(error)));
   }
 
   /**
    * The last attempt failed: the row is FAILED, and its dead letter is due at once ({@code
-   * next_attempt_at = now}).
+   * next_attempt_at = now()}).
    */
-  public int markFailed(UUID id, long claimedVersion, Instant now, String error) {
+  public int markFailed(UUID id, long claimedVersion, String error) {
     return jdbc.update(
         "UPDATE "
             + TABLE
-            + " SET status = 'FAILED', failed_at = :now, next_attempt_at = :now,"
+            + " SET status = 'FAILED', failed_at = now(), next_attempt_at = now(),"
             + " last_error = :error, version = version + 1"
             + " WHERE id = :id AND status = 'PENDING' AND version = :version",
-        guard(id, claimedVersion).addValue("now", at(now)).addValue("error", error(error)));
+        guard(id, claimedVersion).addValue("error", error(error)));
   }
 
   /**
    * PENDING rows whose lease expired after their last attempt (the replica crashed or hung) are
    * FAILED with {@code LEASE_EXPIRED}; their attempt was counted at claim.
    */
-  public int expireLeases(Instant now, int maxAttempts) {
+  public int expireLeases(int maxAttempts) {
     return jdbc.update(
         "UPDATE "
             + TABLE
-            + " SET status = 'FAILED', failed_at = :now, next_attempt_at = :now,"
+            + " SET status = 'FAILED', failed_at = now(), next_attempt_at = now(),"
             + " last_error = :error, version = version + 1"
-            + " WHERE status = 'PENDING' AND attempts >= :max AND next_attempt_at <= :now",
+            + " WHERE status = 'PENDING' AND attempts >= :max AND next_attempt_at <= now()",
         new MapSqlParameterSource()
-            .addValue("now", at(now))
             .addValue("max", maxAttempts)
             .addValue("error", NotificationRules.LEASE_EXPIRED));
   }
 
   /** Claims up to {@code batch} FAILED rows whose dead letter Kafka has not acknowledged yet. */
-  public List<DeadLetterClaim> claimDeadLetters(Instant now, Instant leaseUntil, int batch) {
+  public List<DeadLetterClaim> claimDeadLetters(Duration lease, int batch) {
     return jdbc.query(
         "UPDATE "
             + TABLE
-            + " SET next_attempt_at = :leaseUntil, version = version + 1"
+            + " SET next_attempt_at = "
+            + later("lease")
+            + ", version = version + 1"
             + " WHERE id IN (SELECT id FROM "
             + TABLE
-            + " WHERE status = 'FAILED' AND dead_lettered_at IS NULL AND next_attempt_at <= :now"
+            + " WHERE status = 'FAILED' AND dead_lettered_at IS NULL AND next_attempt_at <= now()"
             + " ORDER BY next_attempt_at LIMIT :batch FOR UPDATE SKIP LOCKED)"
             + " RETURNING id, event_id, attempts, failed_at, version, correlation_id",
-        new MapSqlParameterSource()
-            .addValue("now", at(now))
-            .addValue("leaseUntil", at(leaseUntil))
-            .addValue("batch", batch),
+        new MapSqlParameterSource().addValue("lease", seconds(lease)).addValue("batch", batch),
         (rs, row) ->
             new DeadLetterClaim(
                 rs.getObject("id", UUID.class),
@@ -174,30 +177,33 @@ public class DeliveryRepository {
   }
 
   /** Kafka acknowledged the dead letter. Returns 0 when the claim was lost to another replica. */
-  public int markDeadLettered(UUID id, long claimedVersion, Instant now) {
+  public int markDeadLettered(UUID id, long claimedVersion) {
     return jdbc.update(
         "UPDATE "
             + TABLE
-            + " SET dead_lettered_at = :now, version = version + 1"
+            + " SET dead_lettered_at = now(), version = version + 1"
             + " WHERE id = :id AND status = 'FAILED' AND dead_lettered_at IS NULL"
             + " AND version = :version",
-        guard(id, claimedVersion).addValue("now", at(now)));
+        guard(id, claimedVersion));
   }
 
   /**
-   * Deletes up to {@code batch} finished rows (SENT, or FAILED and dead-lettered) created before
-   * {@code cutoff}. PENDING rows and undelivered dead letters are never purged.
+   * Deletes up to {@code batch} finished rows (SENT, or FAILED and dead-lettered) created more than
+   * {@code retention} ago, oldest first. PENDING rows and undelivered dead letters are never
+   * purged.
    */
-  public int purgeFinished(Instant cutoff, int batch) {
+  public int purgeFinished(Duration retention, int batch) {
     return jdbc.update(
         "DELETE FROM "
             + TABLE
             + " WHERE id IN (SELECT id FROM "
             + TABLE
-            + " WHERE created_at < :cutoff"
+            + " WHERE created_at < now() - make_interval(secs => CAST(:retention AS double precision))"
             + " AND (status = 'SENT' OR (status = 'FAILED' AND dead_lettered_at IS NOT NULL))"
-            + " LIMIT :batch FOR UPDATE SKIP LOCKED)",
-        new MapSqlParameterSource().addValue("cutoff", at(cutoff)).addValue("batch", batch));
+            + " ORDER BY created_at LIMIT :batch FOR UPDATE SKIP LOCKED)",
+        new MapSqlParameterSource()
+            .addValue("retention", seconds(retention))
+            .addValue("batch", batch));
   }
 
   /** Notifications not sent yet. */
@@ -210,22 +216,31 @@ public class DeliveryRepository {
     return count == null ? 0 : count;
   }
 
-  /** The earliest due time of a PENDING row that is due at {@code now}, or null when none is. */
-  public Instant oldestDue(Instant now) {
-    return jdbc.queryForObject(
-        "SELECT min(next_attempt_at) FROM "
-            + TABLE
-            + " WHERE status = 'PENDING' AND next_attempt_at <= :now",
-        new MapSqlParameterSource().addValue("now", at(now)),
-        (rs, row) -> instant(rs, 1));
+  /** Seconds the oldest due PENDING row has waited past its due time; 0 when none is due. */
+  public double oldestDueAgeSeconds() {
+    Double age =
+        jdbc.queryForObject(
+            "SELECT CAST(COALESCE(EXTRACT(EPOCH FROM now() - min(next_attempt_at)), 0)"
+                + " AS double precision) FROM "
+                + TABLE
+                + " WHERE status = 'PENDING' AND next_attempt_at <= now()",
+            new MapSqlParameterSource(),
+            Double.class);
+    return age == null ? 0 : age;
+  }
+
+  /** {@code now() + :param}, where the parameter is a number of seconds. */
+  private static String later(String param) {
+    return "now() + make_interval(secs => CAST(:" + param + " AS double precision))";
+  }
+
+  /** A duration as the seconds {@code make_interval} takes (microseconds are kept). */
+  private static double seconds(Duration duration) {
+    return duration.getSeconds() + duration.getNano() / 1_000_000_000.0;
   }
 
   private static MapSqlParameterSource guard(UUID id, long version) {
     return new MapSqlParameterSource().addValue("id", id).addValue("version", version);
-  }
-
-  private static OffsetDateTime at(Instant instant) {
-    return instant.atOffset(ZoneOffset.UTC);
   }
 
   private static String error(String error) {
@@ -241,11 +256,6 @@ public class DeliveryRepository {
   }
 
   private static Instant instant(ResultSet rs, String column) throws SQLException {
-    OffsetDateTime value = rs.getObject(column, OffsetDateTime.class);
-    return value == null ? null : value.toInstant();
-  }
-
-  private static Instant instant(ResultSet rs, int column) throws SQLException {
     OffsetDateTime value = rs.getObject(column, OffsetDateTime.class);
     return value == null ? null : value.toInstant();
   }

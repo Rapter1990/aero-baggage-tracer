@@ -16,9 +16,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -28,7 +26,6 @@ class NotificationRepositoryTest extends AbstractNotificationTest {
 
   private static final Instant AT = Instant.parse("2026-03-01T09:00:00Z");
 
-  @Autowired JdbcTemplate jdbc;
   @MockitoBean KafkaTemplate<String, String> kafka;
 
   private int insert(String recipient, String eventId, String template) {
@@ -42,8 +39,7 @@ class NotificationRepositoryTest extends AbstractNotificationTest {
         "OPEN",
         1L,
         AT,
-        "corr-test",
-        AT);
+        "corr-test");
   }
 
   @Test
@@ -117,13 +113,17 @@ class NotificationRepositoryTest extends AbstractNotificationTest {
   @Test
   @DisplayName("BR-08 a new notification is pending, not attempted, not dead-lettered")
   void newNotificationStartsPending() {
+    Instant before = dbNow();
     insert("handler-a", "EV-NEW", "CASE_OPENED");
+    Instant after = dbNow();
 
     NotificationEntity stored = rowsOf("EV-NEW").getFirst();
 
     assertThat(stored.getStatus()).isEqualTo(NotificationStatus.PENDING);
     assertThat(stored.getAttempts()).isZero();
-    assertThat(stored.getNextAttemptAt()).isNotNull().isBeforeOrEqualTo(AT);
+    // Due at once, by the database's time.
+    assertThat(stored.getNextAttemptAt()).isBetween(before, after);
+    assertThat(stored.getCreatedAt()).isEqualTo(stored.getNextAttemptAt());
     assertThat(stored.getDeadLetteredAt()).isNull();
     assertThat(stored.getSentAt()).isNull();
   }

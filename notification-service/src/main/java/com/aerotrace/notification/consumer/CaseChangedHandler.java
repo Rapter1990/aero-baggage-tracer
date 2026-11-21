@@ -9,8 +9,6 @@ import com.aerotrace.notification.domain.RecipientResolver;
 import com.aerotrace.notification.domain.TemplateSelector;
 import com.aerotrace.notification.repository.NotificationRepository;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.time.Clock;
-import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -41,19 +39,16 @@ public class CaseChangedHandler {
   private final RecipientResolver recipients;
   private final TemplateSelector templates;
   private final MeterRegistry meters;
-  private final Clock clock;
 
   public CaseChangedHandler(
       NotificationRepository notifications,
       RecipientResolver recipients,
       TemplateSelector templates,
-      MeterRegistry meters,
-      Clock clock) {
+      MeterRegistry meters) {
     this.notifications = notifications;
     this.recipients = recipients;
     this.templates = templates;
     this.meters = meters;
-    this.clock = clock;
   }
 
   /**
@@ -90,8 +85,7 @@ public class CaseChangedHandler {
             payload.state() == null ? null : payload.state().name(),
             payload.version(),
             event.occurredAt(),
-            correlationId,
-            Instant.now(clock));
+            correlationId);
     if (inserted == 0) {
       LOG.debug(
           "Duplicate case event {} for case {} template {}", event.eventId(), caseId, template);

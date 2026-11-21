@@ -1,14 +1,14 @@
 package com.aerotrace.notification.delivery;
 
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.function.DoubleSupplier;
 
 /**
  * The wait before the next delivery attempt: {@code min(base * 2^(failures - 1), max)}, moved at
  * random by up to {@code jitter} of itself either way and never past {@code max} (ADR 0005,
- * decision 9). With the defaults (2 s base, 5 attempts) the waits are 2, 4, 8 and 16 s.
+ * decision 9). With the defaults (2 s base, 5 attempts) the waits are 2, 4, 8 and 16 s. The wait is
+ * a duration: the repository adds it to the database's {@code now()}, so no replica's clock decides
+ * when the next attempt is due.
  */
 public final class BackoffPolicy {
 
@@ -53,10 +53,5 @@ public final class BackoffPolicy {
     double factor = 1 + jitter * (2 * random.getAsDouble() - 1);
     long jittered = Math.round(raw * factor);
     return Duration.ofMillis(Math.max(0, Math.min(jittered, maxMillis)));
-  }
-
-  /** When the next attempt is due: the clock's now plus {@link #delayAfter}. */
-  public Instant nextAttemptAt(Clock clock, int failures) {
-    return clock.instant().plus(delayAfter(failures));
   }
 }

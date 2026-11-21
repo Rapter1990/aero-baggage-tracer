@@ -5,14 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.aerotrace.notification.base.AbstractNotificationTest;
 import com.aerotrace.notification.base.CaseEvents;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -23,13 +21,14 @@ class RetentionPurgerTest extends AbstractNotificationTest {
   private static final Duration RETENTION = Duration.ofDays(90);
 
   @Autowired RetentionPurger purger;
-  @Autowired JdbcTemplate jdbc;
   @MockitoBean KafkaTemplate<String, String> kafka;
 
-  private UUID seedWith(Instant createdAt, String status, boolean deadLettered) {
-    UUID id = seed(CaseEvents.handler(), CaseEvents.eventId(), "CASE_OPENED", createdAt);
+  /** A row of {@code status} created {@code age} ago (by the database's time). */
+  private UUID seedWith(Duration age, String status, boolean deadLettered) {
+    UUID id = seed(CaseEvents.handler(), CaseEvents.eventId(), "CASE_OPENED");
+    createdAgo(id, age);
     jdbc.update(
-        "update notification.notification set status = ?,"
+        "update notification.notification set status = ?, version = version + 1,"
             + " sent_at = case when ? = 'SENT' then created_at end,"
             + " failed_at = case when ? = 'FAILED' then created_at end,"
             + " dead_lettered_at = case when ? then created_at end where id = ?",
@@ -44,8 +43,8 @@ class RetentionPurgerTest extends AbstractNotificationTest {
   @Test
   @DisplayName("BR-08 the purge deletes old SENT rows and old dead-lettered FAILED rows only")
   void purgeDeletesOnlyOldFinishedRows() {
-    Instant old = clock.instant().minus(RETENTION).minusSeconds(1);
-    Instant young = clock.instant().minus(RETENTION).plusSeconds(60);
+    Duration old = RETENTION.plusSeconds(1);
+    Duration young = RETENTION.minusSeconds(60);
     UUID oldSent1 = seedWith(old, "SENT", false);
     UUID oldSent2 = seedWith(old, "SENT", false);
     UUID oldDeadLettered = seedWith(old, "FAILED", true);

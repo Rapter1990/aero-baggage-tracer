@@ -10,7 +10,6 @@ import com.aerotrace.notification.constant.NotificationRules;
 import com.aerotrace.notification.repository.DeliveryRepository;
 import com.aerotrace.notification.repository.DeliveryRepository.DeadLetterClaim;
 import java.time.Clock;
-import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
@@ -26,6 +25,10 @@ import org.springframework.stereotype.Component;
  * dead_lettered_at}, the Kafka send runs outside any transaction, and {@code dead_lettered_at} is
  * set only after Kafka acknowledged. At least once: a consumer of the topic deduplicates by {@code
  * originalEventId}.
+ *
+ * <p>The lease and {@code dead_lettered_at} use the database's {@code now()}; the dead letter's
+ * {@code occurredAt} is the stored {@code failed_at}. Only the envelope's {@code publishedAt} comes
+ * from the application clock.
  *
  * <p>The dead letter says what failed, never what the notification said or whom it was for: {@code
  * rawPayload} is null.
@@ -69,9 +72,8 @@ public class DeadLetterPublisher {
    * @return how many Kafka acknowledged
    */
   public int publishDue() {
-    Instant now = clock.instant();
     List<DeadLetterClaim> claims =
-        deliveries.claimDeadLetters(now, now.plus(settings.lease()), settings.batchSize());
+        deliveries.claimDeadLetters(settings.lease(), settings.batchSize());
     int published = 0;
     for (DeadLetterClaim claim : claims) {
       if (!publish(claim)) {
@@ -114,7 +116,7 @@ public class DeadLetterPublisher {
             e.getClass().getSimpleName());
         return false;
       }
-      if (deliveries.markDeadLettered(claim.id(), claim.version(), clock.instant()) == 0) {
+      if (deliveries.markDeadLettered(claim.id(), claim.version()) == 0) {
         LOG.info("Dead letter of notification {} published, but its lease was lost", claim.id());
       } else {
         LOG.warn(

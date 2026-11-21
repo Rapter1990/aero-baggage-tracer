@@ -9,6 +9,7 @@ import com.aerotrace.notification.base.CaseEvents;
 import com.aerotrace.notification.domain.TemplateSelector;
 import com.aerotrace.notification.model.entity.NotificationEntity;
 import com.aerotrace.notification.model.entity.NotificationStatus;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -32,7 +33,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 class CaseChangedHandlerTest extends AbstractNotificationTest {
 
   @Autowired CaseChangedHandler handler;
-  @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
   @MockitoBean KafkaTemplate<String, String> kafka;
 
   private final TemplateSelector templates = new TemplateSelector();
@@ -47,9 +47,12 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
     String caseId = CaseEvents.caseId();
     String bag = CaseEvents.bagTag();
 
+    Instant before = dbNow();
+
     CaseChangedHandler.Outcome outcome =
         handler.handle(
             CaseEvents.event(eventId, caseId, bag, RecoveryState.OPEN, 1, "reason", handlerId));
+    Instant after = dbNow();
 
     assertThat(outcome).isEqualTo(CaseChangedHandler.Outcome.NOTIFICATION_CREATED);
     assertThat(rowsOf(eventId))
@@ -64,7 +67,9 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
               assertThat(n.getCaseVersion()).isEqualTo(1);
               assertThat(n.getStatus()).isEqualTo(NotificationStatus.PENDING);
               assertThat(n.getAttempts()).isZero();
-              assertThat(n.getCreatedAt()).isEqualTo(clock.instant());
+              // Created and due at the database's now, not the application's.
+              assertThat(n.getCreatedAt()).isBetween(before, after);
+              assertThat(n.getNextAttemptAt()).isEqualTo(n.getCreatedAt());
             });
   }
 
@@ -106,7 +111,8 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
             CaseEvents.handler());
     handler.handle(json);
     jdbc.update(
-        "update notification.notification set status = 'SENT', attempts = 1 where event_id = ?",
+        "update notification.notification set status = 'SENT', sent_at = now(), attempts = 1,"
+            + " version = version + 1 where event_id = ?",
         eventId);
 
     handler.handle(json);

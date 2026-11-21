@@ -5,25 +5,20 @@ import com.aerotrace.notification.repository.DeliveryRepository;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.MeterBinder;
-import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
 import org.springframework.stereotype.Component;
 
 /**
  * The delivery gauges (ADR 0005, decision 12): how many notifications are not sent yet, and how
  * long the oldest due one has waited past its due time. Read from the database when the meters are
- * exported, so every replica reports the same numbers.
+ * exported, against the database's {@code now()}, so every replica reports the same numbers.
  */
 @Component
 public class DeliveryMetrics implements MeterBinder {
 
   private final DeliveryRepository deliveries;
-  private final Clock clock;
 
-  public DeliveryMetrics(DeliveryRepository deliveries, Clock clock) {
+  public DeliveryMetrics(DeliveryRepository deliveries) {
     this.deliveries = deliveries;
-    this.clock = clock;
   }
 
   @Override
@@ -47,9 +42,7 @@ public class DeliveryMetrics implements MeterBinder {
 
   double oldestDueAgeSeconds() {
     try {
-      Instant now = clock.instant();
-      Instant oldest = deliveries.oldestDue(now);
-      return oldest == null ? 0 : Duration.between(oldest, now).toMillis() / 1000.0;
+      return deliveries.oldestDueAgeSeconds();
     } catch (RuntimeException databaseUnavailable) {
       return Double.NaN;
     }

@@ -49,16 +49,16 @@ class DeliveryExhaustionKafkaTest extends AbstractNotificationTest {
       "BR-08 retry exhaustion marks the row FAILED and dead-letters it once to baggage.dead-letter.v1")
   void exhaustionIsDeadLetteredOnce() {
     String eventId = CaseEvents.eventId();
-    UUID id = seed("handler-a", eventId, "CASE_OPENED", clock.instant());
+    UUID id = seed("handler-a", eventId, "CASE_OPENED");
     provider.failAll();
 
     for (int attempt = 1; attempt <= 5; attempt++) {
       dispatcher.dispatchDue();
-      clock.advance(Duration.ofMinutes(10));
+      elapse(Duration.ofMinutes(10));
     }
     // More runs, as the scheduler would make: they must publish nothing more.
     for (int i = 0; i < 3; i++) {
-      clock.advance(Duration.ofMinutes(10));
+      elapse(Duration.ofMinutes(10));
       dispatcher.dispatchDue();
     }
 

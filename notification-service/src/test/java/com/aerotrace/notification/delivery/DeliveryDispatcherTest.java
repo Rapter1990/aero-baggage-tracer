@@ -15,10 +15,10 @@ import com.aerotrace.common.event.EventJson;
 import com.aerotrace.common.event.Topics;
 import com.aerotrace.notification.base.AbstractNotificationTest;
 import com.aerotrace.notification.base.CaseEvents;
-import com.aerotrace.notification.base.MutableClock;
 import com.aerotrace.notification.model.entity.NotificationEntity;
 import com.aerotrace.notification.model.entity.NotificationStatus;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -36,15 +36,16 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
- * Delivery against a real PostgreSQL, a clock the test moves and a mock Kafka producer. The
- * dispatcher is driven by hand; the scheduler only fires once an hour. Defaults of the test
- * profile: 5 attempts, 2 s base, 5 min maximum, no jitter.
+ * Delivery against a real PostgreSQL and a mock Kafka producer. Times are the database's {@code
+ * now()}: a test lets time pass by moving the stored times back ({@code elapse}) and checks times
+ * against {@code dbNow()} read before and after a run. The dispatcher is driven by hand; the
+ * scheduler only fires once an hour. Defaults of the test profile: 5 attempts, 2 s base, 5 min
+ * maximum, no jitter.
  */
 @SpringBootTest
 class DeliveryDispatcherTest extends AbstractNotificationTest {
@@ -53,7 +54,6 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   private static final Duration LEASE = Duration.ofSeconds(60);
 
   @Autowired DeliveryDispatcher dispatcher;
-  @Autowired JdbcTemplate jdbc;
   @MockitoBean KafkaTemplate<String, String> kafka;
 
   @BeforeEach
@@ -62,11 +62,16 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
         .thenReturn(CompletableFuture.completedFuture(mock(SendResult.class)));
   }
 
-  /** Every attempt is due, whatever the backoff was: the clock jumps past the longest wait. */
+  /**
+   * Every attempt is due, whatever the backoff was: ten minutes pass before each one, more than the
+   * longest wait. Nothing passes after the last one.
+   */
   private void runUntilExhausted() {
     for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      if (attempt > 1) {
+        elapse(Duration.ofMinutes(10));
+      }
       dispatcher.dispatchDue();
-      clock.advance(Duration.ofMinutes(10));
     }
   }
 
@@ -75,7 +80,8 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   @Test
   @DisplayName("BR-08 a due notification is sent once and marked SENT")
   void dueNotificationIsSent() {
-    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED");
+    Instant before = dbNow();
 
     int processed = dispatcher.dispatchDue();
 
@@ -84,17 +90,18 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
     NotificationEntity sent = row(id);
     assertThat(sent.getStatus()).isEqualTo(NotificationStatus.SENT);
     assertThat(sent.getAttempts()).isEqualTo(1);
-    assertThat(sent.getSentAt()).isEqualTo(clock.instant());
+    // The database's time of the finish, not the application's.
+    assertThat(sent.getSentAt()).isBetween(before, dbNow());
     verifyNoInteractions(kafka);
   }
 
   @Test
   @DisplayName("BR-08 a sent notification is never sent again")
   void sentNotificationIsNotSentAgain() {
-    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED");
     dispatcher.dispatchDue();
 
-    clock.advance(Duration.ofHours(1));
+    elapse(Duration.ofHours(1));
     int processed = dispatcher.dispatchDue();
 
     assertThat(processed).isZero();
@@ -104,8 +111,8 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   @Test
   @DisplayName("BR-08 a notification that is not due yet is left alone")
   void notDueNotificationIsLeftAlone() {
-    UUID id =
-        seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant().plusSeconds(3600));
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED");
+    dueIn(id, Duration.ofHours(1));
 
     int processed = dispatcher.dispatchDue();
 
@@ -120,12 +127,12 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   @DisplayName("BR-08 delivery retries update the same row and never create a second notification")
   void retriesNeverCreateASecondRow() {
     String eventId = CaseEvents.eventId();
-    UUID id = seed("handler-a", eventId, "CASE_OPENED", clock.instant());
+    UUID id = seed("handler-a", eventId, "CASE_OPENED");
     provider.failAll();
 
     for (int attempt = 1; attempt < MAX_ATTEMPTS; attempt++) {
       dispatcher.dispatchDue();
-      clock.advance(Duration.ofMinutes(10));
+      elapse(Duration.ofMinutes(10));
 
       assertThat(rowsOf(eventId))
           .singleElement()
@@ -138,44 +145,41 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   @Test
   @DisplayName("BR-08 after a failure the next attempt is scheduled with a doubling wait")
   void failureSchedulesTheNextAttempt() {
-    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED");
     provider.failAll();
-    var start = clock.instant();
 
-    dispatcher.dispatchDue();
-    assertThat(row(id).getStatus()).isEqualTo(NotificationStatus.PENDING);
-    assertThat(row(id).getAttempts()).isEqualTo(1);
-    assertThat(row(id).getNextAttemptAt()).isEqualTo(start.plusSeconds(2));
+    // The wait after each failure is added to the database's now at the finish: 2, 4, 8, 16 s.
+    int[] waits = {2, 4, 8, 16};
+    for (int attempt = 1; attempt <= waits.length; attempt++) {
+      if (attempt > 1) {
+        elapse(Duration.ofSeconds(waits[attempt - 2]));
+      }
+      Instant before = dbNow();
+      dispatcher.dispatchDue();
+      Instant after = dbNow();
 
-    clock.set(start.plusSeconds(2));
-    dispatcher.dispatchDue();
-    assertThat(row(id).getAttempts()).isEqualTo(2);
-    assertThat(row(id).getNextAttemptAt()).isEqualTo(start.plusSeconds(2 + 4));
-
-    clock.set(start.plusSeconds(2 + 4));
-    dispatcher.dispatchDue();
-    assertThat(row(id).getAttempts()).isEqualTo(3);
-    assertThat(row(id).getNextAttemptAt()).isEqualTo(start.plusSeconds(2 + 4 + 8));
-
-    clock.set(start.plusSeconds(2 + 4 + 8));
-    dispatcher.dispatchDue();
-    assertThat(row(id).getAttempts()).isEqualTo(4);
-    assertThat(row(id).getNextAttemptAt()).isEqualTo(start.plusSeconds(2 + 4 + 8 + 16));
+      NotificationEntity stored = row(id);
+      assertThat(stored.getStatus()).isEqualTo(NotificationStatus.PENDING);
+      assertThat(stored.getAttempts()).isEqualTo(attempt);
+      Duration wait = Duration.ofSeconds(waits[attempt - 1]);
+      assertThat(stored.getNextAttemptAt()).isBetween(before.plus(wait), after.plus(wait));
+    }
   }
 
   @Test
   @DisplayName("BR-08 a notification is not retried before its next attempt is due")
   void notRetriedBeforeItIsDue() {
-    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED");
     provider.failAll();
     dispatcher.dispatchDue();
 
-    clock.advance(Duration.ofSeconds(1));
+    // The retry is due 2 s after the failure; only one of them has passed.
+    elapse(Duration.ofSeconds(1));
     int early = dispatcher.dispatchDue();
 
     assertThat(early).isZero();
     assertThat(provider.attemptedIds()).containsExactly(id);
-    clock.advance(Duration.ofSeconds(1));
+    elapse(Duration.ofSeconds(1));
     assertThat(dispatcher.dispatchDue()).isEqualTo(1);
     assertThat(provider.attemptedIds()).containsExactly(id, id);
   }
@@ -184,12 +188,12 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   @DisplayName("BR-08 a delivery that fails twice and then works ends SENT, on the same row")
   void failsTwiceThenSucceeds() {
     String eventId = CaseEvents.eventId();
-    UUID id = seed("handler-a", eventId, "CASE_OPENED", clock.instant());
+    UUID id = seed("handler-a", eventId, "CASE_OPENED");
     provider.failNext(2);
 
     for (int i = 0; i < 3; i++) {
       dispatcher.dispatchDue();
-      clock.advance(Duration.ofMinutes(10));
+      elapse(Duration.ofMinutes(10));
     }
 
     NotificationEntity stored = row(id);
@@ -206,7 +210,7 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   @DisplayName("BR-08 after the last attempt the notification is FAILED and dead-lettered once")
   void exhaustedNotificationIsFailedAndDeadLetteredOnce() {
     String eventId = CaseEvents.eventId();
-    UUID id = seed("handler-a", eventId, "CASE_OPENED", clock.instant());
+    UUID id = seed("handler-a", eventId, "CASE_OPENED");
     provider.failAll();
 
     runUntilExhausted();
@@ -234,12 +238,12 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   @Test
   @DisplayName("BR-08 an exhausted notification is neither retried nor dead-lettered again")
   void exhaustedNotificationIsLeftAlone() {
-    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED");
     provider.failAll();
     runUntilExhausted();
 
     for (int i = 0; i < 3; i++) {
-      clock.advance(Duration.ofHours(1));
+      elapse(Duration.ofHours(1));
       dispatcher.dispatchDue();
     }
 
@@ -252,7 +256,7 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   @DisplayName("BR-08 a failed dead-letter publish is retried, and not published twice")
   void failedDeadLetterPublishIsRetriedNotDuplicated() {
     String eventId = CaseEvents.eventId();
-    UUID id = seed("handler-a", eventId, "CASE_OPENED", clock.instant());
+    UUID id = seed("handler-a", eventId, "CASE_OPENED");
     provider.failAll();
     when(kafka.send(eq(Topics.DEAD_LETTER), anyString(), anyString()))
         .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("broker is down")))
@@ -266,15 +270,16 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
     verify(kafka, times(1)).send(eq(Topics.DEAD_LETTER), eq(eventId), anyString());
 
     // The next run tries again, and only the dead letter: the delivery is not attempted again.
-    clock.advance(Duration.ofMinutes(10));
+    elapse(Duration.ofMinutes(10));
+    Instant before = dbNow();
     dispatcher.dispatchDue();
-    assertThat(row(id).getDeadLetteredAt()).isEqualTo(clock.instant());
+    assertThat(row(id).getDeadLetteredAt()).isBetween(before, dbNow());
     verify(kafka, times(2)).send(eq(Topics.DEAD_LETTER), eq(eventId), anyString());
     assertThat(provider.attemptedIds()).hasSize(MAX_ATTEMPTS);
 
     // Acknowledged once, so it is never published again.
     for (int i = 0; i < 3; i++) {
-      clock.advance(Duration.ofMinutes(10));
+      elapse(Duration.ofMinutes(10));
       dispatcher.dispatchDue();
     }
     verify(kafka, times(2)).send(eq(Topics.DEAD_LETTER), eq(eventId), anyString());
@@ -283,14 +288,14 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   @Test
   @DisplayName("BR-08 a dead-letter publish that throws does not break the dispatcher")
   void throwingDeadLetterPublishDoesNotBreakTheDispatcher() {
-    UUID failing = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    UUID failing = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED");
     provider.failAll();
     when(kafka.send(eq(Topics.DEAD_LETTER), anyString(), anyString()))
         .thenThrow(new IllegalStateException("producer is closed"));
     runUntilExhausted();
     provider.reset();
 
-    UUID healthy = seed("handler-b", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    UUID healthy = seed("handler-b", CaseEvents.eventId(), "CASE_OPENED");
     dispatcher.dispatchDue();
 
     assertThat(row(failing).getDeadLetteredAt()).isNull();
@@ -302,14 +307,18 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   @Test
   @DisplayName("BR-08 a claim holds the row for the lease: it is not due again while it is sent")
   void claimHoldsTheRowForTheLease() {
-    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
-    var start = clock.instant();
-    List<java.time.Instant> dueWhileSending = new ArrayList<>();
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED");
+    List<Instant> dueWhileSending = new ArrayList<>();
     provider.onSend(message -> dueWhileSending.add(row(id).getNextAttemptAt()));
 
+    Instant before = dbNow();
     dispatcher.dispatchDue();
+    Instant after = dbNow();
 
-    assertThat(dueWhileSending).containsExactly(start.plus(LEASE));
+    // The lease ends LEASE after the database's now at the claim.
+    assertThat(dueWhileSending)
+        .singleElement()
+        .satisfies(due -> assertThat(due).isBetween(before.plus(LEASE), after.plus(LEASE)));
     assertThat(provider.sentIds()).containsExactly(id);
   }
 
@@ -318,16 +327,15 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
       "BR-08 a claim lost by a crashed replica is sent again after its lease, on the same row")
   void crashedClaimIsRetriedAfterTheLease() {
     String eventId = CaseEvents.eventId();
-    UUID id = seed("handler-a", eventId, "CASE_OPENED", clock.instant());
+    UUID id = seed("handler-a", eventId, "CASE_OPENED");
     // A replica claimed it (attempt 1, lease to now + 60 s) and died before the finish.
     jdbc.update(
         "update notification.notification set attempts = 1, version = version + 1,"
-            + " next_attempt_at = ? where id = ?",
-        java.sql.Timestamp.from(clock.instant().plus(LEASE)),
+            + " next_attempt_at = now() + interval '60 seconds' where id = ?",
         id);
 
     assertThat(dispatcher.dispatchDue()).isZero();
-    clock.advance(LEASE);
+    elapse(LEASE);
     assertThat(dispatcher.dispatchDue()).isEqualTo(1);
 
     assertThat(row(id).getStatus()).isEqualTo(NotificationStatus.SENT);
@@ -340,21 +348,23 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
       "BR-08 a last attempt whose lease expired without a result is FAILED as LEASE_EXPIRED")
   void expiredLastLeaseIsFailed() {
     String eventId = CaseEvents.eventId();
-    UUID id = seed("handler-a", eventId, "CASE_OPENED", clock.instant());
+    UUID id = seed("handler-a", eventId, "CASE_OPENED");
     jdbc.update(
         "update notification.notification set attempts = ?, version = version + 1,"
-            + " next_attempt_at = ? where id = ?",
+            + " next_attempt_at = now() + interval '60 seconds' where id = ?",
         MAX_ATTEMPTS,
-        java.sql.Timestamp.from(clock.instant().plus(LEASE)),
         id);
-    clock.advance(LEASE);
+    elapse(LEASE);
+    Instant before = dbNow();
 
     assertThat(dispatcher.dispatchDue()).isZero();
 
     NotificationEntity failed = row(id);
+    Instant after = dbNow();
     assertThat(failed.getStatus()).isEqualTo(NotificationStatus.FAILED);
     assertThat(failed.getLastError()).isEqualTo("LEASE_EXPIRED");
-    assertThat(failed.getDeadLetteredAt()).isEqualTo(clock.instant());
+    assertThat(failed.getFailedAt()).isBetween(before, after);
+    assertThat(failed.getDeadLetteredAt()).isBetween(before, after);
     assertThat(provider.attemptedIds()).isEmpty();
     verify(kafka, times(1)).send(eq(Topics.DEAD_LETTER), eq(eventId), anyString());
   }
@@ -362,7 +372,7 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   @Test
   @DisplayName("BR-08 a result whose lease another replica took over is dropped, not recorded")
   void resultOfALostLeaseIsDropped() {
-    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED");
     // While this replica is in the provider, its lease ends and another replica claims the row.
     provider.onSend(
         message ->
@@ -379,7 +389,7 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   @Test
   @DisplayName("BR-08 the failure is stored as an error code, never as a provider message")
   void failureIsStoredAsACode() {
-    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED");
     provider.failAll();
 
     dispatcher.dispatchDue();
@@ -391,7 +401,7 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   @DisplayName("BR-08 the dead letter carries the stored correlation id and the failure time")
   void deadLetterCarriesTheCorrelationId() {
     String eventId = CaseEvents.eventId();
-    seed("handler-a", eventId, "CASE_OPENED", clock.instant());
+    UUID id = seed("handler-a", eventId, "CASE_OPENED");
     provider.failAll();
 
     runUntilExhausted();
@@ -403,8 +413,8 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
     assertThat(envelope.correlationId()).isEqualTo(CaseEvents.CORRELATION_ID);
     assertThat(envelope.aggregateId()).isEqualTo(eventId);
     assertThat(envelope.schemaVersion()).isEqualTo(1);
-    // The fifth attempt ran after four advances of ten minutes.
-    assertThat(envelope.occurredAt()).isEqualTo(MutableClock.T0.plus(Duration.ofMinutes(40)));
+    // occurredAt is when the last attempt failed: the stored failed_at, the database's time.
+    assertThat(envelope.occurredAt()).isEqualTo(row(id).getFailedAt());
   }
 
   // ------------------------------------------------------------------ concurrency
@@ -415,7 +425,7 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
     int rows = 20;
     List<UUID> ids = new ArrayList<>();
     for (int i = 0; i < rows; i++) {
-      ids.add(seed("handler-" + i, CaseEvents.eventId(), "CASE_OPENED", clock.instant()));
+      ids.add(seed("handler-" + i, CaseEvents.eventId(), "CASE_OPENED"));
     }
     CountDownLatch firstIsSending = new CountDownLatch(1);
     CountDownLatch release = new CountDownLatch(1);
@@ -452,7 +462,7 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
     int rows = 40;
     List<UUID> ids = new ArrayList<>();
     for (int i = 0; i < rows; i++) {
-      ids.add(seed("handler-" + i, CaseEvents.eventId(), "CASE_OPENED", clock.instant()));
+      ids.add(seed("handler-" + i, CaseEvents.eventId(), "CASE_OPENED"));
     }
     CountDownLatch ready = new CountDownLatch(2);
     CountDownLatch go = new CountDownLatch(1);

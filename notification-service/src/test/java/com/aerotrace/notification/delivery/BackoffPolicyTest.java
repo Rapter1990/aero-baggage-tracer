@@ -3,18 +3,16 @@ package com.aerotrace.notification.delivery;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** Pure unit tests: a fixed clock and a fixed random source, so every number is exact. */
+/**
+ * Pure unit tests with a fixed random source, so every number is exact. That the wait is added to
+ * the database's now is covered by {@code DeliveryDispatcherTest}.
+ */
 class BackoffPolicyTest {
 
-  private static final Instant NOW = Instant.parse("2026-03-01T10:00:00Z");
-  private static final Clock FIXED = Clock.fixed(NOW, ZoneOffset.UTC);
   private static final Duration BASE = Duration.ofSeconds(2);
   private static final Duration MAX = Duration.ofMinutes(5);
 
@@ -56,16 +54,6 @@ class BackoffPolicyTest {
   void hugeFailureCountStaysAtTheMaximum() {
     assertThat(withoutJitter().delayAfter(1_000)).isEqualTo(MAX);
     assertThat(withoutJitter().delayAfter(Integer.MAX_VALUE)).isEqualTo(MAX);
-  }
-
-  @Test
-  @DisplayName("BR-08 the next attempt is the clock's now plus the wait")
-  void nextAttemptIsNowPlusTheWait() {
-    BackoffPolicy policy = withoutJitter();
-
-    assertThat(policy.nextAttemptAt(FIXED, 1)).isEqualTo(NOW.plusSeconds(2));
-    assertThat(policy.nextAttemptAt(FIXED, 3)).isEqualTo(NOW.plusSeconds(8));
-    assertThat(policy.nextAttemptAt(FIXED, 12)).isEqualTo(NOW.plus(MAX));
   }
 
   @Test
