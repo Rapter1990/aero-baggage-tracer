@@ -24,7 +24,9 @@ import org.springframework.stereotype.Component;
  * send, finish as in the dispatcher: a short claim takes a lease on FAILED rows without {@code
  * dead_lettered_at}, the Kafka send runs outside any transaction, and {@code dead_lettered_at} is
  * set only after Kafka acknowledged. At least once: a consumer of the topic deduplicates by {@code
- * originalEventId}.
+ * originalEventId}. Duplicates come from a failed publish that reached the broker anyway, and from
+ * a database error after Kafka's acknowledgement: {@code dead_lettered_at} is then not set, the
+ * lease ends and the same dead letter is published again.
  *
  * <p>The lease and {@code dead_lettered_at} use the database's {@code now()}; the dead letter's
  * {@code occurredAt} is the stored {@code failed_at}. Only the envelope's {@code publishedAt} comes
