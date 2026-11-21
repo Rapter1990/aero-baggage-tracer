@@ -77,6 +77,21 @@ class ConfigServerApplicationTest {
   }
 
   @Test
+  void notificationServiceGetsItsDeliveryAndRetentionSettingsAndNoSecrets() {
+    for (String profile : List.of("default", "dev", "compose", "k8s")) {
+      assertThat(resolve("notification-service", profile, "aerotrace.notification.retention"))
+          .as("profile %s", profile)
+          .isEqualTo("90d");
+      assertThat(resolve("notification-service", profile, "aerotrace.notification.delivery.lease"))
+          .isEqualTo("60s");
+      assertThat(
+              resolve("notification-service", profile, "spring.kafka.consumer.auto-offset-reset"))
+          .isEqualTo("latest");
+      assertThat(resolve("notification-service", profile, "spring.datasource.password")).isNull();
+    }
+  }
+
+  @Test
   void unknownProfileStillGetsSharedDefaultsButNoEndpoints() {
     assertThat(resolve("journey-service", "nope", "aerotrace.risk.threshold-minutes"))
         .isEqualTo(20);

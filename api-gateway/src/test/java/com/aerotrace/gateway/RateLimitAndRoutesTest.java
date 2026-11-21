@@ -128,12 +128,14 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
             "search-service",
             "search-service",
             "search-service",
+            "notification-service",
             // OpenAPI definition routes (one per service for the Swagger UI dropdown).
             "identity-service",
             "journey-service",
             "recovery-service",
             "capacity-service",
-            "search-service");
+            "search-service",
+            "notification-service");
   }
 
   /**
@@ -206,7 +208,8 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
             "recovery-cases",
             "recovery-policy",
             "journey-bags",
-            "journey-scans")) {
+            "journey-scans",
+            "notifications")) {
       Map<String, Object> route =
           routes.stream().filter(r -> id.equals(r.get("id"))).findFirst().orElseThrow();
       assertThat(String.valueOf(route.get("filters")))

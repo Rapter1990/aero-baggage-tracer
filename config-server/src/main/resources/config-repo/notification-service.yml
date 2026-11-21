@@ -1,0 +1,25 @@
+# Served to notification-service by name. Defaults mirror its local application.yml (ADR 0005).
+# No secrets here: DB_PASSWORD and the identity public key come from the environment.
+aerotrace:
+  notification:
+    consumers:
+      # Transient failures are retried for about a minute (2, 4, 8, 16, 30 s), then dead-lettered.
+      retry-attempts: 6
+      retry-backoff: 2s
+      retry-max-backoff: 30s
+    delivery:
+      max-attempts: 5
+      base-delay: 2s
+      max-delay: 5m
+      jitter: 0.2
+      batch-size: 50
+      # Longer than the provider timeout, so a claimed row is never sent by two replicas at once.
+      lease: 60s
+      provider-timeout: 10s
+    # Longer than the topic (7 d) and dead-letter topic (30 d) retention: purging removes the dedupe key.
+    retention: 90d
+spring:
+  kafka:
+    consumer:
+      # A first deploy or a group reset does not notify about old case changes.
+      auto-offset-reset: latest

@@ -1,5 +1,7 @@
 # Local development infrastructure only (matches the `dev` profile endpoints in config-server:
-# localhost:9092, localhost:6379, localhost:5433). Run services from the IDE or Maven.
+# localhost:9092, localhost:6379, localhost:5433). Run services from the IDE or Maven. The
+# notification-service (port 1118) needs only Kafka (recovery.case.changed.v1, baggage.dead-letter.v1)
+# and Postgres (its own schema, created on start).
 #   docker compose -f docker-compose-local.yml up -d
 # Dev-only credentials; override via env vars. Never reuse them outside local development.
 # One project name for both compose files and every checkout or worktree (it is the name the main
