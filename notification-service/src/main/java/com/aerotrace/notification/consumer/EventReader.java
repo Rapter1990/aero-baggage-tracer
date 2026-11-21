@@ -34,9 +34,10 @@ final class EventReader {
       // Also a missing eventId or payload: the envelope refuses to be built without them.
       throw new PoisonEventException("event is not readable", unreadable);
     }
-    if (event.eventId().isBlank()
-        || event.eventId().length() > NotificationRules.MAX_EVENT_ID_LENGTH) {
-      throw new PoisonEventException("eventId is missing or too long");
+    // The event id is logged, stored and used as a Kafka key: only short, plain ids are accepted,
+    // so a CR/LF or markup in it can never forge a log line.
+    if (!NotificationRules.isSafeEventId(event.eventId())) {
+      throw new PoisonEventException("eventId is missing, too long or has unsafe characters");
     }
     CaseChangedPayload payload = event.payload();
     caseId(payload);

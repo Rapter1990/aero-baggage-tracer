@@ -304,6 +304,73 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
   }
 
   @Test
+  @DisplayName("BR-08 an eventId with CR or LF is poison: it would forge log lines")
+  void eventIdWithLineBreaksIsPoison() {
+    for (String eventId : List.of("EV-1\r\nINFO forged line", "EV-2\nx", "EV-3\rx")) {
+      String json =
+          CaseEvents.event(
+              eventId,
+              CaseEvents.caseId(),
+              CaseEvents.bagTag(),
+              RecoveryState.OPEN,
+              1,
+              "r",
+              CaseEvents.handler());
+
+      assertThatThrownBy(() -> handler.handle(json))
+          .as("eventId %s", eventId.replace("\r", "\\r").replace("\n", "\\n"))
+          .isInstanceOf(PoisonEventException.class)
+          .satisfies(e -> assertThat(e.getMessage()).doesNotContain("forged"));
+    }
+    assertThat(notifications.count()).isZero();
+  }
+
+  @Test
+  @DisplayName("BR-08 an eventId outside letters, digits and . _ : - (or over 100) is poison")
+  void eventIdWithUnsafeCharactersIsPoison() {
+    for (String eventId :
+        List.of("EV 1", "EV-<script>", "EV-1;drop", "EV-\u00e9", "EV-\t", "E".repeat(101))) {
+      String json =
+          CaseEvents.event(
+              eventId,
+              CaseEvents.caseId(),
+              CaseEvents.bagTag(),
+              RecoveryState.OPEN,
+              1,
+              "r",
+              CaseEvents.handler());
+
+      assertThatThrownBy(() -> handler.handle(json))
+          .as("eventId of length %d", eventId.length())
+          .isInstanceOf(PoisonEventException.class);
+    }
+    assertThat(notifications.count()).isZero();
+  }
+
+  @Test
+  @DisplayName("BR-08 a UUID, a prefixed id and a dotted or colon-separated id are accepted")
+  void safeEventIdsAreAccepted() {
+    for (String eventId :
+        List.of(
+            UUID.randomUUID().toString(),
+            "EV-" + UUID.randomUUID(),
+            "recovery.case:" + UUID.randomUUID() + "_1",
+            "E".repeat(100))) {
+      String json =
+          CaseEvents.event(
+              eventId,
+              CaseEvents.caseId(),
+              CaseEvents.bagTag(),
+              RecoveryState.OPEN,
+              1,
+              "r",
+              CaseEvents.handler());
+
+      assertThat(handler.handle(json)).isEqualTo(CaseChangedHandler.Outcome.NOTIFICATION_CREATED);
+    }
+  }
+
+  @Test
   @DisplayName(
       "BR-08 an event in a state this service does not know notifies with CASE_UPDATED, not poison")
   void unknownStateNotifiesWithCaseUpdated() {

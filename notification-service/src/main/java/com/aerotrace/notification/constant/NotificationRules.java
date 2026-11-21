@@ -1,5 +1,6 @@
 package com.aerotrace.notification.constant;
 
+import java.util.regex.Pattern;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
@@ -30,6 +31,13 @@ public final class NotificationRules {
   /** The longest event id, recipient and bag tag a row can hold; longer ones are poison. */
   public static final int MAX_EVENT_ID_LENGTH = 100;
 
+  /**
+   * What an event id may be: letters, digits and {@code . _ : -}, 1 to {@value
+   * #MAX_EVENT_ID_LENGTH} characters (a UUID, or a prefixed id). Anything else is poison.
+   */
+  private static final Pattern SAFE_EVENT_ID =
+      Pattern.compile("[A-Za-z0-9._:-]{1," + MAX_EVENT_ID_LENGTH + "}");
+
   public static final int MAX_RECIPIENT_LENGTH = 100;
   public static final int MAX_BAG_TAG_LENGTH = 32;
 
@@ -38,4 +46,9 @@ public final class NotificationRules {
 
   public static final int DEFAULT_PAGE_SIZE = 20;
   public static final int MAX_PAGE_SIZE = 100;
+
+  /** Whether {@code eventId} matches {@link #SAFE_EVENT_ID}. */
+  public static boolean isSafeEventId(String eventId) {
+    return eventId != null && SAFE_EVENT_ID.matcher(eventId).matches();
+  }
 }
