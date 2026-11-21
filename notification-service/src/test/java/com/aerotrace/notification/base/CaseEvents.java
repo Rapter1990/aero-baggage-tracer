@@ -14,6 +14,9 @@ public final class CaseEvents {
 
   public static final String EVENT_TYPE = "recovery.case.changed";
 
+  /** The correlation id every test event carries. */
+  public static final String CORRELATION_ID = "corr-test";
+
   private static final Instant AT = Instant.parse("2026-03-01T09:00:00Z");
 
   private CaseEvents() {}
@@ -24,6 +27,11 @@ public final class CaseEvents {
 
   public static String bagTag() {
     return String.format("%010d", ThreadLocalRandom.current().nextLong(10_000_000_000L));
+  }
+
+  /** A case id as the recovery-service writes it: a UUID (anything else is poison). */
+  public static String caseId() {
+    return UUID.randomUUID().toString();
   }
 
   /** A unique handler id, so tests that share one database never see each other's rows. */
@@ -54,7 +62,7 @@ public final class CaseEvents {
             caseId,
             AT,
             AT,
-            "corr-test",
+            CORRELATION_ID,
             new CaseChangedPayload(
                 caseId,
                 bagTag,
@@ -85,7 +93,7 @@ public final class CaseEvents {
             caseId,
             AT,
             AT,
-            "corr-test",
+            CORRELATION_ID,
             new CaseChangedPayload(
                 caseId,
                 bagTag,

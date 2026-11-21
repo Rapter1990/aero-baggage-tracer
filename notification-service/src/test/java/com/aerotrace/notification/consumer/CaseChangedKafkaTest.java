@@ -69,7 +69,7 @@ class CaseChangedKafkaTest extends AbstractNotificationTest {
   private static String event(String eventId, String handlerId) {
     return CaseEvents.event(
         eventId,
-        "case-" + UUID.randomUUID(),
+        CaseEvents.caseId(),
         CaseEvents.bagTag(),
         RecoveryState.OPEN,
         1,

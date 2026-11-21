@@ -24,7 +24,7 @@ public abstract class AbstractNotificationTest extends AbstractTestContainerConf
 
   @BeforeEach
   void cleanSlate() {
-    notifications.deleteAll();
+    notifications.deleteAllInBatch();
     provider.reset();
     clock.set(MutableClock.T0);
   }
@@ -38,10 +38,12 @@ public abstract class AbstractNotificationTest extends AbstractTestContainerConf
             recipient,
             eventId,
             template,
-            "case-" + id,
+            UUID.randomUUID(),
             CaseEvents.bagTag(),
             "OPEN",
             1L,
+            createdAt,
+            CaseEvents.CORRELATION_ID,
             createdAt);
     if (inserted != 1) {
       throw new IllegalStateException("the test row already existed");

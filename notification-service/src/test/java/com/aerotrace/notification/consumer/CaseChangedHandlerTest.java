@@ -44,7 +44,7 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
   void eventCreatesOneNotification() {
     String eventId = CaseEvents.eventId();
     String handlerId = CaseEvents.handler();
-    String caseId = "case-" + UUID.randomUUID();
+    String caseId = CaseEvents.caseId();
     String bag = CaseEvents.bagTag();
 
     CaseChangedHandler.Outcome outcome =
@@ -58,9 +58,9 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
             n -> {
               assertThat(n.getRecipient()).isEqualTo(handlerId);
               assertThat(n.getTemplate()).isEqualTo("CASE_OPENED");
-              assertThat(n.getCaseId()).isEqualTo(caseId);
+              assertThat(n.getCaseId()).isEqualTo(UUID.fromString(caseId));
               assertThat(n.getBagTag()).isEqualTo(bag);
-              assertThat(n.getCaseState()).isEqualTo(RecoveryState.OPEN);
+              assertThat(n.getState()).isEqualTo(RecoveryState.OPEN);
               assertThat(n.getCaseVersion()).isEqualTo(1);
               assertThat(n.getStatus()).isEqualTo(NotificationStatus.PENDING);
               assertThat(n.getAttempts()).isZero();
@@ -76,7 +76,7 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
     String json =
         CaseEvents.event(
             eventId,
-            "case-1",
+            CaseEvents.caseId(),
             CaseEvents.bagTag(),
             RecoveryState.RESERVED,
             3,
@@ -98,7 +98,7 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
     String json =
         CaseEvents.event(
             eventId,
-            "case-1",
+            CaseEvents.caseId(),
             CaseEvents.bagTag(),
             RecoveryState.OPEN,
             1,
@@ -124,7 +124,7 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
     String json =
         CaseEvents.event(
             eventId,
-            "case-1",
+            CaseEvents.caseId(),
             CaseEvents.bagTag(),
             RecoveryState.ASSESSING,
             2,
@@ -177,7 +177,7 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
           handler.handle(
               CaseEvents.event(
                   eventId,
-                  "case-1",
+                  CaseEvents.caseId(),
                   CaseEvents.bagTag(),
                   state,
                   1,
@@ -198,16 +198,17 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
   @DisplayName("BR-08 a replayed older version has its own event id and so its own notification")
   void replayedOlderVersionNotifiesAgain() {
     String handlerId = CaseEvents.handler();
+    String caseId = CaseEvents.caseId();
     String bag = CaseEvents.bagTag();
     String v1 = CaseEvents.eventId();
     String v2 = CaseEvents.eventId();
     String v1Replayed = CaseEvents.eventId();
-    handler.handle(CaseEvents.event(v1, "case-9", bag, RecoveryState.OPEN, 1, "r", handlerId));
-    handler.handle(CaseEvents.event(v2, "case-9", bag, RecoveryState.ASSESSING, 2, "r", handlerId));
+    handler.handle(CaseEvents.event(v1, caseId, bag, RecoveryState.OPEN, 1, "r", handlerId));
+    handler.handle(CaseEvents.event(v2, caseId, bag, RecoveryState.ASSESSING, 2, "r", handlerId));
 
     CaseChangedHandler.Outcome outcome =
         handler.handle(
-            CaseEvents.event(v1Replayed, "case-9", bag, RecoveryState.OPEN, 1, "r", handlerId));
+            CaseEvents.event(v1Replayed, caseId, bag, RecoveryState.OPEN, 1, "r", handlerId));
 
     // There is no ordering filter: the unique key is the only deduplication (ADR 0005, decision 2).
     assertThat(outcome).isEqualTo(CaseChangedHandler.Outcome.NOTIFICATION_CREATED);
@@ -222,9 +223,11 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
     String bag = CaseEvents.bagTag();
 
     handler.handle(
-        CaseEvents.event(eventId, "case-1", bag, RecoveryState.OPEN, 1, "r", "handler-one"));
+        CaseEvents.event(
+            eventId, CaseEvents.caseId(), bag, RecoveryState.OPEN, 1, "r", "handler-one"));
     handler.handle(
-        CaseEvents.event(eventId, "case-1", bag, RecoveryState.OPEN, 1, "r", "handler-two"));
+        CaseEvents.event(
+            eventId, CaseEvents.caseId(), bag, RecoveryState.OPEN, 1, "r", "handler-two"));
 
     assertThat(rowsOf(eventId))
         .extracting(NotificationEntity::getRecipient)
@@ -240,7 +243,8 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
 
     CaseChangedHandler.Outcome outcome =
         handler.handle(
-            CaseEvents.revision1(eventId, "case-1", CaseEvents.bagTag(), RecoveryState.OPEN, 1));
+            CaseEvents.revision1(
+                eventId, CaseEvents.caseId(), CaseEvents.bagTag(), RecoveryState.OPEN, 1));
 
     assertThat(outcome).isEqualTo(CaseChangedHandler.Outcome.NO_RECIPIENT);
     assertThat(rowsOf(eventId)).isEmpty();
@@ -254,7 +258,13 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
     CaseChangedHandler.Outcome outcome =
         handler.handle(
             CaseEvents.event(
-                eventId, "case-1", CaseEvents.bagTag(), RecoveryState.OPEN, 1, "reason", null));
+                eventId,
+                CaseEvents.caseId(),
+                CaseEvents.bagTag(),
+                RecoveryState.OPEN,
+                1,
+                "reason",
+                null));
 
     assertThat(outcome).isEqualTo(CaseChangedHandler.Outcome.NO_RECIPIENT);
     assertThat(rowsOf(eventId)).isEmpty();
@@ -274,7 +284,13 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
     String eventId = CaseEvents.eventId();
     String json =
         CaseEvents.event(
-                eventId, "case-1", CaseEvents.bagTag(), RecoveryState.OPEN, 1, "r", "handler-x")
+                eventId,
+                CaseEvents.caseId(),
+                CaseEvents.bagTag(),
+                RecoveryState.OPEN,
+                1,
+                "r",
+                "handler-x")
             .replace("\"eventId\":\"" + eventId + "\"", "\"eventId\":null");
 
     assertThatThrownBy(() -> handler.handle(json)).isInstanceOf(PoisonEventException.class);
@@ -287,7 +303,13 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
     String eventId = CaseEvents.eventId();
     String json =
         CaseEvents.event(
-                eventId, "case-1", CaseEvents.bagTag(), RecoveryState.OPEN, 1, "r", "handler-x")
+                eventId,
+                CaseEvents.caseId(),
+                CaseEvents.bagTag(),
+                RecoveryState.OPEN,
+                1,
+                "r",
+                "handler-x")
             .replace("\"state\":\"OPEN\"", "\"state\":\"TELEPORTED\"");
 
     assertThatThrownBy(() -> handler.handle(json))
@@ -302,7 +324,13 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
     String eventId = CaseEvents.eventId();
     String json =
         CaseEvents.event(
-                eventId, "case-1", CaseEvents.bagTag(), RecoveryState.OPEN, 1, "r", "handler-x")
+                eventId,
+                CaseEvents.caseId(),
+                CaseEvents.bagTag(),
+                RecoveryState.OPEN,
+                1,
+                "r",
+                "handler-x")
             .replace("recovery.case.changed", "baggage.risk.changed");
 
     assertThatThrownBy(() -> handler.handle(json)).isInstanceOf(PoisonEventException.class);
@@ -315,7 +343,7 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
     String json =
         CaseEvents.event(
                 CaseEvents.eventId(),
-                "case-1",
+                CaseEvents.caseId(),
                 CaseEvents.bagTag(),
                 RecoveryState.OPEN,
                 1,

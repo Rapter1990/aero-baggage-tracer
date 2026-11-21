@@ -33,7 +33,17 @@ class NotificationRepositoryTest extends AbstractNotificationTest {
 
   private int insert(String recipient, String eventId, String template) {
     return notifications.insertIfAbsent(
-        UUID.randomUUID(), recipient, eventId, template, "case-1", "0123456789", "OPEN", 1L, AT);
+        UUID.randomUUID(),
+        recipient,
+        eventId,
+        template,
+        UUID.randomUUID(),
+        "0123456789",
+        "OPEN",
+        1L,
+        AT,
+        "corr-test",
+        AT);
   }
 
   @Test

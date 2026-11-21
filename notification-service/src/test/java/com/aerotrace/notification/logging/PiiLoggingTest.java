@@ -64,7 +64,7 @@ class PiiLoggingTest extends AbstractNotificationTest {
     when(kafka.send(eq(Topics.DEAD_LETTER), anyString(), anyString()))
         .thenReturn(CompletableFuture.completedFuture(mock(SendResult.class)));
     String eventId = CaseEvents.eventId();
-    String caseId = "case-pii-check";
+    String caseId = CaseEvents.caseId();
     String json =
         CaseEvents.event(
             eventId, caseId, CaseEvents.bagTag(), RecoveryState.RESERVED, 2, REASON, RECIPIENT);
@@ -126,7 +126,7 @@ class PiiLoggingTest extends AbstractNotificationTest {
     handler.handle(
         CaseEvents.event(
             eventId,
-            "case-pii-store",
+            CaseEvents.caseId(),
             CaseEvents.bagTag(),
             RecoveryState.OPEN,
             1,
