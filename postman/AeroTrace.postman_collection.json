@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "AeroTrace",
-    "description": "The AeroTrace API through the api-gateway (default http://localhost:8080): the Identity Service (authentication), the Journey Service (bags, scans, journey), the Recovery Service (cases, moves, assignment, policy) the Capacity Service (resources, holds, confirmation, release) and the Search Service (bag search, airport report, index status, rebuild). Each service has its own folder; run a folder top to bottom with the runner. The gateway limits each address to about 10 requests per second (burst 20), so run with a delay of 150 ms or more between requests. Each folder signs in with the dev dummy accounts or the accounts the identity folder creates, so use the compose stack with the dev Liquibase context.",
+    "description": "The AeroTrace API through the api-gateway (default http://localhost:8080): the Identity Service (authentication), the Journey Service (bags, scans, journey), the Recovery Service (cases, moves, assignment, policy) the Capacity Service (resources, holds, confirmation, release) the Search Service (bag search, airport report, index status, rebuild) and the Notification Service (a handler's own notifications made from case events). Each service has its own folder; run a folder top to bottom with the runner. The gateway limits each address to about 10 requests per second (burst 20), so run with a delay of 150 ms or more between requests. Each folder signs in with the dev dummy accounts or the accounts the identity folder creates, so use the compose stack with the dev Liquibase context.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -9031,6 +9031,1233 @@
                     "v1",
                     "search",
                     "bags"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Notification Service",
+      "description": "The notification-service through the api-gateway: a handler's own in-app notifications, made from recovery case events. Folder 2 opens a case, moves it and assigns it to the agent through the recovery-service; the assignment event makes exactly one notification for the agent (the opening and the move have no handler, so they notify nobody). The notification is made asynchronously, so the reading requests wait about 2.5 seconds first. Everyone reads only their own notifications: another user gets an empty list and 404 for the id. Needs the compose stack with the recovery-service and the notification-service running and the dev Liquibase context (dummy accounts). Run with a delay of 150 ms or more between requests.",
+      "item": [
+        {
+          "name": "1 - Sign in",
+          "item": [
+            {
+              "name": "1.1 Sign in as the agent (the handler)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "function claims(token) {",
+                      "  const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                      "  return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4)));",
+                      "}",
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const result = pm.response.json().data;",
+                      "pm.environment.set('notificationAgentToken', result.accessToken);",
+                      "pm.environment.set('notificationAgentSubject', claims(result.accessToken).sub);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"usernameOrEmail\": \"{{notificationAgentUsername}}\",\n  \"password\": \"{{notificationPassword}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "1.2 Sign in as the dispatcher",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const result = pm.response.json().data;",
+                      "pm.environment.set('notificationDispatcherToken', result.accessToken);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"usernameOrEmail\": \"{{notificationDispatcherUsername}}\",\n  \"password\": \"{{notificationPassword}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "1.3 Sign in as the admin",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const result = pm.response.json().data;",
+                      "pm.environment.set('notificationAdminToken', result.accessToken);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"usernameOrEmail\": \"{{notificationAdminUsername}}\",\n  \"password\": \"{{notificationPassword}}\"\n}"
+                }
+              }
+            },
+            {
+              "name": "1.4 Sign in as the passenger",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const result = pm.response.json().data;",
+                      "pm.environment.set('notificationPassengerToken', result.accessToken);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "login"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"usernameOrEmail\": \"{{notificationPassengerUsername}}\",\n  \"password\": \"{{notificationPassword}}\"\n}"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "2 - Make a notification (recovery-service)",
+          "item": [
+            {
+              "name": "2.1 Open a case (agent): no handler yet, so no notification",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "let tag = '';",
+                      "for (let i = 0; i < 10; i++) { tag += Math.floor(Math.random() * 10); }",
+                      "pm.environment.set('notificationBagTag', tag);",
+                      "pm.environment.set('notificationLegId', 'LEG-2');",
+                      "pm.environment.set('notificationCreateKey', 'ncreate-' + Date.now() + '-' + Math.random().toString(36).slice(2));",
+                      "pm.environment.set('notificationMoveKey', 'nmove-' + Date.now() + '-' + Math.random().toString(36).slice(2));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('201', () => pm.response.to.have.status(201));",
+                      "const result = pm.response.json().data;",
+                      "pm.test('a new OPEN case at version 1', () => {",
+                      "  pm.expect(result.state).to.eql('OPEN');",
+                      "  pm.expect(result.version).to.eql(1);",
+                      "});",
+                      "pm.environment.set('notificationCaseId', result.caseId);",
+                      "pm.environment.set('notificationCaseVersion', result.version);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{notificationCreateKey}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/recovery-cases",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "recovery-cases"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{notificationAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"bagTag\": \"{{notificationBagTag}}\",\n  \"legId\": \"{{notificationLegId}}\",\n  \"reason\": \"HIGH_CONNECTION_RISK\"\n}"
+                }
+              }
+            },
+            {
+              "name": "2.2 Move to ASSESSING (dispatcher): still no handler",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const result = pm.response.json().data;",
+                      "pm.test('ASSESSING at version 2', () => {",
+                      "  pm.expect(result.state).to.eql('ASSESSING');",
+                      "  pm.expect(result.version).to.eql(2);",
+                      "});",
+                      "pm.environment.set('notificationCaseVersion', result.version);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{notificationMoveKey}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/recovery-cases/{{notificationCaseId}}/transitions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "recovery-cases",
+                    "{{notificationCaseId}}",
+                    "transitions"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{notificationDispatcherToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetState\": \"ASSESSING\",\n  \"expectedVersion\": {{notificationCaseVersion}},\n  \"reason\": \"Postman: moving to ASSESSING\"\n}"
+                }
+              }
+            },
+            {
+              "name": "2.3 Assign the case to the agent (dispatcher): this event notifies the agent",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const result = pm.response.json().data;",
+                      "pm.test('assigned to the agent, version 3', () => {",
+                      "  pm.expect(result.assignedTo).to.eql(pm.environment.get('notificationAgentSubject'));",
+                      "  pm.expect(result.version).to.eql(3);",
+                      "});",
+                      "pm.environment.set('notificationCaseVersion', result.version);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/recovery-cases/{{notificationCaseId}}/assignment",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "recovery-cases",
+                    "{{notificationCaseId}}",
+                    "assignment"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{notificationDispatcherToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"assignee\": \"{{notificationAgentSubject}}\",\n  \"expectedVersion\": {{notificationCaseVersion}}\n}"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "3 - Read my notifications (agent)",
+          "item": [
+            {
+              "name": "3.1 List my notifications: the case made exactly one",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "// The notification is made asynchronously from the case event: give the consumer and the dispatcher a moment.",
+                      "await new Promise(resolve => setTimeout(resolve, 2500));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const body = pm.response.json();",
+                      "pm.test('wrapped in the ApiResponse envelope with a page', () => {",
+                      "  pm.expect(body.success).to.eql(true);",
+                      "  pm.expect(body.data.items).to.be.an('array');",
+                      "  pm.expect(body.data).to.have.property('totalElements');",
+                      "  pm.expect(body.data.page).to.eql(0);",
+                      "  pm.expect(body.data.size).to.eql(100);",
+                      "});",
+                      "const mine = (pm.response.json().data.items || []).filter(n => n.caseId === pm.environment.get('notificationCaseId'));",
+                      "pm.test('one notification for the case, however often the event was published', () => pm.expect(mine.length).to.eql(1));",
+                      "const n = mine[0];",
+                      "pm.test('the assignment event: ASSESSING, version 3, template CASE_ASSESSING', () => {",
+                      "  pm.expect(n.state).to.eql('ASSESSING');",
+                      "  pm.expect(n.version).to.eql(3);",
+                      "  pm.expect(n.template).to.eql('CASE_ASSESSING');",
+                      "  pm.expect(n.bagTag).to.eql(pm.environment.get('notificationBagTag'));",
+                      "});",
+                      "pm.test('never the recipient, the case reason or delivery internals', () => {",
+                      "  ['recipient', 'reason', 'lastError', 'eventId', 'correlationId'].forEach(k => pm.expect(n).to.not.have.property(k));",
+                      "});",
+                      "pm.test('newest first', () => {",
+                      "  const times = body.data.items.map(i => Date.parse(i.createdAt));",
+                      "  for (let i = 1; i < times.length; i++) pm.expect(times[i - 1]).to.be.at.least(times[i]);",
+                      "});",
+                      "pm.environment.set('notificationId', n.id);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications?page=0&size=100",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "0"
+                    },
+                    {
+                      "key": "size",
+                      "value": "100"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{notificationAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "3.2 Read it by id",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const n = pm.response.json().data;",
+                      "pm.test('the same notification', () => {",
+                      "  pm.expect(n.id).to.eql(pm.environment.get('notificationId'));",
+                      "  pm.expect(n.caseId).to.eql(pm.environment.get('notificationCaseId'));",
+                      "});",
+                      "pm.test('the delivery status is PENDING or SENT (mock provider, so SENT within a second or two)', () => {",
+                      "  pm.expect(['PENDING', 'SENT']).to.include(n.status);",
+                      "  pm.expect(n.attempts).to.be.at.least(0);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications/{{notificationId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications",
+                    "{{notificationId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{notificationAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "3.3 Page size 1 returns one item",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const d = pm.response.json().data;",
+                      "pm.test('a page of at most one', () => {",
+                      "  pm.expect(d.size).to.eql(1);",
+                      "  pm.expect(d.items.length).to.be.at.most(1);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications?page=0&size=1",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "0"
+                    },
+                    {
+                      "key": "size",
+                      "value": "1"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{notificationAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "3.4 A page past the end is empty, not an error",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.test('no items', () => pm.expect(pm.response.json().data.items).to.eql([]));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications?page=100000&size=20",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "100000"
+                    },
+                    {
+                      "key": "size",
+                      "value": "20"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{notificationAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "4 - Nobody else sees it",
+          "item": [
+            {
+              "name": "4.1 The dispatcher's list does not hold the agent's notification",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const mine = (pm.response.json().data.items || []).filter(n => n.caseId === pm.environment.get('notificationCaseId'));",
+                      "pm.test('not in the dispatcher\\'s list', () => pm.expect(mine.length).to.eql(0));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications?page=0&size=100",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "0"
+                    },
+                    {
+                      "key": "size",
+                      "value": "100"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{notificationDispatcherToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "4.2 The dispatcher reads the agent's id (404, never 403)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('404', () => pm.response.to.have.status(404));",
+                      "const body = pm.response.json();",
+                      "pm.test('NOT_FOUND in the ApiError shape', () => {",
+                      "  pm.expect(body.code).to.eql('NOT_FOUND');",
+                      "  pm.expect(body.status).to.eql(404);",
+                      "  pm.expect(body.correlationId).to.be.a('string');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications/{{notificationId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications",
+                    "{{notificationId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{notificationDispatcherToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "4.3 The admin reads the agent's id (404: no role reads another user's notification)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('404', () => pm.response.to.have.status(404));",
+                      "const body = pm.response.json();",
+                      "pm.test('NOT_FOUND in the ApiError shape', () => {",
+                      "  pm.expect(body.code).to.eql('NOT_FOUND');",
+                      "  pm.expect(body.status).to.eql(404);",
+                      "  pm.expect(body.correlationId).to.be.a('string');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications/{{notificationId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications",
+                    "{{notificationId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{notificationAdminToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "4.4 The passenger's list does not hold it (a passenger has no handler notifications)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "const mine = (pm.response.json().data.items || []).filter(n => n.caseId === pm.environment.get('notificationCaseId'));",
+                      "pm.test('not in the passenger\\'s list', () => pm.expect(mine.length).to.eql(0));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications?page=0&size=100",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "0"
+                    },
+                    {
+                      "key": "size",
+                      "value": "100"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{notificationPassengerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "4.5 An unknown id answers the same 404",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('404', () => pm.response.to.have.status(404));",
+                      "const body = pm.response.json();",
+                      "pm.test('NOT_FOUND in the ApiError shape', () => {",
+                      "  pm.expect(body.code).to.eql('NOT_FOUND');",
+                      "  pm.expect(body.status).to.eql(404);",
+                      "  pm.expect(body.correlationId).to.be.a('string');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications/00000000-0000-4000-8000-0000000000ff",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications",
+                    "00000000-0000-4000-8000-0000000000ff"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{notificationAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "5 - Refused calls",
+          "item": [
+            {
+              "name": "5.1 List without a token (401)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('401', () => pm.response.to.have.status(401));",
+                      "const body = pm.response.json();",
+                      "pm.test('UNAUTHENTICATED in the ApiError shape', () => {",
+                      "  pm.expect(body.code).to.eql('UNAUTHENTICATED');",
+                      "  pm.expect(body.status).to.eql(401);",
+                      "  pm.expect(body.correlationId).to.be.a('string');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            },
+            {
+              "name": "5.2 Read an id without a token (401)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('401', () => pm.response.to.have.status(401));",
+                      "const body = pm.response.json();",
+                      "pm.test('UNAUTHENTICATED in the ApiError shape', () => {",
+                      "  pm.expect(body.code).to.eql('UNAUTHENTICATED');",
+                      "  pm.expect(body.status).to.eql(401);",
+                      "  pm.expect(body.correlationId).to.be.a('string');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications/{{notificationId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications",
+                    "{{notificationId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            },
+            {
+              "name": "5.3 Size 0 (400: refused, not clamped)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('400', () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test('VALIDATION_ERROR in the ApiError shape', () => {",
+                      "  pm.expect(body.code).to.eql('VALIDATION_ERROR');",
+                      "  pm.expect(body.status).to.eql(400);",
+                      "  pm.expect(body.correlationId).to.be.a('string');",
+                      "});",
+                      "pm.test('names the size', () => pm.expect(body.validationErrors).to.have.property('size'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications?size=0",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications"
+                  ],
+                  "query": [
+                    {
+                      "key": "size",
+                      "value": "0"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{notificationAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "5.4 Size 101 (400)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('400', () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test('VALIDATION_ERROR in the ApiError shape', () => {",
+                      "  pm.expect(body.code).to.eql('VALIDATION_ERROR');",
+                      "  pm.expect(body.status).to.eql(400);",
+                      "  pm.expect(body.correlationId).to.be.a('string');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications?size=101",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications"
+                  ],
+                  "query": [
+                    {
+                      "key": "size",
+                      "value": "101"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{notificationAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "5.5 Page -1 (400)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('400', () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test('VALIDATION_ERROR in the ApiError shape', () => {",
+                      "  pm.expect(body.code).to.eql('VALIDATION_ERROR');",
+                      "  pm.expect(body.status).to.eql(400);",
+                      "  pm.expect(body.correlationId).to.be.a('string');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications?page=-1",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "-1"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{notificationAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "5.6 An id that is not a UUID (400)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('400', () => pm.response.to.have.status(400));",
+                      "const body = pm.response.json();",
+                      "pm.test('VALIDATION_ERROR in the ApiError shape', () => {",
+                      "  pm.expect(body.code).to.eql('VALIDATION_ERROR');",
+                      "  pm.expect(body.status).to.eql(400);",
+                      "  pm.expect(body.correlationId).to.be.a('string');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/notifications/not-a-uuid",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "notifications",
+                    "not-a-uuid"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{notificationAgentToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "6 - Service checks (direct, port 1118)",
+          "item": [
+            {
+              "name": "6.1 Health",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.test('UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{notificationUrl}}/actuator/health",
+                  "host": [
+                    "{{notificationUrl}}"
+                  ],
+                  "path": [
+                    "actuator",
+                    "health"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            },
+            {
+              "name": "6.2 OpenAPI definition",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', () => pm.response.to.have.status(200));",
+                      "pm.test('describes the notification paths', () => {",
+                      "  const paths = Object.keys(pm.response.json().paths);",
+                      "  pm.expect(paths.some(p => p.startsWith('/api/v1/notifications'))).to.eql(true);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{notificationUrl}}/v3/api-docs",
+                  "host": [
+                    "{{notificationUrl}}"
+                  ],
+                  "path": [
+                    "v3",
+                    "api-docs"
                   ]
                 },
                 "auth": {

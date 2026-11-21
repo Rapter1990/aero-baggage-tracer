@@ -16,6 +16,7 @@ Turns `recovery.case.changed.v1` into in-app notifications for the case's assign
 | [Errors](#errors) | Status and code per case |
 | [Examples](#examples) | Request and answer samples, also the OpenAPI examples |
 | [Events](#events) | The event it reads and the dead letter it publishes |
+| [Every request in the Postman collection](#every-request-in-the-postman-collection) | The Notification folder |
 | [Known limitations](#known-limitations) | What is not done yet |
 
 ## At a glance
@@ -295,6 +296,21 @@ After the last delivery attempt (default 5, see `aerotrace.notification.delivery
 ```
 
 The message is published at least once: `dead_lettered_at` is set only after Kafka acknowledges, so a failed publish is retried, and a database error right after the acknowledgement publishes it again. A consumer of the dead-letter topic must deduplicate by `originalEventId`.
+
+## Every request in the Postman collection
+
+Folder **Notification Service**, run top to bottom with the dev dummy accounts, with the recovery-service and the notification-service running. A notification is made asynchronously from the case event, so the reading requests of folder 3 wait about 2.5 seconds first.
+
+| Folder | Request | Expect |
+|---|---|---|
+| 1 Sign in | Agent (the handler), dispatcher, admin, passenger | `200`, tokens and the agent's subject stored |
+| 2 Make a notification | Open a case; move it to `ASSESSING`; assign it to the agent | `201`, `200`, `200`. Only the assignment event notifies (the first two have no handler) |
+| 3 Read my notifications (agent) | List; read by id; `size=1`; a page past the end | `200` with exactly one notification for the case (`CASE_ASSESSING`, version 3, no recipient or reason), `200` `PENDING` or `SENT`, `200`, `200` empty |
+| 4 Nobody else sees it | Dispatcher list; dispatcher by id; admin by id; passenger list; an unknown id | `200` without it, `404`, `404`, `200` without it, `404` |
+| 5 Refused calls | No token (list, by id); `size=0`; `size=101`; `page=-1`; id not a UUID | `401`, `401`, `400`, `400`, `400`, `400` |
+| 6 Service checks (port 1118) | Health; OpenAPI | `200` `UP`, `200` |
+
+Variables: `notificationUrl` (`http://localhost:1118`), `notificationAgentUsername`, `notificationDispatcherUsername`, `notificationAdminUsername`, `notificationPassengerUsername`, `notificationPassword` (the dev accounts); the scripts fill the four tokens, `notificationAgentSubject`, `notificationBagTag`, `notificationLegId`, `notificationCaseId`, `notificationCaseVersion`, `notificationCreateKey`, `notificationMoveKey` and `notificationId`.
 
 ## Known limitations
 
