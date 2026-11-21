@@ -9,8 +9,9 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *
  * @param consumers how {@code recovery.case.changed.v1} is read
  * @param delivery how notifications are sent and retried
- * @param retention how long a finished notification is kept; longer than the topic (7 days) and
- *     dead-letter topic (30 days) retention, because purging removes the dedupe key
+ * @param retention how long a finished notification is kept; it must be longer than the dead-letter
+ *     topic's 30 days (and so the case topic's 7), because purging removes the dedupe key: a
+ *     shorter one is refused at start-up
  * @param purge how the retention purge runs
  * @param docs whether the OpenAPI definition is served
  * @param jwt how tokens are verified
@@ -23,6 +24,17 @@ public record NotificationProperties(
     @DefaultValue Purge purge,
     @DefaultValue Docs docs,
     @DefaultValue Jwt jwt) {
+
+  /** The dead-letter topic's retention, the longest of the topics this service reads or writes. */
+  public static final Duration DEAD_LETTER_TOPIC_RETENTION = Duration.ofDays(30);
+
+  public NotificationProperties {
+    if (retention == null || retention.compareTo(DEAD_LETTER_TOPIC_RETENTION) <= 0) {
+      throw new IllegalArgumentException(
+          "aerotrace.notification.retention must be longer than the dead-letter topic's 30 days:"
+              + " purging removes the dedupe key");
+    }
+  }
 
   /**
    * The case-changed consumer. A transient failure is retried with a doubling wait; the defaults (6
@@ -90,8 +102,21 @@ public record NotificationProperties(
    *
    * @param delay how often it runs
    * @param batchSize rows deleted per statement, so one run never holds a long lock
+   * @param maxBatches statements per run at most; the rest waits for the next run, so a large
+   *     backlog never turns one run into hours of deletes
    */
-  public record Purge(@DefaultValue("1h") Duration delay, @DefaultValue("500") int batchSize) {}
+  public record Purge(
+      @DefaultValue("1h") Duration delay,
+      @DefaultValue("500") int batchSize,
+      @DefaultValue("1000") int maxBatches) {
+
+    public Purge {
+      if (batchSize < 1 || maxBatches < 1) {
+        throw new IllegalArgumentException(
+            "aerotrace.notification.purge.batch-size and max-batches must be >= 1");
+      }
+    }
+  }
 
   /** Whether {@code /v3/api-docs} is served. */
   public record Docs(@DefaultValue("true") boolean enabled) {}

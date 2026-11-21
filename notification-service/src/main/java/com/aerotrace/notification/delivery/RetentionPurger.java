@@ -38,16 +38,25 @@ public class RetentionPurger {
   }
 
   /**
+   * Deletes batch after batch until one is not full, or {@code purge.max-batches} ran.
+   *
    * @return how many rows were deleted
    */
   public int purge() {
     int batch = properties.purge().batchSize();
+    int maxBatches = properties.purge().maxBatches();
     int total = 0;
     int deleted;
+    int batches = 0;
     do {
       deleted = deliveries.purgeFinished(properties.retention(), batch);
       total += deleted;
-    } while (deleted == batch);
+      batches++;
+    } while (deleted == batch && batches < maxBatches);
+    if (deleted == batch) {
+      LOG.info(
+          "Retention purge stopped after {} batches; the rest waits for the next run", batches);
+    }
     if (total > 0) {
       LOG.info("Purged {} finished notifications older than {}", total, properties.retention());
     }

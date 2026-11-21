@@ -50,4 +50,34 @@ class StartupChecksTest {
             "aerotrace.notification.jwt.public-key=-----BEGIN PUBLIC KEY-----x-----END PUBLIC KEY-----")
         .run(context -> assertThat(context).hasNotFailed());
   }
+
+  @Test
+  @DisplayName(
+      "BR-08 a retention not longer than the dead-letter topic's 30 days is refused at start-up")
+  void retentionMustOutlastTheDeadLetterTopic() {
+    // Purging removes the dedupe key: a replay from the topics after it would notify again.
+    runner
+        .withPropertyValues(DEV_KEY, "aerotrace.notification.retention=30d")
+        .run(
+            context -> {
+              assertThat(context).hasFailed();
+              assertThat(context.getStartupFailure())
+                  .rootCause()
+                  .hasMessageContaining("aerotrace.notification.retention");
+            });
+    runner
+        .withPropertyValues(DEV_KEY, "aerotrace.notification.retention=31d")
+        .run(context -> assertThat(context).hasNotFailed());
+  }
+
+  @Test
+  @DisplayName("the purge needs at least one batch per run")
+  void purgeLimitsMustBePositive() {
+    runner
+        .withPropertyValues(DEV_KEY, "aerotrace.notification.purge.max-batches=0")
+        .run(context -> assertThat(context).hasFailed());
+    runner
+        .withPropertyValues(DEV_KEY, "aerotrace.notification.purge.batch-size=0")
+        .run(context -> assertThat(context).hasFailed());
+  }
 }

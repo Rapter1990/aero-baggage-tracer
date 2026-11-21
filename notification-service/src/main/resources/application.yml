@@ -92,12 +92,15 @@ aerotrace:
       lease: ${NOTIFICATION_DELIVERY_LEASE:60s}
       provider-timeout: ${NOTIFICATION_PROVIDER_TIMEOUT:10s}
       dead-letter-timeout: ${NOTIFICATION_DEAD_LETTER_TIMEOUT:10s}
-    # Finished rows (SENT, or FAILED and dead-lettered) older than this are deleted. Keep it longer
-    # than the topic retention (7 d) and the dead-letter topic's (30 d): purging removes the dedupe key.
+    # Finished rows (SENT, or FAILED and dead-lettered) older than this are deleted. It must be longer
+    # than the dead-letter topic's retention (30 d; the case topic keeps 7 d): purging removes the
+    # dedupe key. A shorter one is refused at start-up.
     retention: ${NOTIFICATION_RETENTION:90d}
     purge:
       delay: ${NOTIFICATION_PURGE_DELAY:1h}
       batch-size: ${NOTIFICATION_PURGE_BATCH_SIZE:500}
+      # Statements per run at most (500 x 1000 = 500,000 rows); the rest waits for the next run.
+      max-batches: ${NOTIFICATION_PURGE_MAX_BATCHES:1000}
     docs:
       enabled: ${DOCS_ENABLED:true}
     jwt:
