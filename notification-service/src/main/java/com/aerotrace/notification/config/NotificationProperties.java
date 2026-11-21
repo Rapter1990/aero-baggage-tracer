@@ -96,18 +96,21 @@ public record NotificationProperties(
   /** Whether {@code /v3/api-docs} is served. */
   public record Docs(@DefaultValue("true") boolean enabled) {}
 
-  /** Token verification: the identity-service public key (inline or location) and audience. */
+  /**
+   * Token verification: the identity-service public key (inline or location) and audience. One of
+   * the two key settings is required: the service never falls back to the development key pair (its
+   * private key is in the repository), so a deployment that forgot the key does not start.
+   */
   public record Jwt(
       @DefaultValue("aerotrace-api") String audience, String publicKey, String publicKeyLocation) {
-
-    /** The development public key that ships with the service, used when nothing is configured. */
-    public static final String DEFAULT_PUBLIC_KEY_LOCATION = "classpath:keys/public.pem";
 
     public Jwt {
       // An empty setting (an unset environment variable in a compose file) counts as not set.
       if ((publicKey == null || publicKey.isBlank())
           && (publicKeyLocation == null || publicKeyLocation.isBlank())) {
-        publicKeyLocation = DEFAULT_PUBLIC_KEY_LOCATION;
+        throw new IllegalStateException(
+            "No identity public key configured: set IDENTITY_JWT_PUBLIC_KEY or"
+                + " IDENTITY_JWT_PUBLIC_KEY_LOCATION");
       }
     }
   }

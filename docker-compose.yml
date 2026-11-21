@@ -500,8 +500,10 @@ services:
       DB_USER: ${POSTGRES_USER:-aerotrace}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      # Empty: the identity-service development public key bundled in the image is used.
-      IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-}
+      # The identity-service public key. The service refuses to start without one; this
+      # development stack names, explicitly, the development key bundled in the image (the pair
+      # identity-service signs with here). Set your own key pair wherever tokens matter.
+      IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-classpath:keys/public.pem}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}

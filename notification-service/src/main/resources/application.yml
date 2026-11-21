@@ -102,8 +102,9 @@ aerotrace:
       enabled: ${DOCS_ENABLED:true}
     jwt:
       audience: ${IDENTITY_AUDIENCE:aerotrace-api}
-      # The identity-service public key (PEM), inline or from a location. With nothing set, the
-      # development key bundled in src/main/resources/keys is used.
+      # The identity-service public key (PEM), inline or from a location. No default: the service
+      # refuses to start without one. The development key bundled in src/main/resources/keys is
+      # only used where it is named explicitly (classpath:keys/public.pem), as Compose does.
       public-key: ${IDENTITY_JWT_PUBLIC_KEY:}
       public-key-location: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:}
 
