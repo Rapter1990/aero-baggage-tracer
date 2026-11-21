@@ -26,6 +26,7 @@ Turns `recovery.case.changed.v1` into in-app notifications for the case's assign
 | Directly | `http://localhost:1118` |
 | Database | PostgreSQL, schema `notification` |
 | Token | Bearer token from [Identity Service](IDENTITY-API.md) |
+| Verification key | The identity public key, `IDENTITY_JWT_PUBLIC_KEY` or `IDENTITY_JWT_PUBLIC_KEY_LOCATION`. Required: the service does not start without one (Compose names the bundled development key) |
 | Headers | `Authorization: Bearer ...`; `X-Correlation-Id` on every call (generated and returned if missing). Both reads are safe, so `Idempotency-Key` is not used |
 | Success answer | `{"success":true,"data":...,"timestamp":...}` |
 | Errors | Shared shape, see [response format](../../README.md#api-response-format) |
@@ -88,7 +89,8 @@ A page past the end is `200` with empty `items`, not an error.
 | One notification per event | The key is `(recipient, eventId, template)`. A repeated event, or a delivery retry, never makes a second one |
 | Replays | A replayed older case version makes its own notification; there is no ordering filter |
 | Delivery retry | The same row is updated: `attempts` rises, `status` stays `PENDING`, until `SENT` or, after 5 tries, `FAILED` |
-| Retention | 90 days (`aerotrace.notification.retention`). A scheduled purge deletes only finished rows (`SENT`, or `FAILED` once its dead letter is acknowledged) in bounded batches. Purging removes the dedupe key, so a replay older than the retention would notify again |
+| Retention | 90 days (`aerotrace.notification.retention`). A scheduled purge deletes only finished rows (`SENT`, or `FAILED` once its dead letter is acknowledged), oldest first, in bounded batches and at most `purge.max-batches` per run. Purging removes the dedupe key, so a replay older than the retention would notify again; a retention of 30 days or less (the dead-letter topic's) is refused at start-up |
+| Times | `createdAt`, `sentAt` and every delivery time are the database's clock, not a service replica's |
 
 ## Errors
 
@@ -244,9 +246,10 @@ The payload is `CaseChangedPayload` in `common-module`; the full field list and 
 | Case | Handling |
 |---|---|
 | Same `eventId` twice (outbox at-least-once) | One notification: the unique key and `INSERT ... ON CONFLICT DO NOTHING` |
-| Transient failure (database, broker) | Retried with exponential backoff, then dead-lettered |
+| Transient failure (database, broker) | Retried with exponential backoff, then dead-lettered. `reason` is the failure class, `attempts` is the configured retry attempts (default 6) |
 | A `state` this version does not know | Not an error: notified with template `CASE_UPDATED` and counted as `unknown_state` |
-| No `eventId`, unparsable body, non-UUID `caseId`, `assignedTo` over 100 characters, missing or over-long `bagTag`, negative `version`, wrong event type, no payload | Dead-lettered at once, no retry. `reason` is the failure class, `attempts` is 1 |
+| No `eventId`, an `eventId` outside `[A-Za-z0-9._:-]{1,100}` (for example with CR/LF), unparsable body, non-UUID `caseId`, `assignedTo` over 100 characters, missing or over-long `bagTag`, negative `version`, wrong event type, no payload | Dead-lettered at once, no retry. `reason` names the broken rule, `attempts` is 1 |
+| Dead letter of an event | Keyed by the `eventId` when it is safe, else by topic, partition and offset. `rawPayload` is a copy of the event **without any `reason` field**; unreadable text that mentions a reason is not copied (`null`), other unreadable text is cut to 16 KiB |
 | Offset | Committed only after the database transaction commits |
 
 Logs carry only `caseId`, `eventId` and `template`; the recipient and `reason` are never logged.
@@ -291,7 +294,7 @@ After the last delivery attempt (default 5, see `aerotrace.notification.delivery
 }
 ```
 
-The message is published at least once: `dead_lettered_at` is set only after Kafka acknowledges, so a failed publish is retried and a consumer of the dead-letter topic must deduplicate by `originalEventId`.
+The message is published at least once: `dead_lettered_at` is set only after Kafka acknowledges, so a failed publish is retried, and a database error right after the acknowledgement publishes it again. A consumer of the dead-letter topic must deduplicate by `originalEventId`.
 
 ## Known limitations
 
