@@ -1,6 +1,7 @@
 package com.aerotrace.notification.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.aerotrace.notification.base.AbstractNotificationTest;
 import com.aerotrace.notification.model.entity.NotificationEntity;
@@ -17,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -126,5 +128,74 @@ class NotificationRepositoryTest extends AbstractNotificationTest {
     assertThat(stored.getCreatedAt()).isEqualTo(stored.getNextAttemptAt());
     assertThat(stored.getDeadLetteredAt()).isNull();
     assertThat(stored.getSentAt()).isNull();
+  }
+
+  // ------------------------------------------------------------------ schema guards
+
+  private UUID pending() {
+    insert("handler-guard", "EV-GUARD-" + UUID.randomUUID(), "CASE_OPENED");
+    return notifications.findAll().stream()
+        .filter(n -> n.getRecipient().equals("handler-guard"))
+        .findFirst()
+        .orElseThrow()
+        .getId();
+  }
+
+  private int update(String set, UUID id) {
+    return jdbc.update(
+        "update notification.notification set " + set + ", version = version + 1 where id = ?", id);
+  }
+
+  @Test
+  @DisplayName(
+      "BR-08 the schema refuses SENT without sent_at, and sent_at on a row that is not SENT")
+  void sentAtMatchesStatus() {
+    UUID id = pending();
+
+    assertThatThrownBy(() -> update("status = 'SENT'", id))
+        .isInstanceOf(DataIntegrityViolationException.class);
+    assertThatThrownBy(() -> update("sent_at = now()", id))
+        .isInstanceOf(DataIntegrityViolationException.class);
+    assertThat(update("status = 'SENT', sent_at = now()", id)).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
+      "BR-08 the schema refuses FAILED without failed_at, and failed_at on a row that is not FAILED")
+  void failedAtMatchesStatus() {
+    UUID id = pending();
+
+    assertThatThrownBy(() -> update("status = 'FAILED'", id))
+        .isInstanceOf(DataIntegrityViolationException.class);
+    assertThatThrownBy(() -> update("failed_at = now()", id))
+        .isInstanceOf(DataIntegrityViolationException.class);
+    assertThat(update("status = 'FAILED', failed_at = now()", id)).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("BR-08 a native update that does not raise the version by one is refused")
+  void updateWithoutVersionIncrementIsRefused() {
+    UUID id = pending();
+
+    // The guarded finish relies on every writer raising the version: one that forgets would let a
+    // replica whose lease was taken over record its stale result.
+    assertThatThrownBy(
+            () ->
+                jdbc.update(
+                    "update notification.notification set attempts = attempts + 1 where id = ?",
+                    id))
+        .isInstanceOf(DataIntegrityViolationException.class);
+    assertThatThrownBy(
+            () ->
+                jdbc.update(
+                    "update notification.notification set version = version + 2 where id = ?", id))
+        .isInstanceOf(DataIntegrityViolationException.class);
+    assertThat(
+            jdbc.update(
+                "update notification.notification set attempts = attempts + 1,"
+                    + " version = version + 1 where id = ?",
+                id))
+        .isEqualTo(1);
+    assertThat(row(id).getVersion()).isEqualTo(1);
   }
 }

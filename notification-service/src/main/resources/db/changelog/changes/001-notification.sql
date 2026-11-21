@@ -40,8 +40,10 @@ CREATE TABLE notification.notification (
     CONSTRAINT ck_notification_attempts CHECK (attempts >= 0),
     CONSTRAINT ck_notification_case_version CHECK (case_version >= 0),
     CONSTRAINT ck_notification_version CHECK (version >= 0),
-    CONSTRAINT ck_notification_sent_at CHECK (sent_at IS NULL OR status = 'SENT'),
-    CONSTRAINT ck_notification_failed_at CHECK (failed_at IS NULL OR status = 'FAILED'),
+    -- sent_at is set exactly when the row is SENT, failed_at exactly when it is FAILED (the finish
+    -- and the LEASE_EXPIRED sweep both set failed_at).
+    CONSTRAINT ck_notification_sent_at CHECK ((status = 'SENT') = (sent_at IS NOT NULL)),
+    CONSTRAINT ck_notification_failed_at CHECK ((status = 'FAILED') = (failed_at IS NOT NULL)),
     CONSTRAINT ck_notification_dead_lettered_at CHECK (dead_lettered_at IS NULL OR status = 'FAILED')
 );
 
@@ -59,3 +61,23 @@ CREATE INDEX ix_notification_undelivered_dead_letter ON notification.notificatio
 CREATE INDEX ix_notification_purge ON notification.notification (created_at)
     WHERE status = 'SENT' OR (status = 'FAILED' AND dead_lettered_at IS NOT NULL);
 --rollback DROP TABLE notification.notification;
+
+--changeset notification:001-notification-version-guard splitStatements:false
+-- Every update must raise version by exactly one: the guarded finish (WHERE version = :claimed)
+-- only drops a stale result if every writer, including a hand-written fix, raises it.
+CREATE FUNCTION notification.notification_version_guard() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.version IS DISTINCT FROM OLD.version + 1 THEN
+        RAISE EXCEPTION 'notification.notification: an update must set version = version + 1'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_notification_version_guard
+    BEFORE UPDATE ON notification.notification
+    FOR EACH ROW EXECUTE FUNCTION notification.notification_version_guard();
+--rollback DROP TRIGGER trg_notification_version_guard ON notification.notification;
+--rollback DROP FUNCTION notification.notification_version_guard();
