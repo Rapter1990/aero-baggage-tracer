@@ -298,9 +298,11 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
   }
 
   @Test
-  @DisplayName("BR-08 an event in a state this service does not know is poison")
-  void unknownStateIsPoison() {
+  @DisplayName(
+      "BR-08 an event in a state this service does not know notifies with CASE_UPDATED, not poison")
+  void unknownStateNotifiesWithCaseUpdated() {
     String eventId = CaseEvents.eventId();
+    String handlerId = CaseEvents.handler();
     String json =
         CaseEvents.event(
                 eventId,
@@ -309,13 +311,93 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
                 RecoveryState.OPEN,
                 1,
                 "r",
-                "handler-x")
+                handlerId)
             .replace("\"state\":\"OPEN\"", "\"state\":\"TELEPORTED\"");
+
+    // ADR 0005, decision 2: a constant a newer producer added reads as null and is not poison.
+    CaseChangedHandler.Outcome outcome = handler.handle(json);
+
+    assertThat(outcome).isEqualTo(CaseChangedHandler.Outcome.NOTIFICATION_CREATED);
+    assertThat(rowsOf(eventId))
+        .singleElement()
+        .satisfies(
+            n -> {
+              assertThat(n.getTemplate()).isEqualTo(TemplateSelector.CASE_UPDATED);
+              assertThat(n.getState()).isNull();
+              assertThat(n.getRecipient()).isEqualTo(handlerId);
+            });
+  }
+
+  @Test
+  @DisplayName("BR-08 a higher schema revision is accepted (revisions are additive)")
+  void higherSchemaRevisionIsAccepted() {
+    String eventId = CaseEvents.eventId();
+    String json =
+        CaseEvents.write(
+                eventId,
+                3,
+                CaseEvents.caseId(),
+                CaseEvents.bagTag(),
+                RecoveryState.RESERVED,
+                4,
+                "r",
+                CaseEvents.handler())
+            .replace("\"assignedTo\"", "\"changeKind\":\"ASSIGNED\",\"assignedTo\"");
+
+    assertThat(handler.handle(json)).isEqualTo(CaseChangedHandler.Outcome.NOTIFICATION_CREATED);
+    assertThat(rowsOf(eventId)).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("BR-08 an event whose caseId is not a UUID is poison")
+  void nonUuidCaseIdIsPoison() {
+    String eventId = CaseEvents.eventId();
+    String json =
+        CaseEvents.event(
+            eventId, "case-1", CaseEvents.bagTag(), RecoveryState.OPEN, 1, "r", "handler-x");
 
     assertThatThrownBy(() -> handler.handle(json))
         .isInstanceOf(PoisonEventException.class)
-        .satisfies(e -> assertThat(e.getMessage()).doesNotContain("handler-x", "TELEPORTED"));
-    assertThat(notifications.count()).isZero();
+        .satisfies(e -> assertThat(e.getMessage()).doesNotContain("handler-x", "case-1"));
+    assertThat(rowsOf(eventId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("BR-08 an assignedTo longer than 100 characters is poison, refused without retry")
+  void overlongAssignedToIsPoison() {
+    String eventId = CaseEvents.eventId();
+    String tooLong = "h".repeat(101);
+    String json =
+        CaseEvents.event(
+            eventId, CaseEvents.caseId(), CaseEvents.bagTag(), RecoveryState.OPEN, 1, "r", tooLong);
+
+    assertThatThrownBy(() -> handler.handle(json))
+        .isInstanceOf(PoisonEventException.class)
+        .satisfies(e -> assertThat(e.getMessage()).doesNotContain(tooLong));
+    assertThat(rowsOf(eventId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("BR-08 the notification keeps the event's occurredAt and correlation id")
+  void rowKeepsOccurredAtAndCorrelationId() {
+    String eventId = CaseEvents.eventId();
+    handler.handle(
+        CaseEvents.event(
+            eventId,
+            CaseEvents.caseId(),
+            CaseEvents.bagTag(),
+            RecoveryState.OPEN,
+            1,
+            "r",
+            CaseEvents.handler()));
+
+    assertThat(rowsOf(eventId))
+        .singleElement()
+        .satisfies(
+            n -> {
+              assertThat(n.getCorrelationId()).isEqualTo(CaseEvents.CORRELATION_ID);
+              assertThat(n.getOccurredAt()).isEqualTo(CaseEvents.OCCURRED_AT);
+            });
   }
 
   @Test

@@ -1,7 +1,6 @@
 package com.aerotrace.notification.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.aerotrace.common.model.RecoveryState;
 import java.util.Arrays;
@@ -46,8 +45,10 @@ class TemplateSelectorTest {
   }
 
   @Test
-  @DisplayName("BR-08 a missing state (an enum value added later reads as null) is refused")
-  void unknownStateIsRefused() {
-    assertThatThrownBy(() -> selector.select(null)).isInstanceOf(IllegalArgumentException.class);
+  @DisplayName(
+      "BR-08 a missing state (an enum value added later reads as null) maps to CASE_UPDATED")
+  void unknownStateMapsToCaseUpdated() {
+    assertThat(selector.select(null)).isEqualTo(TemplateSelector.CASE_UPDATED);
+    assertThat(EXPECTED.values()).doesNotContain(TemplateSelector.CASE_UPDATED);
   }
 }

@@ -145,12 +145,19 @@ class CaseChangedKafkaTest extends AbstractNotificationTest {
   // ------------------------------------------------------------------ poison
 
   @Test
-  @DisplayName("BR-08 an event in an unknown state is dead-lettered at once, without a retry")
-  void unknownStateIsDeadLetteredAtOnce() throws Exception {
+  @DisplayName(
+      "BR-08 an event whose caseId is not a UUID is dead-lettered at once, without a retry")
+  void nonUuidCaseIdIsDeadLetteredAtOnce() throws Exception {
     String eventId = CaseEvents.eventId();
     String json =
-        event(eventId, CaseEvents.handler())
-            .replace("\"state\":\"OPEN\"", "\"state\":\"TELEPORTED\"");
+        CaseEvents.event(
+            eventId,
+            "not-a-uuid",
+            CaseEvents.bagTag(),
+            RecoveryState.OPEN,
+            1,
+            "HIGH_CONNECTION_RISK",
+            CaseEvents.handler());
 
     publish(eventId, json);
 
@@ -160,8 +167,28 @@ class CaseChangedKafkaTest extends AbstractNotificationTest {
         EventJson.read(dead.getFirst().value(), DeadLetterPayload.class);
     assertThat(envelope.payload().originalTopic()).isEqualTo(Topics.CASE_CHANGED);
     assertThat(envelope.payload().originalEventId()).isEqualTo(eventId);
+    assertThat(envelope.payload().attempts()).isEqualTo(1);
+    // The dead letter keeps the event's correlation id (ADR 0005, decision 6).
+    assertThat(envelope.correlationId()).isEqualTo(CaseEvents.CORRELATION_ID);
     verify(handler, times(1)).handle(json);
     assertThat(rowsOf(eventId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "BR-08 an event in an unknown state is not dead-lettered: it notifies with CASE_UPDATED")
+  void unknownStateIsNotDeadLettered() throws Exception {
+    String eventId = CaseEvents.eventId();
+    String json =
+        event(eventId, CaseEvents.handler())
+            .replace("\"state\":\"OPEN\"", "\"state\":\"TELEPORTED\"");
+
+    publish(eventId, json);
+
+    awaitRows(eventId, 1);
+    assertThat(rowsOf(eventId).getFirst().getTemplate()).isEqualTo("CASE_UPDATED");
+    verify(handler, times(1)).handle(json);
+    assertThat(deadLetters(eventId, 0)).isEmpty();
   }
 
   @Test

@@ -17,7 +17,10 @@ public final class CaseEvents {
   /** The correlation id every test event carries. */
   public static final String CORRELATION_ID = "corr-test";
 
-  private static final Instant AT = Instant.parse("2026-03-01T09:00:00Z");
+  /** The occurredAt (and publishedAt) of every test event. */
+  public static final Instant OCCURRED_AT = Instant.parse("2026-03-01T09:00:00Z");
+
+  private static final Instant AT = OCCURRED_AT;
 
   private CaseEvents() {}
 

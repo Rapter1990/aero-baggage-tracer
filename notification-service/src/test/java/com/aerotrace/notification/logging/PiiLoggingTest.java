@@ -76,7 +76,8 @@ class PiiLoggingTest extends AbstractNotificationTest {
       dispatcher.dispatchDue();
       clock.advance(Duration.ofMinutes(10));
     }
-    String poison =
+    // A state this service does not know is notified (CASE_UPDATED) and logged as such.
+    handler.handle(
         CaseEvents.event(
                 CaseEvents.eventId(),
                 caseId,
@@ -85,7 +86,17 @@ class PiiLoggingTest extends AbstractNotificationTest {
                 1,
                 REASON,
                 RECIPIENT)
-            .replace("\"state\":\"OPEN\"", "\"state\":\"TELEPORTED\"");
+            .replace("\"state\":\"OPEN\"", "\"state\":\"TELEPORTED\""));
+    // A caseId that is not a UUID is poison.
+    String poison =
+        CaseEvents.event(
+            CaseEvents.eventId(),
+            "not-a-uuid",
+            CaseEvents.bagTag(),
+            RecoveryState.OPEN,
+            1,
+            REASON,
+            RECIPIENT);
     assertThatThrownBy(() -> handler.handle(poison))
         .isInstanceOf(PoisonEventException.class)
         .satisfies(e -> assertNoSecrets(String.valueOf(e.getMessage())));
