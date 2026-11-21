@@ -21,7 +21,8 @@ class ItineraryValidatorTest {
 
   private final ItineraryValidator validator =
       new ItineraryValidator(
-          new JourneyProperties(MCT, Duration.ofMinutes(10), Duration.ofMinutes(5), null, null));
+          new JourneyProperties(
+              MCT, Duration.ofMinutes(10), Duration.ofMinutes(5), null, null, null));
 
   private static LegRequest leg(String from, String to, Instant departure, Instant arrival) {
     return new LegRequest("TK1234", from, to, departure, arrival);

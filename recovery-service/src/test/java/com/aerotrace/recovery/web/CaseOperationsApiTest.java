@@ -401,13 +401,22 @@ class CaseOperationsApiTest extends AbstractRecoveryTest {
     String caseId = openedCase().get("caseId").asString();
     assign(caseId, "agent-77", 1L, as(Role.AGENT)).andExpect(status().isOk());
 
-    ResultActions list = mockMvc.perform(get(CASES).with(as(Role.DISPATCHER)).param("size", "100"));
-
-    list.andExpect(status().isOk());
+    // The database is shared and the list is oldest first: read every page.
+    List<JsonNode> listed = new ArrayList<>();
+    int pages = 1;
+    for (int page = 0; page < pages; page++) {
+      ResultActions list =
+          mockMvc.perform(
+              get(CASES)
+                  .with(as(Role.DISPATCHER))
+                  .param("size", "100")
+                  .param("page", String.valueOf(page)));
+      list.andExpect(status().isOk());
+      data(list).get("items").forEach(listed::add);
+      pages = data(list).get("totalPages").asInt();
+    }
     assertThat(
-            data(list)
-                .get("items")
-                .valueStream()
+            listed.stream()
                 .filter(c -> c.get("caseId").asString().equals(caseId))
                 .findFirst()
                 .orElseThrow()

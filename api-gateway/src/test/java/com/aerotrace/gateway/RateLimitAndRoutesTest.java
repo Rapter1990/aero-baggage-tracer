@@ -7,6 +7,7 @@ import com.aerotrace.gateway.support.GatewayTestConfig;
 import com.aerotrace.gateway.support.TestTokens;
 import com.nimbusds.jose.jwk.RSAKey;
 import java.net.http.HttpResponse;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -16,6 +17,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.core.env.Environment;
+import org.springframework.http.server.PathContainer;
+import org.springframework.web.util.pattern.PathPattern;
+import org.springframework.web.util.pattern.PathPatternParser;
 import tools.jackson.databind.JsonNode;
 
 class RateLimitAndRoutesTest extends GatewayTestBase {
@@ -69,6 +73,10 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
     assertThat(get("/api/v1/bags/AB123456/journey", null).statusCode()).isEqualTo(401);
     assertThat(get("/api/v1/recovery-cases/1", null).statusCode()).isEqualTo(401);
     assertThat(get("/api/v1/recovery-policy", null).statusCode()).isEqualTo(401);
+    assertThat(get("/api/v1/search/bags", null).statusCode()).isEqualTo(401);
+    assertThat(get("/api/v1/search/index/status", null).statusCode()).isEqualTo(401);
+    assertThat(send("POST", "/api/v1/admin/search/reindex", null).statusCode()).isEqualTo(401);
+    assertThat(get("/api/v1/reports/airport/IST", null).statusCode()).isEqualTo(401);
 
     // No identity-service instance exists in this test, so these calls fail after security passed.
     for (String path :
@@ -116,6 +124,9 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
             "recovery-service",
             "recovery-service",
             "capacity-service",
+            // Reports, bag search and the index status, the rebuild.
+            "search-service",
+            "search-service",
             "search-service",
             // OpenAPI definition routes (one per service for the Swagger UI dropdown).
             "identity-service",
@@ -123,5 +134,84 @@ class RateLimitAndRoutesTest extends GatewayTestBase {
             "recovery-service",
             "capacity-service",
             "search-service");
+  }
+
+  /**
+   * The internal export endpoints of the owning services (#28, #29) are for service callers inside
+   * the network only: no route may reach {@code /internal/**}, and the gateway refuses it itself.
+   */
+  @Test
+  @SuppressWarnings("unchecked")
+  void noRouteReachesTheInternalEndpoints() {
+    List<Map<String, Object>> routes =
+        (List<Map<String, Object>>)
+            (List<?>)
+                Binder.get(environment)
+                    .bind("spring.cloud.gateway.server.webmvc.routes", Bindable.listOf(Map.class))
+                    .get();
+    PathPatternParser parser = new PathPatternParser();
+    List<String> internal =
+        List.of(
+            "/internal/v1/export/cases",
+            "/internal/v1/export/bags",
+            "/internal/anything",
+            "/api/v1/../internal/v1/export/cases");
+    for (Map<String, Object> route : routes) {
+      Object predicates = route.get("predicates");
+      Collection<Object> all =
+          predicates instanceof Map<?, ?> map
+              ? (Collection<Object>) map.values()
+              : (Collection<Object>) predicates;
+      assertThat(all).as("predicates of route %s", route.get("id")).isNotEmpty();
+      for (Object predicate : all) {
+        String text = String.valueOf(predicate);
+        if (!text.startsWith("Path=")) {
+          continue;
+        }
+        for (String pattern : text.substring("Path=".length()).split(",")) {
+          PathPattern path = parser.parse(pattern.trim());
+          for (String target : internal) {
+            assertThat(path.matches(PathContainer.parsePath(target)))
+                .as("route %s (%s) must not match %s", route.get("id"), pattern, target)
+                .isFalse();
+          }
+        }
+      }
+    }
+    String token = tokenFor("internal-" + UUID.randomUUID());
+    for (String target : internal.subList(0, 3)) {
+      int status = get(target, token, "X-Service-Token", "guess-the-export-token").statusCode();
+      assertThat(status).as(target).isIn(401, 403, 404);
+    }
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void everyRouteToAServiceThatAcceptsTheServiceTokenStripsIt() {
+    List<Map<String, Object>> routes =
+        (List<Map<String, Object>>)
+            (List<?>)
+                Binder.get(environment)
+                    .bind("spring.cloud.gateway.server.webmvc.routes", Bindable.listOf(Map.class))
+                    .get();
+
+    // The search-service sends X-Service-Token to the export endpoints of the recovery-service and
+    // the journey-service; capacity accepts it from the recovery-service.
+    for (String id :
+        List.of(
+            "capacity",
+            "reports",
+            "search",
+            "search-admin",
+            "recovery-cases",
+            "recovery-policy",
+            "journey-bags",
+            "journey-scans")) {
+      Map<String, Object> route =
+          routes.stream().filter(r -> id.equals(r.get("id"))).findFirst().orElseThrow();
+      assertThat(String.valueOf(route.get("filters")))
+          .as("filters of route %s", id)
+          .contains("RemoveRequestHeader=X-Service-Token");
+    }
   }
 }

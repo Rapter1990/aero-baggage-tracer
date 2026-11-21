@@ -36,5 +36,8 @@ aerotrace:
     outbox:
       # Tests drive the relay by hand; the scheduler only fires once an hour.
       relay-delay: 1h
+    export:
+      # The secret the internal export accepts (BagExportApiTest.TOKEN); long enough to be used.
+      service-token: test-export-service-token
     jwt:
       public-key-location: classpath:keys/public.pem

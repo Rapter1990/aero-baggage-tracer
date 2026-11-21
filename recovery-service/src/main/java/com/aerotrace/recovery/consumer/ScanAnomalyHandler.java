@@ -1,5 +1,6 @@
 package com.aerotrace.recovery.consumer;
 
+import com.aerotrace.common.correlation.CorrelationScope;
 import com.aerotrace.common.event.EventEnvelope;
 import com.aerotrace.common.event.ScanAnomalyPayload;
 import com.aerotrace.common.model.AnomalyType;
@@ -62,9 +63,12 @@ public class ScanAnomalyHandler {
     if (anomaly.bagTag() == null || !BAG_TAG.matcher(anomaly.bagTag()).matches()) {
       throw new PoisonEventException("bagTag is not a bag tag");
     }
-    Outcome outcome = transaction.execute(status -> process(event));
-    meters.counter("recovery.anomaly.events", "outcome", outcome.name()).increment();
-    return outcome;
+    // The case events written while handling it carry the anomaly event's correlation id.
+    try (CorrelationScope ignored = CorrelationScope.of(event.correlationId())) {
+      Outcome outcome = transaction.execute(status -> process(event));
+      meters.counter("recovery.anomaly.events", "outcome", outcome.name()).increment();
+      return outcome;
+    }
   }
 
   private Outcome process(EventEnvelope<ScanAnomalyPayload> event) {

@@ -3,7 +3,7 @@
 Derived from the AeroTrace case study; its business rules and acceptance tests are in `docs/requirements/`. Each `##` section is one issue (title = heading).
 Suggested labels in `[brackets]`. Section numbers (§), BR-xx and AT-xx refer to the case study; their exact wording and the owning issue of each are in `docs/requirements/`.
 
-**Suggested build order:** #1 → #2 → #3 → #4 → #5 → #6 → #8 → #7 → #9/#10/#11 (parallel) → #12/#13 → #14–#20 (cross-cutting, start early) → #21–#22.
+**Suggested build order:** #1 → #2 → #3 → #4 → #5 → #6 → #8 → #7 → #9/#10/#11 (parallel) → #12 → #28/#29 → #13 → #14–#20 (cross-cutting, start early) → #21–#22.
 
 ---
 
@@ -290,22 +290,34 @@ Finite recovery cart / flight / bag-slot capacity with atomic reservations.
 ---
 
 ## #13 Define Search Service (Elasticsearch)
-`[module:search] [priority:p1]` · Depends on #4, #9, #11 · Spec §5.4, §12
+`[module:search] [priority:p1]` · Depends on #4, #8, #9, #10, #11, #15, #17, #28, #29 (and #19 for the Grafana criterion) · Spec §5.4, §12 · ADR `docs/adr/0004-search-read-models-and-rebuild.md`
 
 **Description**
-Elasticsearch read models for journey and case search.
+Elasticsearch read models for journey and case search. Derived data: it can be dropped and rebuilt from the owning services (AT-18) and never writes to them.
 
 **Scope**
-- Consume `recovery.case.changed.v1` (+ journey events); idempotent indexer (doc id = aggregate id, version check).
-- Filters: bagTag, airport, airline, flight, risk category, case state; deterministic sort; paging + `search_after` for deep pages.
-- Full backfill/reconciliation command (no duplicates, source untouched — AT-18).
-- Indexing lag exposed as a metric/endpoint.
-- `GET /reports/airport/{iata}?from=&to=` + hourly counts: risky bags, resolved recoveries, retries, mean resolution time.
+- Indexer: consume `recovery.case.changed.v1` (revision 2), `baggage.bag.registered.v1`, `baggage.scan.received.v1` and `baggage.risk.changed.v1`; `cases` (`_id = caseId`, external version = payload `version`) and `journeys` (`_id = bagTag`, scripted upsert guarded by event time) indexes from a strict index template; an Elasticsearch `409` is a duplicate, not an error; offset committed after the bulk is acknowledged; poison events go to `baggage.dead-letter.v1`; the envelope `correlationId` is restored, never generated.
+- `GET /api/v1/search/bags`: optional AND-combined filters `bagTag`, `airport`, `airline`, `flight`, `riskLevel`, `caseState`; `size` default 20, maximum 100 (out of range is `400`); sort `updatedAt desc` then a stored `docId`; opaque signed cursor over a point-in-time (`search_after`); `ApiResponse{items, size, nextCursor, hasMore}`.
+- Rebuild/reconcile: `POST /api/v1/admin/search/reindex` (ADMIN, `Idempotency-Key`, `202` + `jobId`, `409 REINDEX_IN_PROGRESS`) and `GET .../reindex/{jobId}`. Source: the export endpoints of #28 and #29 and the compacted risk topic (#15); only `GET`s and consumption, source untouched. Dual-alias swap (`*-read`, `*-live`), atomic `_aliases`, old index deleted after the point-in-time keep-alive.
+- Indexing lag: `search.index.lag`, `search.index.lag.events`, `search.index.events`, `search.index.delay`; `GET /api/v1/search/index/status` (DISPATCHER, ADMIN).
+- `GET /api/v1/reports/airport/{iata}?from=&to=`: hourly UTC buckets over `[from, to)` (maximum 31 days, zero-filled) with risky bags, resolved recoveries, retries and mean resolution time as defined in the ADR; `indexedThrough` and `lagSeconds` in the response; unknown airport with no data is `200`.
+- Gateway routes `/api/v1/search/**` and `/api/v1/admin/search/**`; roles: `AGENT`, `DISPATCHER`, `ADMIN` search and report, `PASSENGER` always `403` (no `passengerRef` in the index); new error codes `SEARCH_UNAVAILABLE` (503), `REINDEX_IN_PROGRESS` (409).
+- No JPA, no datasource; Spring Data Elasticsearch repositories for the documents plus `ElasticsearchOperations` and the Java API client for what a repository cannot express (external versioning, scripted upserts, aliases); nothing Elasticsearch-related in `common-module`. Elasticsearch in both Compose files (image 9.5.6, Elastic's newest release, as it publishes no `latest` tag; security on, dev-only default password, port 9200 published).
+- `docs/apis/SEARCH-API.md`, a Search folder in the Postman collection.
+
+**Requirement coverage**
+- AT-18 (`docs/requirements/ACCEPTANCE_TESTS.md`): "Rebuild Elasticsearch from source data with no duplicate documents." The test seeds more cases than one export page (N > 100) with different versions, rebuilds, and asserts: `_count == N`, the set of ids equals the source ids, no id appears twice, stored versions equal source versions, a second run gives the same result, `_alias/cases-read` names exactly one index, a stale-version event racing the rebuild leaves the newest version, and the source row counts and checksums are unchanged.
+- No business rule BR-xx is owned by this issue. AT-15, AT-16, AT-20 and AT-21 are owned elsewhere (#8, #7, #19); search adds its own role-matrix tests (401 and 403 contract, `PASSENGER` refused).
 
 **Acceptance criteria**
-- [ ] AT-18 with Elasticsearch Testcontainer.
-- [ ] Lag visible in Grafana.
-- [ ] Rebuild via alias swap without downtime (preferred).
+- [x] AT-18 with an Elasticsearch Testcontainer (pinned image), as described above.
+- [x] Idempotent indexer: the same `recovery.case.changed.v1` twice, or an older version after a newer one, leaves one document at the newest version; replay and snapshot overlap give the same documents.
+- [x] One test per filter and a combined-filter test; `search_after` paging over a fixed data set has no duplicates and no gaps; forged and expired cursors are rejected.
+- [x] Alias-swap rebuild without downtime: searches during a rebuild return results without error, and the read alias moves only when the new index is complete and its counts match.
+- [x] Report: validation (IATA, `from <= to`, maximum range), zero-filled hours, `null` mean when nothing resolved, definitions as in the ADR.
+- [x] Roles: expired or missing token `401`, wrong role `403`, `PASSENGER` refused on every search and report endpoint, reindex `ADMIN` only.
+- [x] Lag metric exposed and visible in Grafana (the "AeroTrace - Elasticsearch" dashboard; its queries were run against a live Prometheus and Grafana with the search-service indexing).
+- [x] `docs/requirements/TRACEABILITY.md` updated (AT-18 Test column).
 
 ---
 
@@ -335,6 +347,7 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 - Retry/backoff, dead-letter publisher, poison-message policy; operator inspection tooling for `baggage.dead-letter.v1`.
 - Example replay dataset (late, duplicate, out-of-order) + replay script.
 - ADR: exactly-once business effects (outbox + `processed_event`).
+- Search rebuild support (ADR 0004, #13): `baggage.risk.changed.v1` as `cleanup.policy=compact,delete` with a long retention so the search-service can replay it from offset 0; the new topic `baggage.bag.registered.v1` (key `bagTag`, added to `Topics.ALL`) with partitions, retention and Compose + K8s provisioning; contract/serialization tests for the new payload revisions (`CaseChangedPayload` revision 2, `baggage.bag.registered.v1`).
 
 **Acceptance criteria**
 - [ ] AT-14: stop Kafka mid-transition, restart, committed event is replayed.
@@ -536,3 +549,41 @@ Gaps left in PR#8: refresh sessions slide forever, access tokens cannot be revok
 - [ ] Images are pinned and containers run as non-root with a read-only filesystem where possible.
 - [ ] The identity-service starts with a database role that cannot create objects outside its schema.
 - [ ] The newman smoke test passes against the composed stack.
+
+---
+
+## #28 Journey: internal bag export and bag-registered event
+`[module:journey] [priority:p1]` · Follow-up of #9 · Needed by #13 · ADR `docs/adr/0004-search-read-models-and-rebuild.md`
+
+**Description**
+The search-service must be rebuildable from the journey-service without reading its database (AT-18), and the journey data it filters on (airline, origin, destination) is in no event. The journey-service exports its own state and publishes the itinerary snapshot.
+
+**Scope**
+- `GET /internal/v1/export/bags?after={bagTag}&size=`: keyset-paged, read-only, bounded (`size` maximum 500); returns each bag with its legs (`legId`, `flightNumber`, `airline`, `origin`, `destination`, `departureAt`) and the latest accepted scan (`occurredAt`, `deviceSequence`, airport). Authenticated with a service token (like capacity's `X-Service-Token`); no gateway route; no PII beyond what the journey events already carry.
+- Publish `baggage.bag.registered.v1` (key `bagTag`, via the existing outbox) when a bag is registered, with the itinerary snapshot per leg including `airline` (the validated carrier prefix of the flight number, documented as a rule). Additive: existing events and topics unchanged.
+- Document both in `docs/apis/JOURNEY-API.md`; tests for paging (no gaps or repeats while rows are inserted), the service token, and the event contract.
+
+**Acceptance criteria**
+- [x] The export pages through more bags than one page with no gap and no repeat, and requires the service token (`401`/`403` otherwise); it writes nothing.
+- [x] Registering a bag queues `baggage.bag.registered.v1` once (outbox, idempotent), with the snapshot of every leg.
+- [x] Existing journey tests and contracts still pass; `JOURNEY-API.md` updated.
+
+---
+
+## #29 Recovery: internal case export and case-changed revision 2
+`[module:recovery] [priority:p1]` · Follow-up of #11 · Needed by #13 · ADR `docs/adr/0004-search-read-models-and-rebuild.md`
+
+**Description**
+The search-service needs the full case (version, opened and resolved times) both from a bulk export, for the rebuild, and on every case event. `CaseChangedPayload` revision 1 carries only `caseId, bagTag, legId, state, version, reason`, and `GET /recovery-cases` is staff-only, filtered by state only and capped at 100 per page.
+
+**Scope**
+- `GET /internal/v1/export/cases?after={caseId}&size=`: keyset-paged, read-only, bounded; returns the full case including `version`, `openedAt`, `resolvedAt`, `trigger`, `assignedTo`. Service token, no gateway route.
+- `CaseChangedPayload` revision 2, additive: `openedAt`, `resolvedAt`, `trigger` (`RISK`, `SCANNER_ANOMALY`, `MANUAL`), `assignedTo`; `CASE_EVENT_SCHEMA_VERSION` from 1 to 2 per `EventEnvelope`'s rules; old events read the new fields as `null`.
+- Put the envelope `correlationId` into the logging context in the recovery consumers (today it is dropped, so cases opened from risk events carry a null id).
+- Document in `docs/apis/RECOVERY-API.md`; contract tests for revisions 1 and 2.
+
+**Acceptance criteria**
+- [x] The export pages through more cases than one page with no gap and no repeat, and requires the service token; it writes nothing.
+- [x] Every case event carries the revision 2 fields; a consumer reading revision 1 events still works.
+- [x] Case events opened from risk events carry the originating `correlationId`.
+- [x] Existing recovery tests (`RecoveryCaseApiTest`, `KafkaOutageTest` and the rest) still pass; `RECOVERY-API.md` updated.

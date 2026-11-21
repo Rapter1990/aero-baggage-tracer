@@ -9,6 +9,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *
  * @param outbox how the outbox relay publishes events
  * @param capacity how the capacity-service is called and how long a hold may last
+ * @param export who may read the internal case export
  * @param jwt how tokens are verified
  */
 @ConfigurationProperties("aerotrace.recovery")
@@ -17,7 +18,18 @@ public record RecoveryProperties(
     @DefaultValue Capacity capacity,
     @DefaultValue Policy policy,
     @DefaultValue Consumers consumers,
+    @DefaultValue Export export,
     @DefaultValue Jwt jwt) {
+
+  /**
+   * The internal case export ({@code GET /internal/v1/export/cases}) the search-service rebuilds
+   * from (ADR 0004).
+   *
+   * @param serviceToken the shared secret the caller sends in {@code X-Service-Token}; at least 16
+   *     characters. Empty (or shorter) refuses every call, except in the {@code local} and {@code
+   *     dev} profiles, where the export is open for local runs
+   */
+  public record Export(@DefaultValue("") String serviceToken) {}
 
   /**
    * The recovery policy cache. The policy itself lives in PostgreSQL and is changed by an admin.

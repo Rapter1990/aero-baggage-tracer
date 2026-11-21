@@ -114,13 +114,22 @@ class OutboxRelayKafkaTest extends AbstractApiTest {
 
     int sent = relay.publishPending();
 
-    assertThat(sent).isGreaterThanOrEqualTo(3);
+    // The three scans, and the bag's registration event (#28) before them.
+    assertThat(sent).isGreaterThanOrEqualTo(4);
     assertThat(
             count(
                 "SELECT count(*) FROM journey.outbox_event WHERE message_key = ?"
-                    + " AND published_at IS NOT NULL",
-                bagTag))
+                    + " AND published_at IS NOT NULL AND topic = ?",
+                bagTag,
+                Topics.SCAN_RECEIVED))
         .isEqualTo(3);
+    assertThat(
+            count(
+                "SELECT count(*) FROM journey.outbox_event WHERE message_key = ?"
+                    + " AND published_at IS NOT NULL AND topic = ?",
+                bagTag,
+                Topics.BAG_REGISTERED))
+        .isEqualTo(1);
     List<ConsumerRecord<String, String>> records = consumeFor(Set.of(bagTag), 3);
     assertThat(records).hasSize(3);
     assertThat(records).allSatisfy(r -> assertThat(r.key()).isEqualTo(bagTag));
@@ -160,7 +169,8 @@ class OutboxRelayKafkaTest extends AbstractApiTest {
       }
     }
 
-    assertThat(published).isEqualTo(12);
+    // 4 registration events (#28) and 12 scan events, each published once.
+    assertThat(published).isEqualTo(16);
     List<ConsumerRecord<String, String>> records = consumeFor(bags, 12);
     Set<String> eventIds = new HashSet<>();
     for (ConsumerRecord<String, String> record : records) {
@@ -200,8 +210,16 @@ class OutboxRelayKafkaTest extends AbstractApiTest {
     assertThat(
             count(
                 "SELECT count(*) FROM journey.outbox_event WHERE message_key = ?"
-                    + " AND published_at IS NULL AND attempts >= 1",
+                    + " AND published_at IS NULL",
                 bagTag))
+        .isEqualTo(2);
+    // The run stopped at the first failure: the bag's oldest event (its registration) was tried.
+    assertThat(
+            count(
+                "SELECT count(*) FROM journey.outbox_event WHERE message_key = ?"
+                    + " AND published_at IS NULL AND attempts >= 1 AND topic = ?",
+                bagTag,
+                Topics.BAG_REGISTERED))
         .isEqualTo(1);
     // The healthy relay then delivers it.
     assertThat(relay.publishPending()).isGreaterThanOrEqualTo(1);

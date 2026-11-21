@@ -1,7 +1,12 @@
 package com.aerotrace.journey.service;
 
+import com.aerotrace.common.correlation.CorrelationId;
 import com.aerotrace.common.error.ApiException;
 import com.aerotrace.common.error.ErrorCode;
+import com.aerotrace.common.event.BagRegisteredPayload;
+import com.aerotrace.common.event.EventEnvelope;
+import com.aerotrace.common.event.EventJson;
+import com.aerotrace.common.event.Topics;
 import com.aerotrace.common.security.Role;
 import com.aerotrace.common.security.SecurityContextHelper;
 import com.aerotrace.journey.constant.ApiMessages;
@@ -16,23 +21,31 @@ import com.aerotrace.journey.model.dto.response.ScanHistoryEntry;
 import com.aerotrace.journey.model.entity.BaggageEntity;
 import com.aerotrace.journey.model.entity.ItineraryEntity;
 import com.aerotrace.journey.model.entity.ItineraryLegEntity;
+import com.aerotrace.journey.model.entity.OutboxEventEntity;
 import com.aerotrace.journey.model.entity.ScanAuditEntity;
 import com.aerotrace.journey.repository.BaggageRepository;
 import com.aerotrace.journey.repository.ItineraryRepository;
+import com.aerotrace.journey.repository.OutboxEventRepository;
 import com.aerotrace.journey.repository.ScanAuditRepository;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
+import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Registers bags and answers the journey query, with row-level ownership for passengers. */
+/**
+ * Registers bags and answers the journey query, with row-level ownership for passengers. A
+ * registration stores {@code baggage.bag.registered.v1} in the outbox in the same transaction, so
+ * the event exists exactly when the bag does: a refused or duplicate registration queues nothing.
+ */
 @Service
 public class BaggageService {
 
@@ -42,6 +55,7 @@ public class BaggageService {
   private final ItineraryRepository itineraries;
   private final ScanAuditRepository scans;
   private final ItineraryValidator validator;
+  private final OutboxEventRepository outbox;
   private final Clock clock;
 
   public BaggageService(
@@ -49,11 +63,13 @@ public class BaggageService {
       ItineraryRepository itineraries,
       ScanAuditRepository scans,
       ItineraryValidator validator,
+      OutboxEventRepository outbox,
       Clock clock) {
     this.baggage = baggage;
     this.itineraries = itineraries;
     this.scans = scans;
     this.validator = validator;
+    this.outbox = outbox;
     this.clock = clock;
   }
 
@@ -64,7 +80,9 @@ public class BaggageService {
     if (baggage.existsByBagTag(request.bagTag())) {
       throw duplicate();
     }
-    Instant now = Instant.now(clock);
+    // Microseconds, as PostgreSQL stores them, so the event says exactly what the row (and the
+    // export) says.
+    Instant now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
     BaggageEntity bag;
     try {
       // Flushed here so a concurrent registration of the same tag is reported as a duplicate.
@@ -74,6 +92,7 @@ public class BaggageService {
     }
     ItineraryEntity itinerary =
         itineraries.save(new ItineraryEntity(bag.getId(), toLegs(request.legs())));
+    queueRegistered(bag, itinerary.getLegs());
     return new RegisteredBagResponse(
         bag.getBagTag(),
         bag.getRegisteredAt(),
@@ -117,6 +136,27 @@ public class BaggageService {
     return new JourneyResponse(bag.getBagTag(), latest, legs, history, truncated);
   }
 
+  /** {@code baggage.bag.registered.v1}, key bag tag, with the snapshot of every leg. */
+  private void queueRegistered(BaggageEntity bag, List<ItineraryLegEntity> legs) {
+    BagRegisteredPayload payload =
+        new BagRegisteredPayload(bag.getBagTag(), legs.stream().map(LegSnapshots::of).toList());
+    EventEnvelope<BagRegisteredPayload> envelope =
+        EventEnvelope.create(
+            JourneyRules.EVENT_TYPE_BAG_REGISTERED,
+            JourneyRules.BAG_REGISTERED_SCHEMA_VERSION,
+            bag.getBagTag(),
+            MDC.get(CorrelationId.MDC_KEY),
+            bag.getRegisteredAt(),
+            payload,
+            clock);
+    outbox.save(
+        new OutboxEventEntity(
+            Topics.BAG_REGISTERED,
+            bag.getBagTag(),
+            EventJson.write(envelope),
+            bag.getRegisteredAt()));
+  }
+
   private static boolean mayView(BaggageEntity bag) {
     if (SecurityContextHelper.currentRoles().stream().anyMatch(STAFF::contains)) {
       return true;
@@ -136,8 +176,8 @@ public class BaggageService {
               leg.flightNumber(),
               leg.origin(),
               leg.destination(),
-              leg.departureAt(),
-              leg.arrivalAt()));
+              leg.departureAt().truncatedTo(ChronoUnit.MICROS),
+              leg.arrivalAt().truncatedTo(ChronoUnit.MICROS)));
     }
     return result;
   }

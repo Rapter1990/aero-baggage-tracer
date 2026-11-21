@@ -56,5 +56,8 @@ aerotrace:
       connect-timeout: 1s
       sweep-delay: 1h
       service-token: test-service-token
+    export:
+      # The secret the internal export accepts (CaseExportApiTest.TOKEN); long enough to be used.
+      service-token: test-export-service-token
     jwt:
       public-key-location: classpath:keys/public.pem

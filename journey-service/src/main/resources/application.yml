@@ -70,6 +70,11 @@ aerotrace:
       batch-size: ${JOURNEY_OUTBOX_BATCH_SIZE:200}
       # Published rows older than this are removed.
       retention: ${JOURNEY_OUTBOX_RETENTION:7d}
+    export:
+      # Shared secret the search-service sends in X-Service-Token to read the internal bag export
+      # (/internal/**, never routed by the gateway). No default: empty (or under 16 characters)
+      # refuses every call, except in the local and dev profiles.
+      service-token: ${SEARCH_EXPORT_SERVICE_TOKEN:}
     docs:
       enabled: ${DOCS_ENABLED:true}
     jwt:

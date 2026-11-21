@@ -8,6 +8,13 @@ scrape_configs:
     static_configs:
       - targets: ["otel-collector:8889"]
 
+  # Elasticsearch (search read models): cluster, heap and index metrics for the
+  # "AeroTrace - Elasticsearch" dashboard. The search-service's own indexing metrics arrive through
+  # the collector above.
+  - job_name: elasticsearch
+    static_configs:
+      - targets: ["elasticsearch-exporter:9114"]
+
   # Test coverage: observability/push-jacoco.ps1 pushes the JaCoCo numbers of every module here.
   # honor_labels keeps the job/module labels the script set instead of replacing them.
   - job_name: pushgateway

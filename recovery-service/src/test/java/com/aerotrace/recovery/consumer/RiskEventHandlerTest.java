@@ -95,6 +95,23 @@ class RiskEventHandlerTest extends AbstractRecoveryTest {
   }
 
   @Test
+  @DisplayName("A 36 character UUID leg id, as the journey-service issues it, opens a case")
+  void uuidLegIdOpensAndClearsACase() {
+    String bag = bagTag();
+    String legId = UUID.randomUUID().toString();
+    assertThat(legId).hasSize(36);
+
+    Outcome outcome = handler.handle(high(bag, legId, in(15)));
+
+    assertThat(outcome).isEqualTo(Outcome.CASE_OPENED);
+    assertThat(casesOf(bag).getFirst().getLegId()).isEqualTo(legId);
+
+    Outcome cleared = handler.handle(event(eventId(), bag, legId, RiskLevel.LOW, in(15)));
+
+    assertThat(cleared).isEqualTo(Outcome.CASE_CANCELLED);
+  }
+
+  @Test
   @DisplayName("Strategy the action planned on the case follows the time left")
   void plannedActionFollowsTheTimeLeft() {
     String comfortable = bagTag();

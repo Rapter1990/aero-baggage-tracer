@@ -1,0 +1,40 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": "__REPLICAS__"
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "docId": { "type": "keyword" },
+      "bagTag": { "type": "keyword" },
+      "updatedAt": { "type": "date" },
+      "latestScan": {
+        "properties": {
+          "airport": { "type": "keyword" },
+          "checkpoint": { "type": "keyword" },
+          "legId": { "type": "keyword" },
+          "occurredAt": { "type": "date" },
+          "deviceSequence": { "type": "long" }
+        }
+      },
+      "legs": {
+        "type": "nested",
+        "properties": {
+          "legId": { "type": "keyword" },
+          "flightNumber": { "type": "keyword" },
+          "airline": { "type": "keyword" },
+          "origin": { "type": "keyword" },
+          "destination": { "type": "keyword" },
+          "departureAt": { "type": "date" },
+          "riskLevel": { "type": "keyword" },
+          "riskAt": { "type": "date" },
+          "caseId": { "type": "keyword" },
+          "caseState": { "type": "keyword" },
+          "caseVersion": { "type": "long" },
+          "caseAt": { "type": "date" }
+        }
+      }
+    }
+  }
+}

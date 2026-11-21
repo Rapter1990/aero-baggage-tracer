@@ -57,8 +57,59 @@ services:
         $$T --bootstrap-server $$B --create --if-not-exists --topic recovery.case.changed.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
         $$T --bootstrap-server $$B --create --if-not-exists --topic recovery.capacity.changed.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
         $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.dead-letter.v1 --partitions 3 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=2592000000
+        # Published by the journey-service (#28), read by the search-service (#15 owns its final settings).
+        $$T --bootstrap-server $$B --create --if-not-exists --topic baggage.bag.registered.v1 --partitions 6 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000
     depends_on:
       kafka:
+        condition: service_healthy
+    networks:
+      - aerotrace
+
+  # The search read models (search-service only). Single node, security on. Elastic publishes no
+  # latest tag (https://www.docker.elastic.co/r/elasticsearch), so this is its newest release, 9.5.6.
+  # ELASTIC_PASSWORD has a dev-only default (set your own). Port 9200 is published
+  # (http://localhost:9200, user elastic). TLS is off.
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.6
+    container_name: elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.security.transport.ssl.enabled: "false"
+      xpack.ml.enabled: "false"
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-dev-only-elastic-password}
+      ES_JAVA_OPTS: ${ELASTICSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u \"elastic:$$ELASTIC_PASSWORD\" http://localhost:9200/_cluster/health > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    networks:
+      - aerotrace
+
+  # Prometheus metrics of Elasticsearch (cluster health, heap, indexes, search and indexing rates)
+  # for the "AeroTrace - Elasticsearch" Grafana dashboard. Prometheus scrapes it on 9114; the port
+  # is not published. It logs in with the same elastic user (ES_USERNAME/ES_PASSWORD, not in a URL).
+  elasticsearch-exporter:
+    image: prometheuscommunity/elasticsearch-exporter:latest
+    container_name: elasticsearch-exporter
+    restart: unless-stopped
+    command:
+      - --es.uri=http://elasticsearch:9200
+      - --es.all
+      - --es.indices
+    environment:
+      ES_USERNAME: elastic
+      ES_PASSWORD: ${ELASTIC_PASSWORD:-dev-only-elastic-password}
+    depends_on:
+      elasticsearch:
         condition: service_healthy
     networks:
       - aerotrace
@@ -240,6 +291,8 @@ services:
       DB_USER: ${POSTGRES_USER:-aerotrace}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Read by the search-service rebuild on the internal bag/case export (never through the gateway).
+      SEARCH_EXPORT_SERVICE_TOKEN: ${SEARCH_EXPORT_SERVICE_TOKEN:-aerotrace-local-export-token}
       # Empty: the identity-service development public key bundled in the image is used.
       IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
@@ -292,6 +345,8 @@ services:
       # Shared with the capacity-service: the sweeper releases holds with no user token. The default
       # is for local runs only; set CAPACITY_SERVICE_TOKEN in .env for anything shared.
       CAPACITY_SERVICE_TOKEN: ${CAPACITY_SERVICE_TOKEN:-aerotrace-local-service-token}
+      # Read by the search-service rebuild on the internal bag/case export (never through the gateway).
+      SEARCH_EXPORT_SERVICE_TOKEN: ${SEARCH_EXPORT_SERVICE_TOKEN:-aerotrace-local-export-token}
       # Empty: the identity-service development public key bundled in the image is used.
       IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
@@ -361,6 +416,64 @@ services:
       - "1116:1116"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:1116/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 40s
+    networks:
+      - aerotrace
+
+  # Bag search and the airport report from the Elasticsearch read models, fed by the case, scan,
+  # risk and bag events. Derived data: rebuilt from the owning services (POST /api/v1/admin/search/
+  # reindex), never written to them.
+  search-service:
+    image: ${REGISTRY:-ghcr.io/rapter1990}/aerotrace-search-service:${TAG:-latest}
+    container_name: search-service
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+    environment:
+      EUREKA_URL: http://${EUREKA_USER:-eureka}:${EUREKA_PASSWORD:-eureka}@discovery-server:8761/eureka/
+      EUREKA_INSTANCE_HOSTNAME: search-service
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      ELASTICSEARCH_URIS: http://elasticsearch:9200
+      # The service needs a named user outside the dev profiles. This development stack uses the
+      # elastic superuser; give it a least-privilege user anywhere else (docs/apis/SEARCH-API.md).
+      ELASTICSEARCH_USERNAME: ${ELASTICSEARCH_USERNAME:-elastic}
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-dev-only-elastic-password}
+      # HMAC key of the paging cursors, the same for every instance, at least 32 bytes. The default
+      # is for this development stack only: set your own SEARCH_CURSOR_SECRET anywhere else.
+      SEARCH_CURSOR_SECRET: ${SEARCH_CURSOR_SECRET:-dev-only-search-cursor-secret-0123456789abcdef}
+      # The internal export endpoints of the owners (#28, #29) and the token they accept. The same
+      # value goes to the journey-, recovery- and search-service; the default is for local runs only
+      # (set SEARCH_EXPORT_SERVICE_TOKEN in .env for anything shared).
+      JOURNEY_SERVICE_URL: ${JOURNEY_SERVICE_URL:-http://journey-service:1113}
+      RECOVERY_SERVICE_URL: ${RECOVERY_SERVICE_URL:-http://recovery-service:1115}
+      SEARCH_EXPORT_SERVICE_TOKEN: ${SEARCH_EXPORT_SERVICE_TOKEN:-aerotrace-local-export-token}
+      # The identity-service public key. The service refuses to start without one; this
+      # development stack names, explicitly, the development key bundled in the image (the pair
+      # identity-service signs with here). Set your own key pair wherever tokens matter.
+      IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-classpath:keys/public.pem}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-1.0}
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    # Clients reach it through the gateway (/api/v1/search/**, /api/v1/reports/**,
+    # /api/v1/admin/search/**), which finds it over the Compose network. 1117 is its own port.
+    ports:
+      - "1117:1117"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:1117/actuator/health"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -440,7 +553,7 @@ services:
       identity-service:
         condition: service_healthy
     ports:
-      # Loopback only: put a reverse proxy with TLS in front of it to expose it further.
+      # Published on every interface: put a reverse proxy with TLS in front of it to expose it further.
       - "8080:8080"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
@@ -490,7 +603,7 @@ services:
     image: prom/pushgateway:latest
     container_name: pushgateway
     restart: unless-stopped
-    # Anyone who can reach it could push fake numbers: loopback only (the script runs on the host).
+    # Anyone who can reach it could push fake numbers: keep it on a trusted network (the script runs on the host).
     ports:
       - "9091:9091"
     networks:
@@ -547,6 +660,7 @@ volumes:
   tempo-data:
   loki-data:
   risk-streams-state:
+  elasticsearch-data:
 
 networks:
   aerotrace:

@@ -209,14 +209,25 @@ class RecoveryCaseApiTest extends AbstractRecoveryTest {
 
     assertThat(statuses.stream().filter(s -> s == 201)).hasSize(1);
     assertThat(statuses.stream().filter(s -> s == 409)).hasSize(attempts - 1);
-    ResultActions list = mockMvc.perform(get(CASES).with(as(Role.AGENT)).param("size", "100"));
-    long forBag =
-        body(list)
-            .get("data")
-            .get("items")
-            .valueStream()
-            .filter(c -> c.get("bagTag").asString().equals(bagTag))
-            .count();
+    // The database is shared and the list is oldest first: count over every page.
+    long forBag = 0;
+    int pages = 1;
+    for (int page = 0; page < pages; page++) {
+      ResultActions list =
+          mockMvc.perform(
+              get(CASES)
+                  .with(as(Role.AGENT))
+                  .param("size", "100")
+                  .param("page", String.valueOf(page)));
+      forBag +=
+          body(list)
+              .get("data")
+              .get("items")
+              .valueStream()
+              .filter(c -> c.get("bagTag").asString().equals(bagTag))
+              .count();
+      pages = body(list).get("data").get("totalPages").asInt();
+    }
     assertThat(forBag).isEqualTo(1);
   }
 
@@ -230,6 +241,23 @@ class RecoveryCaseApiTest extends AbstractRecoveryTest {
 
     second.andExpect(status().isConflict());
     assertThat(body(second).get("code").asString()).isEqualTo("DUPLICATE_RECOVERY_CASE");
+  }
+
+  @Test
+  @DisplayName("A 36 character UUID leg id, as the journey-service issues it, opens a case")
+  void uuidLegIdIsAccepted() throws Exception {
+    String legId = UUID.randomUUID().toString();
+
+    ResultActions created = open(newBagTag(), legId, null, as(Role.AGENT));
+
+    created.andExpect(status().isCreated());
+    assertThat(data(created).get("legId").asString()).isEqualTo(legId);
+  }
+
+  @Test
+  @DisplayName("A leg id longer than 36 characters is refused")
+  void tooLongLegIdIsRefused() throws Exception {
+    open(newBagTag(), "L".repeat(37), null, as(Role.AGENT)).andExpect(status().isBadRequest());
   }
 
   @Test

@@ -64,6 +64,19 @@ class ConfigServerApplicationTest {
   }
 
   @Test
+  void searchServiceGetsItsReportAndIndexSettingsAndNoSecrets() {
+    for (String profile : List.of("default", "dev", "compose", "k8s")) {
+      assertThat(resolve("search-service", profile, "aerotrace.search.report.max-range"))
+          .as("profile %s", profile)
+          .isEqualTo("31d");
+      assertThat(resolve("search-service", profile, "aerotrace.search.index.pit-keep-alive"))
+          .isEqualTo("2m");
+      assertThat(resolve("search-service", profile, "spring.elasticsearch.password")).isNull();
+      assertThat(resolve("search-service", profile, "aerotrace.search.cursor.secret")).isNull();
+    }
+  }
+
+  @Test
   void unknownProfileStillGetsSharedDefaultsButNoEndpoints() {
     assertThat(resolve("journey-service", "nope", "aerotrace.risk.threshold-minutes"))
         .isEqualTo(20);

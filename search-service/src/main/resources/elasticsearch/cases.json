@@ -1,0 +1,25 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": "__REPLICAS__"
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "docId": { "type": "keyword" },
+      "caseId": { "type": "keyword" },
+      "bagTag": { "type": "keyword" },
+      "legId": { "type": "keyword" },
+      "state": { "type": "keyword" },
+      "trigger": { "type": "keyword" },
+      "version": { "type": "long" },
+      "airport": { "type": "keyword" },
+      "airline": { "type": "keyword" },
+      "flightNumber": { "type": "keyword" },
+      "openedAt": { "type": "date" },
+      "resolvedAt": { "type": "date" },
+      "updatedAt": { "type": "date" },
+      "resolutionSeconds": { "type": "long" }
+    }
+  }
+}
