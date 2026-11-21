@@ -9438,7 +9438,7 @@
                     "type": "text/javascript",
                     "exec": [
                       "// The notification is made asynchronously from the case event: give the consumer and the dispatcher a moment.",
-                      "await new Promise(resolve => setTimeout(resolve, 2500));"
+                      "setTimeout(function () {}, 2500); // the request is sent after the timer ends (Postman and newman)"
                     ]
                   }
                 },

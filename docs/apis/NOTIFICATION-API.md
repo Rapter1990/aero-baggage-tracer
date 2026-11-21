@@ -55,7 +55,7 @@ There is no create, update or delete call: notifications are made only from even
 | `id` | string (UUID) | The notification |
 | `caseId` | string (UUID) | The recovery case the event was about |
 | `bagTag` | string | The bag of the case |
-| `state` | string | The case state after the change: `OPEN`, `ASSESSING`, `RESERVED`, `IN_TRANSIT`, `RESOLVED`, `CANCELLED` or `CLOSED_AS_UNRECOVERABLE` |
+| `state` | string or `null` | The case state after the change: `OPEN`, `ASSESSING`, `RESERVED`, `IN_TRANSIT`, `RESOLVED`, `CANCELLED` or `CLOSED_AS_UNRECOVERABLE`; `null` when the event carried a state this version does not know (the `template` is then `CASE_UPDATED`) |
 | `version` | integer | The case version of the event; rises by one on every case change |
 | `template` | string | What the message is about, chosen from the state (`CASE_OPENED`, `CASE_RESERVED`, `CASE_RESOLVED`, and so on) |
 | `status` | string | Delivery state: `PENDING` (not sent yet, also while it is retried), `SENT`, `FAILED` (all attempts used) |
@@ -99,7 +99,7 @@ A page past the end is `200` with empty `items`, not an error.
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | `page` below 0 or not a number, `size` below 1, above 100 or not a number, or `id` not a UUID. `validationErrors` names the parameter |
 | 401 | `UNAUTHENTICATED` | No token, or an invalid or expired one |
-| 403 | `ACCESS_DENIED` | A valid token whose role is not one of the four. Not used for someone else's notification (that is 404) |
+| 403 | `ACCESS_DENIED` | A valid token whose role is not one of the four, or any method other than `GET` (`POST`, `PUT`, `PATCH`, `DELETE`: the API is read-only, and the answer is `403`, not `405`). Not used for someone else's notification (that is 404) |
 | 404 | `NOT_FOUND` | No such notification, or it belongs to someone else |
 | 500 | `INTERNAL_ERROR` | An unexpected failure; the body carries the `correlationId` |
 
@@ -192,7 +192,7 @@ These are also the OpenAPI examples of the two operations.
 ```json
 {
   "code": "UNAUTHENTICATED",
-  "message": "Authentication is required",
+  "message": "Authentication required",
   "status": 401,
   "path": "/api/v1/notifications",
   "validationErrors": {},
