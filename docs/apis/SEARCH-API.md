@@ -26,7 +26,7 @@ Finds bags and cases and builds the hourly airport report from Elasticsearch rea
 |---|---|
 | Through the gateway | `http://localhost:8080/api/v1/search/**`, `/api/v1/reports/**`, `/api/v1/admin/search/**` |
 | Directly | `http://localhost:1117` |
-| Store | Elasticsearch 9.x, security on; no database. Java client and test image 9.2.8; the Compose files use the `latest` tag, which Elastic does not publish (see [the image tag](#the-elasticsearch-image-tag)) |
+| Store | Elasticsearch 9.x, security on; no database. Java client and test image 9.2.8; the Compose files use 9.5.6 (see [the image tag](#the-elasticsearch-image-tag)) |
 | Token | Bearer token from [Identity Service](IDENTITY-API.md) |
 | Roles | Staff only. `PASSENGER` is refused (`403`) on every endpoint: no passenger data is indexed |
 | Success answer | `{"success":true,"data":...,"timestamp":...}` |
@@ -298,7 +298,7 @@ Then run the service with `ELASTICSEARCH_USERNAME=search-service` and `ELASTIC_P
 
 ### The Elasticsearch image tag
 
-At the user's request both Compose files use `docker.elastic.co/elasticsearch/elasticsearch:latest`. **Elastic publishes no `latest` tag** for this image (nor `9`), so pulling it currently fails with `manifest unknown`. The one-line fix is a concrete tag in the two `image:` lines, for example `docker.elastic.co/elasticsearch/elasticsearch:9.5.3` (the newest 9.x verified to exist). The Java client and the Testcontainers image are 9.2.8; a 9.2 client against a newer 9.x server is supported by Elastic.
+Both Compose files use `docker.elastic.co/elasticsearch/elasticsearch:9.5.6`, the newest release listed on <https://www.docker.elastic.co/r/elasticsearch>. **Elastic publishes no `latest` tag** for this image (nor `9`), and neither does Docker's official or hardened image, so `latest` cannot be used: the pull fails with `manifest unknown`, and a failed pull aborts the whole `docker compose up`, not only Elasticsearch. To follow a newer release, change the tag in the two `image:` lines. The Java client and the Testcontainers image are 9.2.8; a 9.2 client against a newer 9.x server is supported by Elastic.
 
 ## Every request in the Postman collection
 

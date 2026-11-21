@@ -65,12 +65,12 @@ services:
     networks:
       - aerotrace
 
-  # The search read models (search-service only). Single node, security on. The tag is latest at
-  # the user's request, but Elastic publishes no latest tag, so the pull fails until a concrete tag
-  # (e.g. 9.5.3) is set (README). ELASTIC_PASSWORD has a dev-only default (set your own). Port 9200 is
-  # published (http://localhost:9200, user elastic). TLS is off.
+  # The search read models (search-service only). Single node, security on. Elastic publishes no
+  # latest tag (https://www.docker.elastic.co/r/elasticsearch), so this is its newest release, 9.5.6.
+  # ELASTIC_PASSWORD has a dev-only default (set your own). Port 9200 is published
+  # (http://localhost:9200, user elastic). TLS is off.
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:latest
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.6
     container_name: elasticsearch
     restart: unless-stopped
     environment:

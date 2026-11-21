@@ -64,12 +64,12 @@ services:
     networks:
       - aerotrace
 
-  # The search-service's read models. Same image and security as docker-compose.yml. The tag is
-  # latest at the user's request, but Elastic publishes no latest tag, so the pull fails until a
-  # concrete tag (e.g. 9.5.3) is set (README). ELASTIC_PASSWORD has a dev-only default here. Port
-  # 9200 is published, for the search-service run from the IDE (http://localhost:9200, user elastic).
+  # The search-service's read models. Same image and security as docker-compose.yml (Elastic
+  # publishes no latest tag: this is its newest release, 9.5.6). ELASTIC_PASSWORD has a dev-only
+  # default here. Port 9200 is published, for the search-service run from the IDE
+  # (http://localhost:9200, user elastic).
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:latest
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.6
     container_name: elasticsearch
     environment:
       discovery.type: single-node
