@@ -50,8 +50,8 @@ class RecipientResolverTest {
   @Test
   @DisplayName("BR-08 the recipient is never guessed from the bag tag, the leg or the reason")
   void recipientIsNeverGuessed() {
-    assertThat(resolver.resolve(payload(null)))
-        .doesNotContain("0123456789")
-        .doesNotContain("leg-1");
+    // The payload has a bag tag, a leg and a reason, but no handler: there is no recipient at all.
+    assertThat(resolver.resolve(payload(null))).isEmpty();
+    assertThat(resolver.resolve(payload("handler-42"))).hasValue("handler-42");
   }
 }

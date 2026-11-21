@@ -25,6 +25,9 @@ CREATE TABLE notification.notification (
     -- An error code or exception class name only, never a provider message.
     last_error       varchar(100),
     sent_at          timestamptz,
+    -- When the last attempt failed (the dead letter's occurredAt).
+    failed_at        timestamptz,
+    -- Set only after Kafka acknowledged the dead letter.
     dead_lettered_at timestamptz,
     created_at       timestamptz  NOT NULL,
     -- Optimistic lock: the claim raises it, and the finish only applies to the version it claimed.
@@ -37,6 +40,7 @@ CREATE TABLE notification.notification (
     CONSTRAINT ck_notification_case_version CHECK (case_version >= 0),
     CONSTRAINT ck_notification_version CHECK (version >= 0),
     CONSTRAINT ck_notification_sent_at CHECK (sent_at IS NULL OR status = 'SENT'),
+    CONSTRAINT ck_notification_failed_at CHECK (failed_at IS NULL OR status = 'FAILED'),
     CONSTRAINT ck_notification_dead_lettered_at CHECK (dead_lettered_at IS NULL OR status = 'FAILED')
 );
 

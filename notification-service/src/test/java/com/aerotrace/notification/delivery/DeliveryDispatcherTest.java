@@ -15,6 +15,7 @@ import com.aerotrace.common.event.EventJson;
 import com.aerotrace.common.event.Topics;
 import com.aerotrace.notification.base.AbstractNotificationTest;
 import com.aerotrace.notification.base.CaseEvents;
+import com.aerotrace.notification.base.MutableClock;
 import com.aerotrace.notification.model.entity.NotificationEntity;
 import com.aerotrace.notification.model.entity.NotificationStatus;
 import java.time.Duration;
@@ -35,6 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -48,8 +50,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 class DeliveryDispatcherTest extends AbstractNotificationTest {
 
   private static final int MAX_ATTEMPTS = 5;
+  private static final Duration LEASE = Duration.ofSeconds(60);
 
   @Autowired DeliveryDispatcher dispatcher;
+  @Autowired JdbcTemplate jdbc;
   @MockitoBean KafkaTemplate<String, String> kafka;
 
   @BeforeEach
@@ -291,6 +295,116 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
 
     assertThat(row(failing).getDeadLetteredAt()).isNull();
     assertThat(row(healthy).getStatus()).isEqualTo(NotificationStatus.SENT);
+  }
+
+  // ------------------------------------------------------------------ leases (ADR 0005, 9)
+
+  @Test
+  @DisplayName("BR-08 a claim holds the row for the lease: it is not due again while it is sent")
+  void claimHoldsTheRowForTheLease() {
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    var start = clock.instant();
+    List<java.time.Instant> dueWhileSending = new ArrayList<>();
+    provider.onSend(message -> dueWhileSending.add(row(id).getNextAttemptAt()));
+
+    dispatcher.dispatchDue();
+
+    assertThat(dueWhileSending).containsExactly(start.plus(LEASE));
+    assertThat(provider.sentIds()).containsExactly(id);
+  }
+
+  @Test
+  @DisplayName(
+      "BR-08 a claim lost by a crashed replica is sent again after its lease, on the same row")
+  void crashedClaimIsRetriedAfterTheLease() {
+    String eventId = CaseEvents.eventId();
+    UUID id = seed("handler-a", eventId, "CASE_OPENED", clock.instant());
+    // A replica claimed it (attempt 1, lease to now + 60 s) and died before the finish.
+    jdbc.update(
+        "update notification.notification set attempts = 1, version = version + 1,"
+            + " next_attempt_at = ? where id = ?",
+        java.sql.Timestamp.from(clock.instant().plus(LEASE)),
+        id);
+
+    assertThat(dispatcher.dispatchDue()).isZero();
+    clock.advance(LEASE);
+    assertThat(dispatcher.dispatchDue()).isEqualTo(1);
+
+    assertThat(row(id).getStatus()).isEqualTo(NotificationStatus.SENT);
+    assertThat(row(id).getAttempts()).isEqualTo(2);
+    assertThat(rowsOf(eventId)).hasSize(1);
+  }
+
+  @Test
+  @DisplayName(
+      "BR-08 a last attempt whose lease expired without a result is FAILED as LEASE_EXPIRED")
+  void expiredLastLeaseIsFailed() {
+    String eventId = CaseEvents.eventId();
+    UUID id = seed("handler-a", eventId, "CASE_OPENED", clock.instant());
+    jdbc.update(
+        "update notification.notification set attempts = ?, version = version + 1,"
+            + " next_attempt_at = ? where id = ?",
+        MAX_ATTEMPTS,
+        java.sql.Timestamp.from(clock.instant().plus(LEASE)),
+        id);
+    clock.advance(LEASE);
+
+    assertThat(dispatcher.dispatchDue()).isZero();
+
+    NotificationEntity failed = row(id);
+    assertThat(failed.getStatus()).isEqualTo(NotificationStatus.FAILED);
+    assertThat(failed.getLastError()).isEqualTo("LEASE_EXPIRED");
+    assertThat(failed.getDeadLetteredAt()).isEqualTo(clock.instant());
+    assertThat(provider.attemptedIds()).isEmpty();
+    verify(kafka, times(1)).send(eq(Topics.DEAD_LETTER), eq(eventId), anyString());
+  }
+
+  @Test
+  @DisplayName("BR-08 a result whose lease another replica took over is dropped, not recorded")
+  void resultOfALostLeaseIsDropped() {
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    // While this replica is in the provider, its lease ends and another replica claims the row.
+    provider.onSend(
+        message ->
+            jdbc.update(
+                "update notification.notification set version = version + 1 where id = ?", id));
+
+    dispatcher.dispatchDue();
+
+    NotificationEntity stored = row(id);
+    assertThat(stored.getStatus()).isEqualTo(NotificationStatus.PENDING);
+    assertThat(stored.getSentAt()).isNull();
+  }
+
+  @Test
+  @DisplayName("BR-08 the failure is stored as an error code, never as a provider message")
+  void failureIsStoredAsACode() {
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED", clock.instant());
+    provider.failAll();
+
+    dispatcher.dispatchDue();
+
+    assertThat(row(id).getLastError()).isEqualTo(MockNotificationProvider.MOCK_FAILURE);
+  }
+
+  @Test
+  @DisplayName("BR-08 the dead letter carries the stored correlation id and the failure time")
+  void deadLetterCarriesTheCorrelationId() {
+    String eventId = CaseEvents.eventId();
+    seed("handler-a", eventId, "CASE_OPENED", clock.instant());
+    provider.failAll();
+
+    runUntilExhausted();
+
+    ArgumentCaptor<String> value = ArgumentCaptor.forClass(String.class);
+    verify(kafka).send(eq(Topics.DEAD_LETTER), eq(eventId), value.capture());
+    EventEnvelope<DeadLetterPayload> envelope =
+        EventJson.read(value.getValue(), DeadLetterPayload.class);
+    assertThat(envelope.correlationId()).isEqualTo(CaseEvents.CORRELATION_ID);
+    assertThat(envelope.aggregateId()).isEqualTo(eventId);
+    assertThat(envelope.schemaVersion()).isEqualTo(1);
+    // The fifth attempt ran after four advances of ten minutes.
+    assertThat(envelope.occurredAt()).isEqualTo(MutableClock.T0.plus(Duration.ofMinutes(40)));
   }
 
   // ------------------------------------------------------------------ concurrency

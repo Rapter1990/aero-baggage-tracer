@@ -72,6 +72,9 @@ public class NotificationEntity {
   @Column(name = "sent_at")
   private Instant sentAt;
 
+  @Column(name = "failed_at")
+  private Instant failedAt;
+
   @Column(name = "dead_lettered_at")
   private Instant deadLetteredAt;
 
