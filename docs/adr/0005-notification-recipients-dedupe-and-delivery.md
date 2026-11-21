@@ -1,10 +1,10 @@
 # ADR 0005: Notification recipients, deduplication and delivery retry
 
-Status: proposed (notification-service, issue #14, GitHub #32)
+Status: proposed (notification-service, issue #14, GitHub #32). Amended after the architect and database reviews.
 
 ## Context
 
-The notification-service turns `recovery.case.changed.v1` into in-app notifications (BR-08). The recovery outbox can publish the same event twice with the same `eventId`; AT-13 requires that to produce one notification. Three things were open before the build:
+The notification-service turns `recovery.case.changed.v1` into in-app notifications (BR-08). The recovery outbox can publish the same event twice with the same `eventId`; AT-13 requires that to produce one notification. Open before the build:
 
 1. **No event says who receives a notification.** `CaseChangedPayload` (revision 2) has `caseId, bagTag, legId, state, version, reason, openedAt, resolvedAt, trigger, assignedTo`. It has no `passengerRef`; the passenger link lives only in the journey-service, and the contracts keep passenger data out of events on purpose.
 2. **Two kinds of retry exist** and must not be mixed: reading an event from Kafka, and sending a notification through the delivery provider.
@@ -12,19 +12,41 @@ The notification-service turns `recovery.case.changed.v1` into in-app notificati
 
 ## Decision
 
-1. **Recipient.** The case's assigned handler: `assignedTo`, the token subject. No other service changes. An event without `assignedTo` (schema revision 1, or an unassigned case) is accepted and produces no notification. Notifying the passenger needs a journey-service owner lookup and is out of scope for this slice (a later issue).
-2. **Notified states.** Every case event notifies. The template comes from the state (`CASE_OPENED`, `CASE_RESERVED`, `CASE_RESOLVED`, and so on). There is no ordering filter: a replayed older version produces its own notification, and the unique key below is the only deduplication. This is documented, accepted behavior.
-3. **Deduplication (BR-08, AT-13).** Table `notification` with a unique constraint on `(recipient, event_id, template)`, written with `INSERT ... ON CONFLICT DO NOTHING`. The constraint is the guard, so there is no `processed_event` table and it holds under two replicas. The consumer commits its Kafka offset only after the database transaction commits.
-4. **Stored data.** Only `caseId`, `bagTag`, `state` and `version` are kept. `reason` is never stored. Logs carry only `caseId`, `eventId` and `template`; the recipient and any free text are never logged (free text goes through `LogMasker`).
-5. **Reading events.** The Kafka error handler retries transient failures with exponential backoff, then dead-letters to `baggage.dead-letter.v1` (the topic exists; `Topics.ALL` is unchanged). Malformed events (no `eventId`, unknown state, unparsable body) are dead-lettered at once without retry, as in the recovery-service.
-6. **Sending.** A scheduled dispatcher claims due rows with `FOR UPDATE SKIP LOCKED`, so two replicas never send the same row, and calls a `NotificationProvider` port. The adapter is a mock that can be told to fail. A failure sets `next_attempt_at = now + min(base * 2^n, max)` with jitter and updates the same row, so a retry never creates a second notification ("regardless of delivery retries"). Defaults: 5 attempts, 2 s base, 5 min maximum (`notification.delivery.*`).
-7. **Exhaustion.** After the last attempt the row becomes `FAILED` and one `DeadLetterPayload` (`originalTopic=recovery.case.changed.v1`, `originalEventId`, reason `DELIVERY_EXHAUSTED`, attempts, no raw payload) goes to `baggage.dead-letter.v1`. `dead_lettered_at` is set only after Kafka acknowledges, so a failed publish is retried. This is at-least-once: duplicates on the dead-letter topic are possible and are keyed by `eventId`.
-8. **API.** `GET /api/v1/notifications?page=&size=` (size 1 to 100, else `400 VALIDATION_ERROR`) and `GET /api/v1/notifications/{id}`. Ownership is always `recipient = current subject`; another user's id answers `404`, not `403`, so existence is not leaked. All four roles may read their own. Mark-as-read and ADMIN access to other users' notifications are out of scope.
-9. **Retention.** Notifications are meant to be kept 90 days. No purge job is built in this slice; the table grows until a later issue adds one.
-10. **Runtime.** Port 1118, schema `notification` (own schema, own Liquibase changelog), copied from the recovery-service layout. Kubernetes manifests stay with #18.
+### Recipient and templates
+
+1. **Recipient.** The case's assigned handler: `assignedTo`, the identity user id (the token subject, an opaque id, not personal data). No other service changes. `assignedTo` null or blank produces no notification (counted, see 12). A value longer than 100 characters is malformed and is dead-lettered at once. Notifying the passenger needs a journey-service owner lookup and is a later issue.
+2. **Templates.** One per state: `CASE_OPENED` (OPEN), `CASE_ASSESSING`, `CASE_RESERVED`, `CASE_IN_TRANSIT`, `CASE_RESOLVED`, `CASE_CLOSED_AS_UNRECOVERABLE`, `CASE_CANCELLED`. A state the consumer does not know (the enum reads as `null`, additive producer change) maps to `CASE_UPDATED`, is counted and is **not** dead-lettered. The consumer accepts any schema revision (it never requires revision 2 or higher). No ordering filter: a replayed older version produces its own notification.
+3. **Consequences of "assigned handler".** Cases are always created unassigned and `assignedTo` is set only by assignment, so the opening event reaches nobody and a handler's first notification is the assignment event, shown with the state's template. The handler is also notified of their own transitions (the payload has no actor), and a previous handler is not told when the case is reassigned away. The planned fix is a revision 3 field on `CaseChangedPayload` (`changeKind`, `actor`), not storing the previous version here.
+
+### Reading events
+
+4. **Deduplication (BR-08, AT-13).** Table `notification` with unique constraint `uq_notification_recipient_event_template` on `(recipient, event_id, template)`, written by a native `INSERT ... ON CONFLICT ON CONSTRAINT ... DO NOTHING`. Row count 1 is new, 0 is a duplicate; both are success. The constraint is the only guard (no `processed_event` table) and holds under two replicas. The offset is committed only after the database transaction commits.
+5. **Consumer identity.** Group `notification-service`, listener id `notification-case-changed` with `autoStartup` behind a property, key `caseId` (events for a case stay ordered). `auto-offset-reset` is `latest`: a first deploy or a group reset does not notify about up to 7 days of old changes; replays are done on purpose.
+6. **Correlation.** The consumer restores the envelope `correlationId` (`CorrelationScope`) and never generates one. The row stores `correlation_id`; the dispatcher restores it around the provider call and puts it on the dead-letter envelope.
+7. **Failures.** Transient failures retry with exponential backoff sized to outlast a database failover (about 60 s in total, `aerotrace.notification.consumers.*`), then dead-letter to `baggage.dead-letter.v1` (`Topics.ALL` unchanged). Poison events (no `eventId`, unparsable body, non-UUID `caseId`, `assignedTo` over 100 characters) are dead-lettered at once without retry. A poison event's raw payload (which holds `reason` and `assignedTo`) goes to the dead-letter topic as in recovery; it is never stored in the table.
+8. **Stored data.** From the payload only `caseId`, `bagTag`, `state` and `version`; plus recipient, template, `event_id`, `occurred_at`, `correlation_id` and the delivery columns. `reason` is never stored. Logs carry only `caseId`, `eventId` and `template`; recipient and free text are never logged (free text through `LogMasker`).
+
+### Sending
+
+9. **Claim, send, finish (no provider call inside a transaction).**
+   1. Claim, a short transaction: `UPDATE ... SET next_attempt_at = now() + lease, attempts = attempts + 1, version = version + 1 WHERE id IN (SELECT ... WHERE status='PENDING' AND next_attempt_at <= now() AND attempts < max ORDER BY next_attempt_at LIMIT batch FOR UPDATE SKIP LOCKED) RETURNING ...`. `next_attempt_at` is the lease deadline; there is no lease column.
+   2. Send, no transaction: `NotificationProvider.send(notification)` with a hard timeout, passing the notification id as an idempotency key. The lease (60 s) is longer than the provider timeout (10 s).
+   3. Finish, a guarded update (`WHERE id = :id AND status = 'PENDING' AND version = :claimed`): success sets `SENT`/`sent_at`; failure sets `next_attempt_at = now() + min(base * 2^n, max)` with jitter, or `FAILED` when `attempts >= max`. Zero rows updated means another replica took an expired lease: drop the result.
+   4. Sweep: `PENDING` rows whose lease expired after the last attempt are set to `FAILED` with `last_error = 'LEASE_EXPIRED'`.
+   5. A crash needs no extra code: the claimed row is due again when its lease expires, and its attempt was counted at claim. Delivery is **at-least-once**: a crash between the send and the finish sends a duplicate, which the unique constraint cannot prevent.
+   A retry updates the same row and never inserts one ("regardless of delivery retries"). Defaults `aerotrace.notification.delivery.*`: 5 attempts, 2 s base, 5 min cap (with 5 attempts the waits are 2/4/8/16 s, so the cap only matters if attempts are raised). Timestamps and the lease use the database `now()`, not a replica's clock.
+10. **Exhaustion and dead letters.** After the last attempt the row is `FAILED`. A separate publisher claims `FAILED` rows with `dead_lettered_at IS NULL` the same way (short claim, Kafka send outside any transaction, then a guarded update that sets `dead_lettered_at` only after Kafka acknowledges), so a Kafka outage never blocks sending of `PENDING` rows. It publishes one `DeadLetterPayload` (`originalTopic=recovery.case.changed.v1`, `originalEventId`, `DELIVERY_EXHAUSTED`, attempts, `rawPayload=null`) with its own event type and schema constants, keyed by `eventId`, the stored `correlation_id` on the envelope, and a producer configured like recovery's (`acks=all`, idempotence, short timeouts). At-least-once: duplicates are possible. `last_error` holds an error code or exception class name only, never a provider message.
+11. **Operator recovery.** Replaying the case event does nothing (the row exists and `ON CONFLICT` skips it). Exhausted deliveries are **accepted loss** in this slice and visible through the metrics and the `FAILED` rows; an ADMIN reset to `PENDING` is a later issue.
+
+### Observability, API, retention, runtime
+
+12. **Metrics.** `notification.events{outcome=created|duplicate|unassigned|unknown_state|dead_lettered}`, `notification.delivery{outcome=sent|retry|failed}`, a pending gauge and an oldest-due-age gauge.
+13. **API.** `GET /api/v1/notifications?page=&size=` (size 1 to 100, else `400 VALIDATION_ERROR`; ordered `created_at DESC, id DESC`, matching the index) and `GET /api/v1/notifications/{id}`. The response includes the delivery `status`. Ownership is always `recipient = current subject`; another user's id answers `404`, not `403`. All four roles read their own. Mark-as-read and ADMIN access to others' notifications are out of scope.
+14. **Retention.** `aerotrace.notification.retention` (default 90 days). A scheduled purge deletes terminal rows only (`SENT`, or `FAILED` with `dead_lettered_at` set) in bounded batches, by `created_at`. Purging removes the dedupe key, so a replay older than the retention would notify again; retention stays longer than the topic retention (7 days) and the dead-letter topic's 30 days.
+15. **Runtime.** Port 1118, schema `notification` (own schema and Liquibase changelog; native statements fire no ADR 0003 auditing, so `created_at` is written by the statement and `version` is the optimistic lock). Layout copied from recovery-service **without** Redis and without the capacity, journey or recovery clients. In scope here: Dockerfile, both Compose files, Eureka registration, the gateway route `/api/v1/notifications/**` and a `docs-notification` route, and the config-repo file. Kubernetes manifests stay with #18.
 
 ## Consequences
 
-- Passengers get no notification until a later issue adds the owner lookup; the handler does.
-- An assignment-only event repeats the previous state, so the template cannot tell "assigned" from "state changed" without storing the previous version. Accepted for now.
-- The unbounded table is a known gap (decision 9).
+- Passengers get no notification until a later issue adds the owner lookup; the handler does, but only from the first assignment on.
+- Exhausted deliveries are not recoverable by the operator in this slice.
+- Provider delivery is at-least-once; the provider must honor the idempotency key.
