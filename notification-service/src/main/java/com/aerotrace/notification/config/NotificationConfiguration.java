@@ -11,7 +11,10 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableConfigurationProperties(NotificationProperties.class)
 class NotificationConfiguration {
 
-  /** The single source of time, so delivery and retention can be tested with a fake. */
+  /**
+   * The application clock, for envelope metadata only (a dead letter's publishedAt, a consumer dead
+   * letter's occurredAt). Delivery, leases and retention use the database's now() (ADR 0005).
+   */
   @Bean
   Clock clock() {
     return Clock.systemUTC();
