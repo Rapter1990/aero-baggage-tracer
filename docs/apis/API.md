@@ -11,6 +11,7 @@ What the platform offers, how requests flow, how to try them in Postman.
 | [Recovery Service API](RECOVERY-API.md) | Cases, moves, capacity, policy, events |
 | [Capacity Service API](CAPACITY-API.md) | Reservations, release, resources, the 409 contract, events |
 | [Search Service API](SEARCH-API.md) | Bag search, airport report, index status, rebuild |
+| [Notification Service API](NOTIFICATION-API.md) | Own notifications, paging, consumed case event, dead letter |
 | [README](../../README.md) | Setup, variables, limits, observability |
 
 ## At a glance
