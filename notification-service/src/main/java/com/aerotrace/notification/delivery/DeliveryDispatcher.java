@@ -3,6 +3,7 @@ package com.aerotrace.notification.delivery;
 import com.aerotrace.common.correlation.CorrelationScope;
 import com.aerotrace.notification.config.NotificationProperties;
 import com.aerotrace.notification.constant.MetricNames;
+import com.aerotrace.notification.constant.NotificationRules;
 import com.aerotrace.notification.repository.DeliveryRepository;
 import com.aerotrace.notification.repository.DeliveryRepository.Claim;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -43,8 +44,6 @@ import org.springframework.stereotype.Component;
 public class DeliveryDispatcher {
 
   private static final Logger LOG = LoggerFactory.getLogger(DeliveryDispatcher.class);
-
-  static final String TIMEOUT = "TIMEOUT";
 
   private final DeliveryRepository deliveries;
   private final NotificationProvider provider;
@@ -121,7 +120,18 @@ public class DeliveryDispatcher {
     }
     long deadline = System.nanoTime() + settings.providerTimeout().toNanos();
     for (int i = 0; i < claims.size(); i++) {
-      finish(claims.get(i), outcome(sends.get(i), deadline));
+      Claim claim = claims.get(i);
+      try {
+        finish(claim, outcome(sends.get(i), deadline));
+      } catch (RuntimeException e) {
+        // One row's finish failing (the database blinked) must not leave the rest of the batch
+        // unrecorded. This row stays claimed and is due again when its lease ends. The class only:
+        // a driver message can carry connection details or data.
+        LOG.warn(
+            "Delivery result of notification {} not recorded: {}",
+            claim.id(),
+            e.getClass().getSimpleName());
+      }
     }
     return claims.size();
   }
@@ -147,7 +157,7 @@ public class DeliveryDispatcher {
       return null;
     } catch (TimeoutException e) {
       send.cancel(true);
-      return TIMEOUT;
+      return NotificationRules.TIMEOUT;
     } catch (ExecutionException e) {
       Throwable cause = e.getCause() == null ? e : e.getCause();
       return cause instanceof DeliveryFailedException failed
@@ -156,7 +166,7 @@ public class DeliveryDispatcher {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       send.cancel(true);
-      return "INTERRUPTED";
+      return NotificationRules.INTERRUPTED;
     }
   }
 

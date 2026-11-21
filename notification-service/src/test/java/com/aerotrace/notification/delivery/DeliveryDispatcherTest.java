@@ -1,8 +1,10 @@
 package com.aerotrace.notification.delivery;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -17,6 +19,7 @@ import com.aerotrace.notification.base.AbstractNotificationTest;
 import com.aerotrace.notification.base.CaseEvents;
 import com.aerotrace.notification.model.entity.NotificationEntity;
 import com.aerotrace.notification.model.entity.NotificationStatus;
+import com.aerotrace.notification.repository.DeliveryRepository;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -33,12 +36,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 /**
  * Delivery against a real PostgreSQL and a mock Kafka producer. Times are the database's {@code
@@ -55,6 +63,7 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
 
   @Autowired DeliveryDispatcher dispatcher;
   @MockitoBean KafkaTemplate<String, String> kafka;
+  @MockitoSpyBean DeliveryRepository deliveries;
 
   @BeforeEach
   void deadLetterTopicAcknowledges() {
@@ -119,6 +128,32 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
     assertThat(processed).isZero();
     assertThat(provider.attemptedIds()).isEmpty();
     assertThat(row(id).getAttempts()).isZero();
+  }
+
+  @Test
+  @DisplayName("BR-08 a finish that fails for one notification does not stop the others' finishes")
+  @ExtendWith(OutputCaptureExtension.class)
+  void failingFinishDoesNotAbortTheOthers(CapturedOutput output) {
+    // Claimed oldest first: the broken row is the first of the batch.
+    UUID broken = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED");
+    UUID second = seed("handler-b", CaseEvents.eventId(), "CASE_OPENED");
+    UUID third = seed("handler-c", CaseEvents.eventId(), "CASE_OPENED");
+    doThrow(new DataAccessResourceFailureException("connection to db-secret-host reset"))
+        .when(deliveries)
+        .markSent(eq(broken), anyLong());
+
+    int processed = dispatcher.dispatchDue();
+
+    assertThat(processed).isEqualTo(3);
+    assertThat(provider.sentIds()).containsExactlyInAnyOrder(broken, second, third);
+    assertThat(row(second).getStatus()).isEqualTo(NotificationStatus.SENT);
+    assertThat(row(third).getStatus()).isEqualTo(NotificationStatus.SENT);
+    // Not recorded: the row stays claimed and is due again when its lease ends.
+    assertThat(row(broken).getStatus()).isEqualTo(NotificationStatus.PENDING);
+    // Only the exception class is logged, never its message.
+    assertThat(output.getAll())
+        .contains("DataAccessResourceFailureException")
+        .doesNotContain("db-secret-host");
   }
 
   // ------------------------------------------------------------------ BR-08 retries

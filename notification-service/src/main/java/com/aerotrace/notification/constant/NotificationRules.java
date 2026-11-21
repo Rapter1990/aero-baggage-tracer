@@ -21,6 +21,12 @@ public final class NotificationRules {
   /** {@code last_error} of a row whose lease expired after its last attempt (a crashed replica). */
   public static final String LEASE_EXPIRED = "LEASE_EXPIRED";
 
+  /** {@code last_error} of an attempt the provider did not answer within its timeout. */
+  public static final String TIMEOUT = "TIMEOUT";
+
+  /** {@code last_error} of an attempt whose dispatcher thread was interrupted (shutdown). */
+  public static final String INTERRUPTED = "INTERRUPTED";
+
   /** The longest event id, recipient and bag tag a row can hold; longer ones are poison. */
   public static final int MAX_EVENT_ID_LENGTH = 100;
 
