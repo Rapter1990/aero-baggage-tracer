@@ -1,8 +1,9 @@
 package com.aerotrace.notification.delivery;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -12,8 +13,11 @@ import org.springframework.stereotype.Component;
 
 /**
  * The only channel in this slice: in-app notifications are read through the API, so "delivery"
- * accepts the notification and remembers it. It can be told to fail, so retries, exhaustion and
- * dead letters can be exercised. Safe to call from several threads.
+ * accepts the notification. It can be told to fail, so retries, exhaustion and dead letters can be
+ * exercised, and it remembers the ids of the last {@value #HISTORY_LIMIT} calls for tests to check.
+ * The history is bounded because this provider also runs in every deployment of the slice: a
+ * long-running instance must not grow its memory with every notification. Safe to call from several
+ * threads.
  */
 @Component
 public class MockNotificationProvider implements NotificationProvider {
@@ -23,22 +27,25 @@ public class MockNotificationProvider implements NotificationProvider {
   /** The error code of a failure the mock was told to produce. */
   public static final String MOCK_FAILURE = "PROVIDER_UNAVAILABLE";
 
+  /** How many attempted and sent ids are remembered; older ones are forgotten first. */
+  public static final int HISTORY_LIMIT = 1_000;
+
   private static final Consumer<OutgoingNotification> NOTHING = notification -> {};
 
-  private final List<UUID> attempted = new CopyOnWriteArrayList<>();
-  private final List<UUID> sent = new CopyOnWriteArrayList<>();
+  private final Deque<UUID> attempted = new ArrayDeque<>();
+  private final Deque<UUID> sent = new ArrayDeque<>();
   private final AtomicBoolean failAll = new AtomicBoolean();
   private final AtomicInteger failNext = new AtomicInteger();
   private volatile Consumer<OutgoingNotification> onSend = NOTHING;
 
   @Override
   public void send(OutgoingNotification notification) {
-    attempted.add(notification.id());
+    remember(attempted, notification.id());
     onSend.accept(notification);
     if (failAll.get() || failNext.getAndUpdate(n -> Math.max(n - 1, 0)) > 0) {
       throw new DeliveryFailedException(MOCK_FAILURE);
     }
-    sent.add(notification.id());
+    remember(sent, notification.id());
     LOG.debug(
         "Delivered notification {} for case {} template {}",
         notification.id(),
@@ -66,17 +73,36 @@ public class MockNotificationProvider implements NotificationProvider {
     failAll.set(false);
     failNext.set(0);
     onSend = NOTHING;
-    attempted.clear();
-    sent.clear();
+    synchronized (attempted) {
+      attempted.clear();
+    }
+    synchronized (sent) {
+      sent.clear();
+    }
   }
 
-  /** Every notification id the provider was called with, in call order (repeats included). */
+  /**
+   * The ids of the last calls (at most {@value #HISTORY_LIMIT}), in call order, repeats included.
+   */
   public List<UUID> attemptedIds() {
-    return List.copyOf(attempted);
+    synchronized (attempted) {
+      return List.copyOf(attempted);
+    }
   }
 
-  /** The ids of the calls that succeeded, in call order. */
+  /** The ids of the last calls that succeeded (at most {@value #HISTORY_LIMIT}), in call order. */
   public List<UUID> sentIds() {
-    return List.copyOf(sent);
+    synchronized (sent) {
+      return List.copyOf(sent);
+    }
+  }
+
+  private static void remember(Deque<UUID> history, UUID id) {
+    synchronized (history) {
+      if (history.size() == HISTORY_LIMIT) {
+        history.removeFirst();
+      }
+      history.addLast(id);
+    }
   }
 }
