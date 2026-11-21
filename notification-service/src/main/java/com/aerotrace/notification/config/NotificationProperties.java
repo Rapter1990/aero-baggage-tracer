@@ -45,12 +45,28 @@ public record NotificationProperties(
    * @param retryAttempts deliveries of a failing event in total (the first one included)
    * @param retryBackoff the first wait between deliveries; it doubles each time
    * @param retryMaxBackoff the longest single wait
+   * @param deadLetterTimeout how long a dead-lettered event waits for Kafka to acknowledge its dead
+   *     letter before the event is retried; at least the producer's {@code delivery.timeout.ms} (8
+   *     s), so a send Kafka would still complete is not given up early
    */
   public record Consumers(
       @DefaultValue("true") boolean enabled,
       @DefaultValue("6") int retryAttempts,
       @DefaultValue("2s") Duration retryBackoff,
-      @DefaultValue("30s") Duration retryMaxBackoff) {}
+      @DefaultValue("30s") Duration retryMaxBackoff,
+      @DefaultValue("10s") Duration deadLetterTimeout) {
+
+    public Consumers {
+      if (retryAttempts < 1) {
+        throw new IllegalArgumentException(
+            "aerotrace.notification.consumers.retry-attempts must be >= 1");
+      }
+      if (deadLetterTimeout.isNegative() || deadLetterTimeout.isZero()) {
+        throw new IllegalArgumentException(
+            "aerotrace.notification.consumers.dead-letter-timeout must be positive");
+      }
+    }
+  }
 
   /**
    * Delivery through the provider (claim, send, finish; ADR 0005 decision 9).

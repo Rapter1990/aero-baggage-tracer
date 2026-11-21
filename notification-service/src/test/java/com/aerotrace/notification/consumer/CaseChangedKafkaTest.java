@@ -149,6 +149,7 @@ class CaseChangedKafkaTest extends AbstractNotificationTest {
       "BR-08 an event whose caseId is not a UUID is dead-lettered at once, without a retry")
   void nonUuidCaseIdIsDeadLetteredAtOnce() throws Exception {
     String eventId = CaseEvents.eventId();
+    String reason = "Maria Gonzalez (passport P1234567) waits at gate B12";
     String json =
         CaseEvents.event(
             eventId,
@@ -156,7 +157,7 @@ class CaseChangedKafkaTest extends AbstractNotificationTest {
             CaseEvents.bagTag(),
             RecoveryState.OPEN,
             1,
-            "HIGH_CONNECTION_RISK",
+            reason,
             CaseEvents.handler());
 
     publish(eventId, json);
@@ -168,6 +169,9 @@ class CaseChangedKafkaTest extends AbstractNotificationTest {
     assertThat(envelope.payload().originalTopic()).isEqualTo(Topics.CASE_CHANGED);
     assertThat(envelope.payload().originalEventId()).isEqualTo(eventId);
     assertThat(envelope.payload().attempts()).isEqualTo(1);
+    // The raw copy is there for an operator, without the case's free-text reason (decision 7).
+    assertThat(envelope.payload().rawPayload()).contains(eventId).contains("not-a-uuid");
+    assertThat(dead.getFirst().value()).doesNotContain("Maria", "P1234567", "gate B12");
     // The dead letter keeps the event's correlation id (ADR 0005, decision 6).
     assertThat(envelope.correlationId()).isEqualTo(CaseEvents.CORRELATION_ID);
     verify(handler, times(1)).handle(json);
@@ -220,7 +224,9 @@ class CaseChangedKafkaTest extends AbstractNotificationTest {
         EventJson.read(dead.getFirst().value(), DeadLetterPayload.class);
     assertThat(envelope.payload().originalTopic()).isEqualTo(Topics.CASE_CHANGED);
     assertThat(envelope.payload().reason()).isNotBlank();
-    // retry-attempts is 3 in the test profile: the first delivery and two retries.
+    // retry-attempts is 3 in the test profile: the first delivery and two retries, and the dead
+    // letter says so.
+    assertThat(envelope.payload().attempts()).isEqualTo(3);
     verify(handler, times(3)).handle(json);
     assertThat(rowsOf(eventId)).isEmpty();
     awaitMarker();

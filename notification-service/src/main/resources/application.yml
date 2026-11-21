@@ -81,6 +81,9 @@ aerotrace:
       retry-attempts: ${NOTIFICATION_CONSUMER_RETRY_ATTEMPTS:6}
       retry-backoff: ${NOTIFICATION_CONSUMER_RETRY_BACKOFF:2s}
       retry-max-backoff: ${NOTIFICATION_CONSUMER_RETRY_MAX_BACKOFF:30s}
+      # How long a dead-lettered event waits for Kafka's acknowledgement; at least the producer's
+      # delivery.timeout.ms (8 s below), or a send Kafka would still complete is given up early.
+      dead-letter-timeout: ${NOTIFICATION_CONSUMER_DEAD_LETTER_TIMEOUT:10s}
     delivery:
       dispatch-delay: ${NOTIFICATION_DISPATCH_DELAY:1s}
       max-attempts: ${NOTIFICATION_DELIVERY_MAX_ATTEMPTS:5}
