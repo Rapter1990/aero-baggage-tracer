@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.aerotrace.common.event.EventJson;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.notification.base.CaseEvents;
+import com.aerotrace.notification.constant.KafkaConstants;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -60,9 +61,9 @@ class DeadLetterRawPayloadTest {
   @DisplayName("BR-08 unreadable text without a reason is copied, cut to the size limit")
   void unreadableTextWithoutAReasonIsKept() {
     assertThat(KafkaConsumerConfiguration.rawCopy("garbage {")).isEqualTo("garbage {");
-    String huge = "x".repeat(KafkaConsumerConfiguration.MAX_RAW_PAYLOAD_CHARS + 10);
+    String huge = "x".repeat(KafkaConstants.MAX_RAW_PAYLOAD_CHARS + 10);
     assertThat(KafkaConsumerConfiguration.rawCopy(huge))
-        .hasSize(KafkaConsumerConfiguration.MAX_RAW_PAYLOAD_CHARS);
+        .hasSize(KafkaConstants.MAX_RAW_PAYLOAD_CHARS);
     assertThat(KafkaConsumerConfiguration.rawCopy(null)).isNull();
   }
 }

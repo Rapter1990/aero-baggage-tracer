@@ -17,6 +17,7 @@ import com.aerotrace.common.event.EventJson;
 import com.aerotrace.common.event.Topics;
 import com.aerotrace.notification.base.AbstractNotificationTest;
 import com.aerotrace.notification.base.CaseEvents;
+import com.aerotrace.notification.constant.ProviderConstants;
 import com.aerotrace.notification.model.entity.NotificationEntity;
 import com.aerotrace.notification.model.entity.NotificationStatus;
 import com.aerotrace.notification.repository.DeliveryRepository;
@@ -433,7 +434,7 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
 
     dispatcher.dispatchDue();
 
-    assertThat(row(id).getLastError()).isEqualTo(MockNotificationProvider.MOCK_FAILURE);
+    assertThat(row(id).getLastError()).isEqualTo(ProviderConstants.MOCK_FAILURE);
   }
 
   @Test

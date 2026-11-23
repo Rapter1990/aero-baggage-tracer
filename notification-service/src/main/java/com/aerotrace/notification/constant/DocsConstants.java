@@ -1,11 +1,10 @@
 package com.aerotrace.notification.constant;
 
-import lombok.AccessLevel;
-import lombok.NoArgsConstructor;
+import lombok.experimental.UtilityClass;
 
 /** Names used in the OpenAPI definition. */
-@NoArgsConstructor(access = AccessLevel.PRIVATE)
-public final class DocsConstants {
+@UtilityClass
+public class DocsConstants {
 
   public static final String TAG_NOTIFICATIONS = "Notifications";
 

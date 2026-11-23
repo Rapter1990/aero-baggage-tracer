@@ -1,14 +1,13 @@
 package com.aerotrace.notification.docs;
 
-import lombok.AccessLevel;
-import lombok.NoArgsConstructor;
+import lombok.experimental.UtilityClass;
 
 /**
  * Example bodies shown in the OpenAPI definition (the same as docs/apis/NOTIFICATION-API.md).
  * Values such as the time are illustrative; the messages are the ones the service really sends.
  */
-@NoArgsConstructor(access = AccessLevel.PRIVATE)
-public final class ApiExamples {
+@UtilityClass
+public class ApiExamples {
 
   public static final String LIST =
       """

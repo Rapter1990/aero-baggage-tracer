@@ -1,11 +1,10 @@
 package com.aerotrace.notification.constant;
 
-import lombok.AccessLevel;
-import lombok.NoArgsConstructor;
+import lombok.experimental.UtilityClass;
 
 /** Meter names and tags (ADR 0005, decision 12). */
-@NoArgsConstructor(access = AccessLevel.PRIVATE)
-public final class MetricNames {
+@UtilityClass
+public class MetricNames {
 
   /**
    * One count per case event read, tagged {@code outcome}: {@code created}, {@code duplicate},

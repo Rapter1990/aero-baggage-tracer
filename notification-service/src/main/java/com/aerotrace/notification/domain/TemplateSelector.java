@@ -1,6 +1,7 @@
 package com.aerotrace.notification.domain;
 
 import com.aerotrace.common.model.RecoveryState;
+import com.aerotrace.notification.constant.NotificationRules;
 import org.springframework.stereotype.Component;
 
 /**
@@ -10,15 +11,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class TemplateSelector {
 
-  /**
-   * The template of a state the service does not know: a constant a newer producer added reads as
-   * {@code null}. It still notifies; it is counted, not dead-lettered.
-   */
-  public static final String CASE_UPDATED = "CASE_UPDATED";
-
   public String select(RecoveryState state) {
     if (state == null) {
-      return CASE_UPDATED;
+      return NotificationRules.CASE_UPDATED;
     }
     return switch (state) {
       case OPEN -> "CASE_OPENED";

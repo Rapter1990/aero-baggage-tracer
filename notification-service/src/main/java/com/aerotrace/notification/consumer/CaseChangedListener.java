@@ -1,6 +1,7 @@
 package com.aerotrace.notification.consumer;
 
 import com.aerotrace.common.event.Topics;
+import com.aerotrace.notification.constant.KafkaConstants;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
@@ -13,8 +14,6 @@ import org.springframework.stereotype.Component;
 @Component
 class CaseChangedListener {
 
-  static final String LISTENER_ID = "notification-case-changed";
-
   private final CaseChangedHandler handler;
 
   CaseChangedListener(CaseChangedHandler handler) {
@@ -22,7 +21,7 @@ class CaseChangedListener {
   }
 
   @KafkaListener(
-      id = LISTENER_ID,
+      id = KafkaConstants.LISTENER_ID,
       // The group is spring.kafka.consumer.group-id, not the listener id.
       idIsGroup = false,
       topics = Topics.CASE_CHANGED,

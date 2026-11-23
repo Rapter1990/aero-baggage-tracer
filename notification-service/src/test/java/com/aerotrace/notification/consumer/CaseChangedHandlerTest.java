@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.notification.base.AbstractNotificationTest;
 import com.aerotrace.notification.base.CaseEvents;
+import com.aerotrace.notification.constant.NotificationRules;
 import com.aerotrace.notification.domain.TemplateSelector;
 import com.aerotrace.notification.model.entity.NotificationEntity;
 import com.aerotrace.notification.model.entity.NotificationStatus;
@@ -395,7 +396,7 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
         .singleElement()
         .satisfies(
             n -> {
-              assertThat(n.getTemplate()).isEqualTo(TemplateSelector.CASE_UPDATED);
+              assertThat(n.getTemplate()).isEqualTo(NotificationRules.CASE_UPDATED);
               assertThat(n.getState()).isNull();
               assertThat(n.getRecipient()).isEqualTo(handlerId);
             });

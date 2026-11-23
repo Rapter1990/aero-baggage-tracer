@@ -1,5 +1,6 @@
 package com.aerotrace.notification.config;
 
+import com.aerotrace.notification.constant.NotificationRules;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
@@ -25,11 +26,9 @@ public record NotificationProperties(
     @DefaultValue Docs docs,
     @DefaultValue Jwt jwt) {
 
-  /** The dead-letter topic's retention, the longest of the topics this service reads or writes. */
-  public static final Duration DEAD_LETTER_TOPIC_RETENTION = Duration.ofDays(30);
-
   public NotificationProperties {
-    if (retention == null || retention.compareTo(DEAD_LETTER_TOPIC_RETENTION) <= 0) {
+    if (retention == null
+        || retention.compareTo(NotificationRules.DEAD_LETTER_TOPIC_RETENTION) <= 0) {
       throw new IllegalArgumentException(
           "aerotrace.notification.retention must be longer than the dead-letter topic's 30 days:"
               + " purging removes the dedupe key");

@@ -6,6 +6,7 @@ import com.aerotrace.common.error.ErrorCode;
 import com.aerotrace.common.security.SecurityContextHelper;
 import com.aerotrace.notification.constant.ApiPaths;
 import com.aerotrace.notification.constant.DocsConstants;
+import com.aerotrace.notification.constant.ErrorMessages;
 import com.aerotrace.notification.constant.NotificationRules;
 import com.aerotrace.notification.docs.ApiExamples;
 import com.aerotrace.notification.model.dto.response.NotificationResponse;
@@ -34,9 +35,6 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = DocsConstants.TAG_NOTIFICATIONS)
 @SecurityRequirement(name = DocsConstants.BEARER_AUTH)
 public class NotificationController {
-
-  private static final String SIZE_RULE =
-      "size must be between 1 and " + NotificationRules.MAX_PAGE_SIZE;
 
   private final NotificationQueryService service;
 
@@ -68,8 +66,8 @@ public class NotificationController {
           @Min(value = 0, message = "page must be 0 or more")
           int page,
       @RequestParam(value = "size", defaultValue = "" + NotificationRules.DEFAULT_PAGE_SIZE)
-          @Min(value = 1, message = SIZE_RULE)
-          @Max(value = NotificationRules.MAX_PAGE_SIZE, message = SIZE_RULE)
+          @Min(value = 1, message = ErrorMessages.SIZE_RULE)
+          @Max(value = NotificationRules.MAX_PAGE_SIZE, message = ErrorMessages.SIZE_RULE)
           int size) {
     return ApiResponse.success(service.list(caller(), page, size));
   }

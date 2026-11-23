@@ -1,12 +1,12 @@
 package com.aerotrace.notification.constant;
 
+import java.time.Duration;
 import java.util.regex.Pattern;
-import lombok.AccessLevel;
-import lombok.NoArgsConstructor;
+import lombok.experimental.UtilityClass;
 
 /** Fixed rules and names of the notification-service (ADR 0005). */
-@NoArgsConstructor(access = AccessLevel.PRIVATE)
-public final class NotificationRules {
+@UtilityClass
+public class NotificationRules {
 
   /** The event type of {@code recovery.case.changed.v1}. */
   public static final String EVENT_TYPE_CASE_CHANGED = "recovery.case.changed";
@@ -43,6 +43,15 @@ public final class NotificationRules {
 
   /** The longest {@code last_error} stored. */
   public static final int MAX_ERROR_LENGTH = 100;
+
+  /** The dead-letter topic's retention, the longest of the topics this service reads or writes. */
+  public static final Duration DEAD_LETTER_TOPIC_RETENTION = Duration.ofDays(30);
+
+  /**
+   * The template of a state the service does not know: a constant a newer producer added reads as
+   * {@code null}. It still notifies; it is counted, not dead-lettered.
+   */
+  public static final String CASE_UPDATED = "CASE_UPDATED";
 
   public static final int DEFAULT_PAGE_SIZE = 20;
   public static final int MAX_PAGE_SIZE = 100;

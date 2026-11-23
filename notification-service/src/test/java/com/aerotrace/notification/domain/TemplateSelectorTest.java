@@ -3,6 +3,7 @@ package com.aerotrace.notification.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.aerotrace.common.model.RecoveryState;
+import com.aerotrace.notification.constant.NotificationRules;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -48,7 +49,7 @@ class TemplateSelectorTest {
   @DisplayName(
       "BR-08 a missing state (an enum value added later reads as null) maps to CASE_UPDATED")
   void unknownStateMapsToCaseUpdated() {
-    assertThat(selector.select(null)).isEqualTo(TemplateSelector.CASE_UPDATED);
-    assertThat(EXPECTED.values()).doesNotContain(TemplateSelector.CASE_UPDATED);
+    assertThat(selector.select(null)).isEqualTo(NotificationRules.CASE_UPDATED);
+    assertThat(EXPECTED.values()).doesNotContain(NotificationRules.CASE_UPDATED);
   }
 }

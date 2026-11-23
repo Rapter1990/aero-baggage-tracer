@@ -16,6 +16,7 @@ import com.aerotrace.common.model.RecoveryState;
 import com.aerotrace.notification.base.AbstractNotificationTest;
 import com.aerotrace.notification.base.CaseEvents;
 import com.aerotrace.notification.base.KafkaFixture;
+import com.aerotrace.notification.constant.KafkaConstants;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -132,7 +133,7 @@ class CaseChangedKafkaTest extends AbstractNotificationTest {
 
     // The consumer goes away and comes back having committed nothing past this event, as after a
     // crash between the database commit and the offset commit.
-    var container = registry.getListenerContainer(LISTENER_ID);
+    var container = registry.getListenerContainer(KafkaConstants.LISTENER_ID);
     container.stop();
     kafka().rewind(GROUP, Topics.CASE_CHANGED);
     container.start();

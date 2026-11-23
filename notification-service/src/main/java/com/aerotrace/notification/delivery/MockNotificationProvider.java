@@ -1,5 +1,6 @@
 package com.aerotrace.notification.delivery;
 
+import com.aerotrace.notification.constant.ProviderConstants;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
@@ -14,21 +15,15 @@ import org.springframework.stereotype.Component;
 /**
  * The only channel in this slice: in-app notifications are read through the API, so "delivery"
  * accepts the notification. It can be told to fail, so retries, exhaustion and dead letters can be
- * exercised, and it remembers the ids of the last {@value #HISTORY_LIMIT} calls for tests to check.
- * The history is bounded because this provider also runs in every deployment of the slice: a
- * long-running instance must not grow its memory with every notification. Safe to call from several
- * threads.
+ * exercised, and it remembers the ids of the last {@value ProviderConstants#HISTORY_LIMIT} calls
+ * for tests to check. The history is bounded because this provider also runs in every deployment of
+ * the slice: a long-running instance must not grow its memory with every notification. Safe to call
+ * from several threads.
  */
 @Component
 public class MockNotificationProvider implements NotificationProvider {
 
   private static final Logger LOG = LoggerFactory.getLogger(MockNotificationProvider.class);
-
-  /** The error code of a failure the mock was told to produce. */
-  public static final String MOCK_FAILURE = "PROVIDER_UNAVAILABLE";
-
-  /** How many attempted and sent ids are remembered; older ones are forgotten first. */
-  public static final int HISTORY_LIMIT = 1_000;
 
   private static final Consumer<OutgoingNotification> NOTHING = notification -> {};
 
@@ -43,7 +38,7 @@ public class MockNotificationProvider implements NotificationProvider {
     remember(attempted, notification.id());
     onSend.accept(notification);
     if (failAll.get() || failNext.getAndUpdate(n -> Math.max(n - 1, 0)) > 0) {
-      throw new DeliveryFailedException(MOCK_FAILURE);
+      throw new DeliveryFailedException(ProviderConstants.MOCK_FAILURE);
     }
     remember(sent, notification.id());
     LOG.debug(
@@ -82,7 +77,8 @@ public class MockNotificationProvider implements NotificationProvider {
   }
 
   /**
-   * The ids of the last calls (at most {@value #HISTORY_LIMIT}), in call order, repeats included.
+   * The ids of the last calls (at most {@value ProviderConstants#HISTORY_LIMIT}), in call order,
+   * repeats included.
    */
   public List<UUID> attemptedIds() {
     synchronized (attempted) {
@@ -90,7 +86,10 @@ public class MockNotificationProvider implements NotificationProvider {
     }
   }
 
-  /** The ids of the last calls that succeeded (at most {@value #HISTORY_LIMIT}), in call order. */
+  /**
+   * The ids of the last calls that succeeded (at most {@value ProviderConstants#HISTORY_LIMIT}), in
+   * call order.
+   */
   public List<UUID> sentIds() {
     synchronized (sent) {
       return List.copyOf(sent);
@@ -99,7 +98,7 @@ public class MockNotificationProvider implements NotificationProvider {
 
   private static void remember(Deque<UUID> history, UUID id) {
     synchronized (history) {
-      if (history.size() == HISTORY_LIMIT) {
+      if (history.size() == ProviderConstants.HISTORY_LIMIT) {
         history.removeFirst();
       }
       history.addLast(id);

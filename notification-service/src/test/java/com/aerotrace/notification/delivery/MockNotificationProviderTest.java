@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.aerotrace.common.model.RecoveryState;
+import com.aerotrace.notification.constant.ProviderConstants;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -30,7 +31,7 @@ class MockNotificationProviderTest {
   void historyIsBounded() {
     MockNotificationProvider provider = new MockNotificationProvider();
     List<UUID> ids = new ArrayList<>();
-    int calls = MockNotificationProvider.HISTORY_LIMIT + 25;
+    int calls = ProviderConstants.HISTORY_LIMIT + 25;
     for (int i = 0; i < calls; i++) {
       OutgoingNotification n = notification();
       ids.add(n.id());

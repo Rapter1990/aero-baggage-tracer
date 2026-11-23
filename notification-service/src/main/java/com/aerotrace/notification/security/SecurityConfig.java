@@ -8,6 +8,7 @@ import com.aerotrace.common.security.PemKeyUtils;
 import com.aerotrace.common.security.Role;
 import com.aerotrace.notification.config.NotificationProperties;
 import com.aerotrace.notification.constant.ApiPaths;
+import com.aerotrace.notification.constant.ErrorMessages;
 import java.security.interfaces.RSAPublicKey;
 import java.util.Arrays;
 import java.util.List;
@@ -37,9 +38,6 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 @Configuration(proxyBeanMethods = false)
 class SecurityConfig {
 
-  private static final String AUTHENTICATION_REQUIRED = "Authentication is required";
-  private static final String INSUFFICIENT_PERMISSIONS = "You do not have permission to do this";
-
   @Bean
   JwtDecoder jwtDecoder(NotificationProperties properties) {
     NotificationProperties.Jwt jwt = properties.jwt();
@@ -61,11 +59,13 @@ class SecurityConfig {
     AuthenticationEntryPoint unauthorized =
         (request, response, ex) -> {
           response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
-          errors.write(request, response, ErrorCode.UNAUTHENTICATED, AUTHENTICATION_REQUIRED);
+          errors.write(
+              request, response, ErrorCode.UNAUTHENTICATED, ErrorMessages.AUTHENTICATION_REQUIRED);
         };
     AccessDeniedHandler forbidden =
         (request, response, ex) ->
-            errors.write(request, response, ErrorCode.ACCESS_DENIED, INSUFFICIENT_PERMISSIONS);
+            errors.write(
+                request, response, ErrorCode.ACCESS_DENIED, ErrorMessages.INSUFFICIENT_PERMISSIONS);
     String[] everyRole = Arrays.stream(Role.values()).map(Role::name).toArray(String[]::new);
 
     http.csrf(AbstractHttpConfigurer::disable)

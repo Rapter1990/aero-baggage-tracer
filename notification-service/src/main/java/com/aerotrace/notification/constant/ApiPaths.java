@@ -1,11 +1,10 @@
 package com.aerotrace.notification.constant;
 
-import lombok.AccessLevel;
-import lombok.NoArgsConstructor;
+import lombok.experimental.UtilityClass;
 
 /** Every URL path this service answers on, in one place. */
-@NoArgsConstructor(access = AccessLevel.PRIVATE)
-public final class ApiPaths {
+@UtilityClass
+public class ApiPaths {
 
   public static final String NOTIFICATIONS = "/api/v1/notifications";
   public static final String NOTIFICATION = NOTIFICATIONS + "/{id}";

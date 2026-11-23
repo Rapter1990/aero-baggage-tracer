@@ -6,6 +6,7 @@ import com.aerotrace.common.event.EventEnvelope;
 import com.aerotrace.common.event.EventJson;
 import com.aerotrace.common.event.Topics;
 import com.aerotrace.notification.config.NotificationProperties;
+import com.aerotrace.notification.constant.KafkaConstants;
 import com.aerotrace.notification.constant.MetricNames;
 import com.aerotrace.notification.constant.NotificationRules;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -46,12 +47,6 @@ import tools.jackson.databind.node.ObjectNode;
 class KafkaConsumerConfiguration {
 
   private static final Logger LOG = LoggerFactory.getLogger(KafkaConsumerConfiguration.class);
-
-  /** How much of a bad event is kept on the dead-letter topic. */
-  static final int MAX_RAW_PAYLOAD_CHARS = 16_384;
-
-  /** The free-text field that may name people or places; never copied to a dead letter. */
-  private static final String REASON = "reason";
 
   @Bean
   DefaultErrorHandler kafkaErrorHandler(
@@ -135,9 +130,10 @@ class KafkaConsumerConfiguration {
   }
 
   /**
-   * The copy of a bad event for its dead letter, at most {@link #MAX_RAW_PAYLOAD_CHARS} long (the
-   * envelope must stay sendable: escaping makes the text longer, so an event near the size limit
-   * would otherwise never fit and would block its partition).
+   * The copy of a bad event for its dead letter, at most {@link
+   * KafkaConstants#MAX_RAW_PAYLOAD_CHARS} long (the envelope must stay sendable: escaping makes the
+   * text longer, so an event near the size limit would otherwise never fit and would block its
+   * partition).
    *
    * <ul>
    *   <li>Readable JSON: every {@code reason} field, at any depth, is removed; the rest is kept.
@@ -159,7 +155,7 @@ class KafkaConsumerConfiguration {
         // Treated as unreadable below.
       }
     }
-    if (original.toLowerCase(Locale.ROOT).contains(REASON)) {
+    if (original.toLowerCase(Locale.ROOT).contains(KafkaConstants.REASON_FIELD)) {
       return null;
     }
     return truncate(original);
@@ -167,7 +163,7 @@ class KafkaConsumerConfiguration {
 
   private static void dropReasons(JsonNode node) {
     if (node instanceof ObjectNode object) {
-      object.remove(REASON);
+      object.remove(KafkaConstants.REASON_FIELD);
       for (Map.Entry<String, JsonNode> field : object.properties()) {
         dropReasons(field.getValue());
       }
@@ -179,10 +175,10 @@ class KafkaConsumerConfiguration {
   }
 
   static String truncate(String raw) {
-    if (raw == null || raw.length() <= MAX_RAW_PAYLOAD_CHARS) {
+    if (raw == null || raw.length() <= KafkaConstants.MAX_RAW_PAYLOAD_CHARS) {
       return raw;
     }
-    return raw.substring(0, MAX_RAW_PAYLOAD_CHARS);
+    return raw.substring(0, KafkaConstants.MAX_RAW_PAYLOAD_CHARS);
   }
 
   /** The raw event as a tree, or null when it is not JSON. */
