@@ -15,9 +15,10 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * A notification, read through JPA only. Rows are written by native statements (insert with {@code
- * ON CONFLICT DO NOTHING}, the delivery claim and finish), so the entity has no setters and no
- * auditing (ADR 0005, decision 15).
+ * A notification, read through Spring Data JPA. Rows are written by native queries declared on
+ * Spring Data repositories ({@code NotificationRepository}: the insert with {@code ON CONFLICT DO
+ * NOTHING}; {@code DeliveryRepository}: the delivery claim, finish, sweep and purge), so the entity
+ * has no setters and no auditing (ADR 0005, decision 15). No {@code JdbcTemplate} is used.
  */
 @Entity
 @Getter

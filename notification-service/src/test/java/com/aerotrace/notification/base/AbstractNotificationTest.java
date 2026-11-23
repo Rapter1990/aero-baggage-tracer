@@ -3,14 +3,12 @@ package com.aerotrace.notification.base;
 import com.aerotrace.notification.delivery.MockNotificationProvider;
 import com.aerotrace.notification.model.entity.NotificationEntity;
 import com.aerotrace.notification.repository.NotificationRepository;
-import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * A real PostgreSQL built by Liquibase (see the parent) and the mock delivery provider. Every test
@@ -28,7 +26,7 @@ public abstract class AbstractNotificationTest extends AbstractTestContainerConf
 
   @Autowired protected MockNotificationProvider provider;
   @Autowired protected NotificationRepository notifications;
-  @Autowired protected JdbcTemplate jdbc;
+  @Autowired protected TestSql sql;
 
   @BeforeEach
   void cleanSlate() {
@@ -59,14 +57,14 @@ public abstract class AbstractNotificationTest extends AbstractTestContainerConf
 
   /** The database's current time. */
   protected Instant dbNow() {
-    return jdbc.queryForObject("select now()", Timestamp.class).toInstant();
+    return sql.now();
   }
 
   /** As if {@code by} passed: every stored time of every row moves back by {@code by}. */
   protected void elapse(Duration by) {
     String back = " - make_interval(secs => ?)";
     double s = seconds(by);
-    jdbc.update(
+    sql.update(
         "update "
             + TABLE
             + " set next_attempt_at = next_attempt_at"
@@ -89,7 +87,7 @@ public abstract class AbstractNotificationTest extends AbstractTestContainerConf
 
   /** The row is next due {@code in} from now (negative: already overdue). */
   protected void dueIn(UUID id, Duration in) {
-    jdbc.update(
+    sql.update(
         "update "
             + TABLE
             + " set next_attempt_at = now() + make_interval(secs => ?), version = version + 1"
@@ -100,7 +98,7 @@ public abstract class AbstractNotificationTest extends AbstractTestContainerConf
 
   /** The row was created {@code ago} before now. */
   protected void createdAgo(UUID id, Duration ago) {
-    jdbc.update(
+    sql.update(
         "update "
             + TABLE
             + " set created_at = now() - make_interval(secs => ?), version = version + 1"

@@ -110,7 +110,7 @@ class CaseChangedHandlerTest extends AbstractNotificationTest {
             "reason",
             CaseEvents.handler());
     handler.handle(json);
-    jdbc.update(
+    sql.update(
         "update notification.notification set status = 'SENT', sent_at = now(), attempts = 1,"
             + " version = version + 1 where event_id = ?",
         eventId);

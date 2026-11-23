@@ -118,8 +118,8 @@ class PiiLoggingTest extends AbstractNotificationTest {
   @DisplayName("BR-08 the notification table has no column for the reason or a passenger reference")
   void tableHasNoColumnForPersonalData() {
     List<String> columns =
-        jdbc.queryForList(
-            "select column_name from information_schema.columns"
+        sql.queryForList(
+            "select cast(column_name as text) from information_schema.columns"
                 + " where table_schema = 'notification' and table_name = 'notification'",
             String.class);
 
@@ -143,7 +143,7 @@ class PiiLoggingTest extends AbstractNotificationTest {
             RECIPIENT));
 
     List<String> rows =
-        jdbc.queryForList(
+        sql.queryForList(
             "select n::text from notification.notification n where n.event_id = ?",
             String.class,
             eventId);

@@ -27,7 +27,7 @@ class RetentionPurgerTest extends AbstractNotificationTest {
   private UUID seedWith(Duration age, String status, boolean deadLettered) {
     UUID id = seed(CaseEvents.handler(), CaseEvents.eventId(), "CASE_OPENED");
     createdAgo(id, age);
-    jdbc.update(
+    sql.update(
         "update notification.notification set status = ?, version = version + 1,"
             + " sent_at = case when ? = 'SENT' then created_at end,"
             + " failed_at = case when ? = 'FAILED' then created_at end,"

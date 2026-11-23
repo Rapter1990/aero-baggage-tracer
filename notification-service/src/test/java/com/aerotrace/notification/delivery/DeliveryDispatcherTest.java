@@ -368,7 +368,7 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
     String eventId = CaseEvents.eventId();
     UUID id = seed("handler-a", eventId, "CASE_OPENED");
     // A replica claimed it (attempt 1, lease to now + 60 s) and died before the finish.
-    jdbc.update(
+    sql.update(
         "update notification.notification set attempts = 1, version = version + 1,"
             + " next_attempt_at = now() + interval '60 seconds' where id = ?",
         id);
@@ -388,7 +388,7 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   void expiredLastLeaseIsFailed() {
     String eventId = CaseEvents.eventId();
     UUID id = seed("handler-a", eventId, "CASE_OPENED");
-    jdbc.update(
+    sql.update(
         "update notification.notification set attempts = ?, version = version + 1,"
             + " next_attempt_at = now() + interval '60 seconds' where id = ?",
         MAX_ATTEMPTS,
@@ -415,7 +415,7 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
     // While this replica is in the provider, its lease ends and another replica claims the row.
     provider.onSend(
         message ->
-            jdbc.update(
+            sql.update(
                 "update notification.notification set version = version + 1 where id = ?", id));
 
     dispatcher.dispatchDue();
@@ -540,7 +540,7 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
       "BR-08 a shutdown during the last attempt gives the attempt back and does not fail it")
   void shutdownDuringTheLastAttemptDoesNotFailTheRow() throws Exception {
     UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED");
-    jdbc.update(
+    sql.update(
         "update notification.notification set attempts = ?, version = version + 1 where id = ?",
         MAX_ATTEMPTS - 1,
         id);

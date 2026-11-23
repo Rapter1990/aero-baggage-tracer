@@ -48,7 +48,7 @@ class NotificationRepositoryTest extends AbstractNotificationTest {
   @DisplayName("BR-08 the table has a unique constraint on (recipient, event_id, template)")
   void uniqueConstraintExists() {
     List<String> constraints =
-        jdbc.queryForList(
+        sql.queryForList(
             "select pg_get_constraintdef(oid) from pg_constraint"
                 + " where conrelid = 'notification.notification'::regclass and contype = 'u'",
             String.class);
@@ -142,7 +142,7 @@ class NotificationRepositoryTest extends AbstractNotificationTest {
   }
 
   private int update(String set, UUID id) {
-    return jdbc.update(
+    return sql.update(
         "update notification.notification set " + set + ", version = version + 1 where id = ?", id);
   }
 
@@ -181,17 +181,17 @@ class NotificationRepositoryTest extends AbstractNotificationTest {
     // replica whose lease was taken over record its stale result.
     assertThatThrownBy(
             () ->
-                jdbc.update(
+                sql.update(
                     "update notification.notification set attempts = attempts + 1 where id = ?",
                     id))
         .isInstanceOf(DataIntegrityViolationException.class);
     assertThatThrownBy(
             () ->
-                jdbc.update(
+                sql.update(
                     "update notification.notification set version = version + 2 where id = ?", id))
         .isInstanceOf(DataIntegrityViolationException.class);
     assertThat(
-            jdbc.update(
+            sql.update(
                 "update notification.notification set attempts = attempts + 1,"
                     + " version = version + 1 where id = ?",
                 id))
