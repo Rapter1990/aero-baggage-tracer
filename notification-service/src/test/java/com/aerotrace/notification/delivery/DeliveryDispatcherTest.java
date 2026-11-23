@@ -630,6 +630,7 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
       assertThat(flagAfter).isTrue();
     } finally {
       freeTheProvider.countDown();
+      interrupted.stop();
       pool.shutdownNow();
     }
   }

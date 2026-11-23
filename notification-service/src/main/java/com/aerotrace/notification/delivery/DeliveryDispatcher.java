@@ -106,7 +106,7 @@ public class DeliveryDispatcher {
   /**
    * Claims and sends the due notifications.
    *
-   * @return how many were attempted
+   * @return how many were sent to the provider (rows released unsent on a shutdown are not counted)
    */
   public int sendDue() {
     if (stopping) {
@@ -156,7 +156,7 @@ public class DeliveryDispatcher {
             e.getClass().getSimpleName());
       }
     }
-    return claims.size();
+    return sends.size();
   }
 
   private void send(Claim claim) {
