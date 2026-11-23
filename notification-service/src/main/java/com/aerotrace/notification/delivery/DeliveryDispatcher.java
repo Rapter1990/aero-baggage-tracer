@@ -14,6 +14,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
@@ -124,11 +125,19 @@ public class DeliveryDispatcher {
       return 0;
     }
     List<Future<?>> sends = new ArrayList<>(claims.size());
-    for (Claim claim : claims) {
-      sends.add(senders.submit(() -> send(claim)));
+    try {
+      for (Claim claim : claims) {
+        sends.add(senders.submit(() -> send(claim)));
+      }
+    } catch (RejectedExecutionException e) {
+      // The shutdown began after the claim: the rows that got no send are released at once, so
+      // the deploy does not leave them leased (and a last-attempt row to be failed by the sweep).
+      for (int i = sends.size(); i < claims.size(); i++) {
+        releaseUnsent(claims.get(i));
+      }
     }
     long deadline = System.nanoTime() + settings.providerTimeout().toNanos();
-    for (int i = 0; i < claims.size(); i++) {
+    for (int i = 0; i < sends.size(); i++) {
       Claim claim = claims.get(i);
       try {
         String error = outcome(sends.get(i), deadline);
@@ -181,6 +190,19 @@ public class DeliveryDispatcher {
       Thread.currentThread().interrupt();
       send.cancel(true);
       return NotificationRules.INTERRUPTED;
+    }
+  }
+
+  /**
+   * A claimed row that never reached the provider: released, and one failing does not stop the
+   * rest.
+   */
+  private void releaseUnsent(Claim claim) {
+    try {
+      release(claim);
+    } catch (RuntimeException e) {
+      LOG.warn(
+          "Notification {} could not be released: {}", claim.id(), e.getClass().getSimpleName());
     }
   }
 

@@ -1,9 +1,12 @@
 package com.aerotrace.notification.delivery;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -580,6 +583,40 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
     } finally {
       pool.shutdownNow();
     }
+  }
+
+  @Test
+  @DisplayName(
+      "BR-08 a shutdown between the claim and the sends releases the claimed rows, none is lost")
+  void shutdownAfterTheClaimReleasesTheRows() {
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED");
+    sql.update(
+        "update notification.notification set attempts = ?, version = version + 1 where id = ?",
+        MAX_ATTEMPTS - 1,
+        id);
+    DeliveryDispatcher stopping =
+        new DeliveryDispatcher(
+            deliveries, provider, deadLetterPublisher, backoff, properties, meters);
+    // The shutdown lands right after the claim, before the sends are submitted.
+    doAnswer(
+            invocation -> {
+              Object claims = invocation.callRealMethod();
+              stopping.stop();
+              return claims;
+            })
+        .when(deliveries)
+        .claimDue(any(), anyInt(), anyInt());
+
+    stopping.sendDue();
+
+    NotificationEntity row = row(id);
+    assertThat(row.getStatus()).isEqualTo(NotificationStatus.PENDING);
+    assertThat(row.getAttempts()).isEqualTo(MAX_ATTEMPTS - 1);
+    assertThat(provider.attemptedIds()).isEmpty();
+
+    // Due at once: the next replica sends it as its last attempt.
+    dispatcher.dispatchDue();
+    assertThat(row(id).getStatus()).isEqualTo(NotificationStatus.SENT);
   }
 
   private static void await(CountDownLatch latch) {
