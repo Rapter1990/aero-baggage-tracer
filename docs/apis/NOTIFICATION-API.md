@@ -250,8 +250,9 @@ The payload is `CaseChangedPayload` in `common-module`; the full field list and 
 | Transient failure (database, broker) | Retried with exponential backoff, then dead-lettered. `reason` is the failure class, `attempts` is the configured retry attempts (default 6) |
 | A `state` this version does not know | Not an error: notified with template `CASE_UPDATED` and counted as `unknown_state` |
 | No `eventId`, an `eventId` outside `[A-Za-z0-9._:-]{1,100}` (for example with CR/LF), unparsable body, non-UUID `caseId`, `assignedTo` over 100 characters, missing or over-long `bagTag`, negative `version`, wrong event type, no payload | Dead-lettered at once, no retry. `reason` names the broken rule, `attempts` is 1 |
-| Dead letter of an event | Keyed by the `eventId` when it is safe, else by topic, partition and offset. `rawPayload` is a copy of the event **without any `reason` field**; unreadable text that mentions a reason is not copied (`null`), other unreadable text is cut to 16 KiB |
+| Dead letter of an event | Keyed by the `eventId` when it is safe, else by topic, partition and offset. `rawPayload` is a copy of the event **without any `reason` field**, but it keeps `assignedTo` (an opaque user id, not personal data) and `bagTag`, so the event can be replayed; the topic holds them for its 30-day retention; unreadable text that mentions a reason is not copied (`null`), other unreadable text is cut to 16 KiB |
 | Offset | Committed only after the database transaction commits |
+| First start | The consumer group starts at `latest` (`auto-offset-reset`): an event published before the group is first assigned its partitions (a fresh stack, a new group id) is never notified. Wait for the service to be healthy before making cases |
 
 Logs carry only `caseId`, `eventId` and `template`; the recipient and `reason` are never logged.
 
@@ -320,5 +321,5 @@ Variables: `notificationUrl` (`http://localhost:1118`), `notificationAgentUserna
 | Assignment | Cases start unassigned, so the opening event reaches nobody and a handler's first notification is the assignment event, shown with the state's template. An assignment-only event repeats the previous state, so the template cannot tell "assigned" from "state changed"; a previous handler is not told of a reassignment. A revision 3 field on the case event is the planned fix |
 | Mark as read, ADMIN access | Not offered |
 | Retention | 90 days, purged by a scheduled job (see above) |
-| Delivery | A mock provider that can be told to fail; no real channel |
+| Delivery | A mock provider that can be told to fail; no real channel. At least once. A shutdown stops claiming and gives the attempt of an interrupted send back, so a deploy does not use up a notification's last attempt |
 | Gateway | The route `/api/v1/notifications/**` and its docs route are in the gateway; the Kubernetes manifests come with #18 |
