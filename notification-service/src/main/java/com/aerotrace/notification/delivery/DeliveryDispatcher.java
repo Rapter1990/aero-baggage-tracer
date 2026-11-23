@@ -142,9 +142,9 @@ public class DeliveryDispatcher {
       try {
         String error = outcome(sends.get(i), deadline);
         if (error != null && (stopping || NotificationRules.INTERRUPTED.equals(error))) {
-          release(claim);
+          uninterrupted(() -> release(claim));
         } else {
-          finish(claim, error);
+          uninterrupted(() -> finish(claim, error));
         }
       } catch (RuntimeException e) {
         // One row's finish failing (the database blinked) must not leave the rest of the batch
@@ -199,10 +199,26 @@ public class DeliveryDispatcher {
    */
   private void releaseUnsent(Claim claim) {
     try {
-      release(claim);
+      uninterrupted(() -> release(claim));
     } catch (RuntimeException e) {
       LOG.warn(
           "Notification {} could not be released: {}", claim.id(), e.getClass().getSimpleName());
+    }
+  }
+
+  /**
+   * Runs a database write with the thread's interrupt flag cleared, then sets it again. On a
+   * shutdown the scheduler thread arrives here interrupted, and a pool with no idle connection
+   * would refuse to wait for one: the write would fail and the row would lose its attempt.
+   */
+  private static void uninterrupted(Runnable write) {
+    boolean interrupted = Thread.interrupted();
+    try {
+      write.run();
+    } finally {
+      if (interrupted) {
+        Thread.currentThread().interrupt();
+      }
     }
   }
 

@@ -20,10 +20,12 @@ import com.aerotrace.common.event.EventJson;
 import com.aerotrace.common.event.Topics;
 import com.aerotrace.notification.base.AbstractNotificationTest;
 import com.aerotrace.notification.base.CaseEvents;
+import com.aerotrace.notification.config.NotificationProperties;
 import com.aerotrace.notification.constant.ProviderConstants;
 import com.aerotrace.notification.model.entity.NotificationEntity;
 import com.aerotrace.notification.model.entity.NotificationStatus;
 import com.aerotrace.notification.repository.DeliveryRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -37,6 +39,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -66,10 +69,10 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   private static final Duration LEASE = Duration.ofSeconds(60);
 
   @Autowired DeliveryDispatcher dispatcher;
-  @Autowired com.aerotrace.notification.config.NotificationProperties properties;
+  @Autowired NotificationProperties properties;
   @Autowired BackoffPolicy backoff;
   @Autowired DeadLetterPublisher deadLetterPublisher;
-  @Autowired io.micrometer.core.instrument.MeterRegistry meters;
+  @Autowired MeterRegistry meters;
   @MockitoBean KafkaTemplate<String, String> kafka;
   @MockitoSpyBean DeliveryRepository deliveries;
 
@@ -581,6 +584,52 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
       dispatcher.dispatchDue();
       assertThat(row(id).getStatus()).isEqualTo(NotificationStatus.SENT);
     } finally {
+      pool.shutdownNow();
+    }
+  }
+
+  @Test
+  @DisplayName("BR-08 an interrupted dispatcher thread releases the row with its flag cleared")
+  void interruptedThreadReleasesWithTheFlagCleared() throws Exception {
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED");
+    DeliveryDispatcher interrupted =
+        new DeliveryDispatcher(
+            deliveries, provider, deadLetterPublisher, backoff, properties, meters);
+    AtomicBoolean flagDuringRelease = new AtomicBoolean(true);
+    doAnswer(
+            invocation -> {
+              flagDuringRelease.set(Thread.currentThread().isInterrupted());
+              return 1;
+            })
+        .when(deliveries)
+        .release(eq(id), anyLong());
+    CountDownLatch sending = new CountDownLatch(1);
+    CountDownLatch freeTheProvider = new CountDownLatch(1);
+    provider.onSend(
+        message -> {
+          sending.countDown();
+          await(freeTheProvider);
+        });
+    AtomicReference<Thread> dispatcherThread = new AtomicReference<>();
+    ExecutorService pool = Executors.newSingleThreadExecutor();
+    try {
+      Future<Boolean> run =
+          pool.submit(
+              () -> {
+                dispatcherThread.set(Thread.currentThread());
+                interrupted.sendDue();
+                return Thread.currentThread().isInterrupted();
+              });
+      assertThat(sending.await(30, TimeUnit.SECONDS)).isTrue();
+
+      dispatcherThread.get().interrupt();
+      boolean flagAfter = run.get(30, TimeUnit.SECONDS);
+
+      // The write ran with the flag cleared, and the flag is set again for the caller.
+      assertThat(flagDuringRelease.get()).isFalse();
+      assertThat(flagAfter).isTrue();
+    } finally {
+      freeTheProvider.countDown();
       pool.shutdownNow();
     }
   }

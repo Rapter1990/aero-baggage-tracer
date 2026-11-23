@@ -107,6 +107,7 @@ public class NotificationController {
     return SecurityContextHelper.currentSubject()
         .filter(subject -> !subject.isBlank())
         .orElseThrow(
-            () -> new ApiException(ErrorCode.UNAUTHENTICATED, "Authentication is required"));
+            () ->
+                new ApiException(ErrorCode.UNAUTHENTICATED, ErrorMessages.AUTHENTICATION_REQUIRED));
   }
 }
