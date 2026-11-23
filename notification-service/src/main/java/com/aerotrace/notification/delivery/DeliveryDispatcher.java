@@ -39,6 +39,11 @@ import org.springframework.stereotype.Component;
  * after the lease: delivery is at least once, keyed by the notification id. Exhausted rows are
  * dead-lettered by the separate {@link DeadLetterPublisher}, so a Kafka outage never holds up
  * sending.
+ *
+ * <p>On shutdown no new rows are claimed, and a send the shutdown interrupts is not recorded as a
+ * failed attempt: its claim is released and the attempt is given back, so a deploy cannot push a
+ * row on its last attempt into FAILED when the provider was never tried (a send that was already
+ * under way may still reach the provider, which the idempotency key covers).
  */
 @Component
 public class DeliveryDispatcher {
@@ -52,6 +57,7 @@ public class DeliveryDispatcher {
   private final NotificationProperties.Delivery settings;
   private final MeterRegistry meters;
   private final ExecutorService senders = Executors.newVirtualThreadPerTaskExecutor();
+  private volatile boolean stopping;
 
   public DeliveryDispatcher(
       DeliveryRepository deliveries,
@@ -102,6 +108,9 @@ public class DeliveryDispatcher {
    * @return how many were attempted
    */
   public int sendDue() {
+    if (stopping) {
+      return 0;
+    }
     int expired = deliveries.expireLeases(settings.maxAttempts());
     if (expired > 0) {
       LOG.warn("{} notifications failed: their lease expired after the last attempt", expired);
@@ -122,7 +131,12 @@ public class DeliveryDispatcher {
     for (int i = 0; i < claims.size(); i++) {
       Claim claim = claims.get(i);
       try {
-        finish(claim, outcome(sends.get(i), deadline));
+        String error = outcome(sends.get(i), deadline);
+        if (error != null && (stopping || NotificationRules.INTERRUPTED.equals(error))) {
+          release(claim);
+        } else {
+          finish(claim, error);
+        }
       } catch (RuntimeException e) {
         // One row's finish failing (the database blinked) must not leave the rest of the batch
         // unrecorded. This row stays claimed and is due again when its lease ends. The class only:
@@ -170,6 +184,13 @@ public class DeliveryDispatcher {
     }
   }
 
+  /** The shutdown cut the send short: the row is due again at once and the attempt is not used. */
+  private void release(Claim claim) {
+    if (deliveries.release(claim.id(), claim.version()) > 0) {
+      LOG.info("Delivery of notification {} interrupted by shutdown: released", claim.id());
+    }
+  }
+
   private void finish(Claim claim, String error) {
     try (CorrelationScope ignored = CorrelationScope.of(claim.correlationId())) {
       int updated;
@@ -214,6 +235,7 @@ public class DeliveryDispatcher {
 
   @PreDestroy
   void stop() {
+    stopping = true;
     senders.shutdownNow();
   }
 }

@@ -108,6 +108,20 @@ public class DeliveryRepository {
         guard(id, claimedVersion));
   }
 
+  /**
+   * The attempt was cut short by a shutdown: the row is due now and the attempt is given back, so a
+   * deploy never costs a row one of its attempts.
+   */
+  public int release(UUID id, long claimedVersion) {
+    return jdbc.update(
+        "UPDATE "
+            + TABLE
+            + " SET next_attempt_at = now(), attempts = GREATEST(attempts - 1, 0),"
+            + " version = version + 1"
+            + " WHERE id = :id AND status = 'PENDING' AND version = :version",
+        guard(id, claimedVersion));
+  }
+
   /** The attempt failed and another one is due {@code delay} from now. */
   public int markRetry(UUID id, long claimedVersion, Duration delay, String error) {
     return jdbc.update(

@@ -62,6 +62,10 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
   private static final Duration LEASE = Duration.ofSeconds(60);
 
   @Autowired DeliveryDispatcher dispatcher;
+  @Autowired com.aerotrace.notification.config.NotificationProperties properties;
+  @Autowired BackoffPolicy backoff;
+  @Autowired DeadLetterPublisher deadLetterPublisher;
+  @Autowired io.micrometer.core.instrument.MeterRegistry meters;
   @MockitoBean KafkaTemplate<String, String> kafka;
   @MockitoSpyBean DeliveryRepository deliveries;
 
@@ -526,6 +530,52 @@ class DeliveryDispatcherTest extends AbstractNotificationTest {
       assertThat(provider.attemptedIds()).containsExactlyInAnyOrderElementsOf(ids);
       assertThat(notifications.findAll())
           .allSatisfy(n -> assertThat(n.getStatus()).isEqualTo(NotificationStatus.SENT));
+    } finally {
+      pool.shutdownNow();
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "BR-08 a shutdown during the last attempt gives the attempt back and does not fail it")
+  void shutdownDuringTheLastAttemptDoesNotFailTheRow() throws Exception {
+    UUID id = seed("handler-a", CaseEvents.eventId(), "CASE_OPENED");
+    jdbc.update(
+        "update notification.notification set attempts = ?, version = version + 1 where id = ?",
+        MAX_ATTEMPTS - 1,
+        id);
+    DeliveryDispatcher stopping =
+        new DeliveryDispatcher(
+            deliveries, provider, deadLetterPublisher, backoff, properties, meters);
+    CountDownLatch sending = new CountDownLatch(1);
+    CountDownLatch never = new CountDownLatch(1);
+    provider.onSend(
+        message -> {
+          sending.countDown();
+          try {
+            never.await(60, TimeUnit.SECONDS);
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("cut short by the shutdown");
+          }
+        });
+    ExecutorService pool = Executors.newSingleThreadExecutor();
+    try {
+      Future<Integer> run = pool.submit(stopping::sendDue);
+      assertThat(sending.await(30, TimeUnit.SECONDS)).isTrue();
+
+      stopping.stop();
+      run.get(30, TimeUnit.SECONDS);
+
+      NotificationEntity row = row(id);
+      assertThat(row.getStatus()).isEqualTo(NotificationStatus.PENDING);
+      assertThat(row.getAttempts()).isEqualTo(MAX_ATTEMPTS - 1);
+      assertThat(stopping.sendDue()).isZero();
+
+      // The next replica sends it as its last attempt, and it works.
+      provider.onSend(null);
+      dispatcher.dispatchDue();
+      assertThat(row(id).getStatus()).isEqualTo(NotificationStatus.SENT);
     } finally {
       pool.shutdownNow();
     }
