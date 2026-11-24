@@ -96,6 +96,13 @@ spring:
                 - Path=/api/v1/admin/search/**
               filters:
                 - RemoveRequestHeader=X-Service-Token
+            # The caller's own notifications; the notification-service lets every role read its own.
+            - id: notifications
+              uri: lb://notification-service
+              predicates:
+                - Path=/api/v1/notifications/**
+              filters:
+                - RemoveRequestHeader=X-Service-Token
             # OpenAPI definitions of each service, fetched through the gateway for the Swagger UI.
             - id: docs-identity
               uri: lb://identity-service
@@ -125,6 +132,12 @@ spring:
               uri: lb://search-service
               predicates:
                 - Path=/service-docs/search-service
+              filters:
+                - SetPath=/v3/api-docs
+            - id: docs-notification
+              uri: lb://notification-service
+              predicates:
+                - Path=/service-docs/notification-service
               filters:
                 - SetPath=/v3/api-docs
 
@@ -222,3 +235,5 @@ springdoc:
         url: /service-docs/capacity-service
       - name: search-service
         url: /service-docs/search-service
+      - name: notification-service
+        url: /service-docs/notification-service

@@ -481,6 +481,54 @@ services:
     networks:
       - aerotrace
 
+  # In-app notifications for the assigned handler of a recovery case, from recovery.case.changed.v1
+  # (BR-08, ADR 0005). Reads its own schema in Postgres; dead letters go to baggage.dead-letter.v1.
+  # No Redis and no calls to other services.
+  notification-service:
+    image: ${REGISTRY:-ghcr.io/rapter1990}/aerotrace-notification-service:${TAG:-latest}
+    container_name: notification-service
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+    environment:
+      EUREKA_URL: http://${EUREKA_USER:-eureka}:${EUREKA_PASSWORD:-eureka}@discovery-server:8761/eureka/
+      EUREKA_INSTANCE_HOSTNAME: notification-service
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-aerotrace}
+      DB_USER: ${POSTGRES_USER:-aerotrace}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # The identity-service public key. The service refuses to start without one; this
+      # development stack names, explicitly, the development key bundled in the image (the pair
+      # identity-service signs with here). Set your own key pair wherever tokens matter.
+      IDENTITY_JWT_PUBLIC_KEY_LOCATION: ${IDENTITY_JWT_PUBLIC_KEY_LOCATION:-classpath:keys/public.pem}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-1.0}
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    # Clients reach it through the gateway (/api/v1/notifications/**); 1118 is its own port.
+    ports:
+      - "1118:1118"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:1118/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 40s
+    networks:
+      - aerotrace
+
   # Kafka Streams app (risk, anomalies, dead letters). Internal only: it has no public API, so it
   # is not routed by the gateway; 1114 is its own port (actuator).
   risk-streams-service:

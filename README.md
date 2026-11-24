@@ -139,6 +139,7 @@ Defaults marked "Compose" are for local use only.
 | `SEARCH_EXPORT_SERVICE_TOKEN` | search-, journey- and recovery-service | The shared secret of the internal export endpoints of #28 and #29 (at least 16 characters); `docker-compose.yml` passes the same dev-only default to all three, so a rebuild works out of the box | `aerotrace-local-export-token` in Compose; none in the services |
 | `IDENTITY_JWT_PUBLIC_KEY_LOCATION` | search-service | The identity-service public key. Required outside the `local`/`dev`/`test` profiles | Compose: the development key bundled in the image (`classpath:keys/public.pem`) |
 | `JOURNEY_SERVICE_URL`, `RECOVERY_SERVICE_URL` | search-service | Where the export endpoints answer | `http://localhost:1113`, `http://localhost:1115` |
+| `IDENTITY_JWT_PUBLIC_KEY_LOCATION` or `IDENTITY_JWT_PUBLIC_KEY` | notification-service | The identity-service public key. Required under every profile: the service refuses to start without one (from the IDE, set e.g. `IDENTITY_JWT_PUBLIC_KEY_LOCATION=classpath:keys/public.pem` in `.env`) | none; Compose: the development key bundled in the image (`classpath:keys/public.pem`) |
 
 Notes on keys:
 

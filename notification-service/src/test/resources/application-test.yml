@@ -1,0 +1,52 @@
+# Defaults for every Spring test.
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 0
+  cloud:
+    config:
+      enabled: false
+    discovery:
+      enabled: false
+  kafka:
+    producer:
+      properties:
+        max.block.ms: 1000
+        delivery.timeout.ms: 3000
+        request.timeout.ms: 1000
+eureka:
+  client:
+    enabled: false
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  tracing:
+    export:
+      otlp:
+        enabled: false
+  logging:
+    export:
+      otlp:
+        enabled: false
+aerotrace:
+  notification:
+    consumers:
+      # Only the Kafka tests start the listeners; the others call the handler directly.
+      enabled: false
+      retry-attempts: 3
+      retry-backoff: 50ms
+    delivery:
+      # Tests drive the dispatcher by hand and move the stored times (the database's now() decides
+      # what is due); the scheduler fires once an hour.
+      dispatch-delay: 1h
+      max-attempts: 5
+      base-delay: 2s
+      max-delay: 5m
+      # No jitter, so a test can assert the exact time of the next attempt.
+      jitter: 0
+      batch-size: 100
+    jwt:
+      public-key-location: classpath:keys/public.pem

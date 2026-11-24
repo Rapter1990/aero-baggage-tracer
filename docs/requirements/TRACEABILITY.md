@@ -15,7 +15,7 @@ Sources of truth: [BUSINESS_RULES.md](BUSINESS_RULES.md) and [ACCEPTANCE_TESTS.m
 | BR-05 | #11 Recovery Service | `RecoveryStateMachineTest`, `RecoveryCaseApiTest` |
 | BR-06 | #9 Journey Service (also #10 for the stream grace) | `LateEventGraceTest` (stream side) |
 | BR-07 | #11 Recovery Service | `RecoveryStateMachineTest`, `RecoveryCaseApiTest` |
-| BR-08 | #14 Notification Service | |
+| BR-08 | #14 Notification Service | `NotificationRepositoryTest` (the unique `(recipient, event_id, template)` key), `CaseChangedHandlerTest`, `RecipientResolverTest`, `TemplateSelectorTest`, `DeliveryDispatcherTest` (retries never make a second row), `BackoffPolicyTest`, `PiiLoggingTest` |
 
 ## Acceptance tests
 
@@ -33,7 +33,7 @@ Sources of truth: [BUSINESS_RULES.md](BUSINESS_RULES.md) and [ACCEPTANCE_TESTS.m
 | AT-10 | #11 | `RecoveryStateMachineTest`, `RecoveryCaseApiTest` |
 | AT-11 | #12 | `ReservationApiTest` (50 parallel requests, 10 slots, real PostgreSQL) |
 | AT-12 | #11 | `CapacitySagaTest` (against a stub capacity-service; the real service is #12) |
-| AT-13 | #14 | |
+| AT-13 | #14 | `CaseChangedKafkaTest` (same event published twice, redelivery after a consumer restart), `CaseChangedHandlerTest` (16 threads, one event), `NotificationRepositoryTest` (16 writers, one winner) |
 | AT-14 | #11, #15 | `KafkaOutageTest` (a real broker is paused during a move: it commits, the events stay pending, and are published in order after the broker is back, at least once: an attempt the outage cut off may land twice with the same event id, which consumers dedupe); `RecoveryCaseApiTest` (case level). The journey-service's outbox is #15's |
 | AT-15 | #9, #8 | not tagged with its id yet |
 | AT-16 | #7 | `GatewaySecurityTest` |

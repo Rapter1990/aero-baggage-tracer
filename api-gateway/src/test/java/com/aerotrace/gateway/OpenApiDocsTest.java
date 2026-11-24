@@ -18,7 +18,8 @@ class OpenApiDocsTest extends GatewayTestBase {
           "journey-service",
           "recovery-service",
           "capacity-service",
-          "search-service");
+          "search-service",
+          "notification-service");
 
   @Test
   void swaggerUiIsServedWithoutAToken() {

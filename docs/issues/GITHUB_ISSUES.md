@@ -334,8 +334,8 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 - `GET` endpoints for a user's notifications (ownership enforced).
 
 **Acceptance criteria**
-- [ ] AT-13: repeated outbox publication → one notification.
-- [ ] Retry/DLQ behavior tested.
+- [x] AT-13: repeated outbox publication → one notification.
+- [x] Retry/DLQ behavior tested.
 
 ---
 

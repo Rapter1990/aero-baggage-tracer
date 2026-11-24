@@ -11,6 +11,7 @@ What the platform offers, how requests flow, how to try them in Postman.
 | [Recovery Service API](RECOVERY-API.md) | Cases, moves, capacity, policy, events |
 | [Capacity Service API](CAPACITY-API.md) | Reservations, release, resources, the 409 contract, events |
 | [Search Service API](SEARCH-API.md) | Bag search, airport report, index status, rebuild |
+| [Notification Service API](NOTIFICATION-API.md) | Own notifications, paging, consumed case event, dead letter |
 | [README](../../README.md) | Setup, variables, limits, observability |
 
 ## At a glance
@@ -114,6 +115,17 @@ Two files in `postman/`:
 | 4 Index status (dispatcher) | Lag and read indexes; an agent refused |
 | 5 Rebuild (admin) | Start, the same key returns the same job, read the job (succeeds when the journey- and recovery-service are up, `FAILED` with `export unauthorized` if they refuse the token), a dispatcher refused |
 | 6 Refused calls | Passenger on search and report, no token |
+
+**Notification Service folders** (run top to bottom, with the recovery-service and the notification-service up; see [Notification Service API](NOTIFICATION-API.md#every-request-in-the-postman-collection))
+
+| Folder | What it does |
+|---|---|
+| 1 Sign in | Agent (the handler), dispatcher, admin and passenger tokens |
+| 2 Make a notification | Open a case, move it, assign it to the agent: the assignment event makes the notification |
+| 3 Read my notifications (agent) | List (exactly one for the case, no recipient or reason), read by id, paging |
+| 4 Nobody else sees it | Dispatcher, admin and passenger get an empty list or `404` |
+| 5 Refused calls | No token, bad size, bad page, bad id |
+| 6 Service checks (port 1118) | Health and OpenAPI via `notificationUrl` |
 
 **Notes**
 
