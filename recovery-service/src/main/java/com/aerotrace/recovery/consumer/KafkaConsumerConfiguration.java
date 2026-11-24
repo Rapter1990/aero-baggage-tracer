@@ -1,5 +1,6 @@
 package com.aerotrace.recovery.consumer;
 
+import com.aerotrace.common.correlation.CorrelationId;
 import com.aerotrace.common.event.DeadLetterPayload;
 import com.aerotrace.common.event.EventEnvelope;
 import com.aerotrace.common.event.EventJson;
@@ -47,13 +48,14 @@ class KafkaConsumerConfiguration {
     backOff.setInitialInterval(consumers.retryBackoff().toMillis());
     backOff.setMultiplier(2.0);
     backOff.setMaxInterval(5_000);
-    DefaultErrorHandler handler = new DefaultErrorHandler(deadLetter(kafka, clock), backOff);
+    DefaultErrorHandler handler =
+        new DefaultErrorHandler(deadLetter(kafka, clock, consumers.retryAttempts()), backOff);
     handler.addNotRetryableExceptions(PoisonEventException.class);
     return handler;
   }
 
   private static ConsumerRecordRecoverer deadLetter(
-      KafkaTemplate<String, String> kafka, Clock clock) {
+      KafkaTemplate<String, String> kafka, Clock clock, int retryAttempts) {
     return (ConsumerRecord<?, ?> record, Exception failure) -> {
       String original = record.value() == null ? null : record.value().toString();
       // The envelope must stay sendable: escaping makes the raw text longer, so an event near the
@@ -70,13 +72,15 @@ class KafkaConsumerConfiguration {
           cause instanceof PoisonEventException
               ? cause.getMessage()
               : cause.getClass().getSimpleName();
-      DeadLetterPayload payload = new DeadLetterPayload(record.topic(), eventId, reason, 1, raw);
+      DeadLetterPayload payload =
+          new DeadLetterPayload(
+              record.topic(), eventId, reason, attemptsFor(cause, retryAttempts), raw);
       EventEnvelope<DeadLetterPayload> envelope =
           EventEnvelope.create(
               RecoveryRules.EVENT_TYPE_DEAD_LETTER,
               RecoveryRules.DEAD_LETTER_SCHEMA_VERSION,
               key,
-              null,
+              correlationIdOf(original),
               Instant.now(clock),
               payload,
               clock);
@@ -118,6 +122,32 @@ class KafkaConsumerConfiguration {
       return eventId;
     }
     return eventId.substring(0, MAX_KEY_CHARS);
+  }
+
+  /**
+   * How many times the event was tried before it was dead-lettered: a poison event is never retried
+   * (1); any other failure was retried until the configured attempts were used up.
+   */
+  static int attemptsFor(Throwable cause, int retryAttempts) {
+    return cause instanceof PoisonEventException ? 1 : Math.max(retryAttempts, 1);
+  }
+
+  /**
+   * The correlation id of a raw event, so the dead letter stays on the trace of the event it
+   * replaces. Null when the event is not readable or its id is not a safe value (never invented,
+   * never copied unchecked).
+   */
+  static String correlationIdOf(String raw) {
+    if (raw == null) {
+      return null;
+    }
+    try {
+      JsonNode id = EventJson.mapper().readTree(raw).get("correlationId");
+      String value = id == null || id.isNull() ? null : id.asString();
+      return CorrelationId.isValid(value) ? value : null;
+    } catch (RuntimeException notJson) {
+      return null;
+    }
   }
 
   /** The event id of a raw event, or null when it cannot be read. */

@@ -260,6 +260,8 @@ class RiskConsumerKafkaTest extends AbstractRecoveryTest {
     assertThat(envelope.payload().originalEventId()).isEqualTo(poisonId);
     assertThat(envelope.payload().reason()).isEqualTo("bagTag is not a bag tag");
     assertThat(envelope.payload().rawPayload()).isEqualTo(poison);
+    assertThat(envelope.correlationId()).isEqualTo("corr-kafka");
+    assertThat(envelope.payload().attempts()).isEqualTo(1);
   }
 
   @Test
