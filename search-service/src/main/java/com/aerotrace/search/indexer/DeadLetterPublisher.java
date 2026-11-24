@@ -1,5 +1,6 @@
 package com.aerotrace.search.indexer;
 
+import com.aerotrace.common.correlation.CorrelationId;
 import com.aerotrace.common.event.DeadLetterPayload;
 import com.aerotrace.common.event.EventEnvelope;
 import com.aerotrace.common.event.EventJson;
@@ -52,7 +53,7 @@ public class DeadLetterPublisher {
             SearchTopics.DEAD_LETTER_SCHEMA_VERSION,
             key,
             // The original correlation id travels on, so the dead letter joins its trace.
-            capped(field(raw, "correlationId")),
+            correlationIdOf(raw),
             Instant.now(clock),
             payload,
             clock);
@@ -68,6 +69,15 @@ public class DeadLetterPublisher {
     } catch (Exception e) {
       throw new IllegalStateException("could not write the dead letter", e);
     }
+  }
+
+  /**
+   * The correlation id of a raw event, only when it is a safe value: an id with spaces, line breaks
+   * or other unsafe characters is dropped (never copied, never invented).
+   */
+  static String correlationIdOf(String raw) {
+    String value = field(raw, "correlationId");
+    return CorrelationId.isValid(value) ? value : null;
   }
 
   static String truncate(String raw) {
