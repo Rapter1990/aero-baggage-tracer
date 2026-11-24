@@ -1,5 +1,6 @@
 package com.aerotrace.riskstreams;
 
+import com.aerotrace.common.correlation.CorrelationId;
 import com.aerotrace.common.event.DeadLetterPayload;
 import com.aerotrace.common.event.EventEnvelope;
 import com.aerotrace.common.event.EventJson;
@@ -545,11 +546,28 @@ final class ScanProcessor implements Processor<String, String, String, String> {
                 key + ":" + invalid.reason,
                 RiskStreamsTopology.EVENT_TYPE_DEAD_LETTER,
                 key,
-                null,
+                correlationIdOf(record.value()),
                 clock.instant(),
                 payload),
             record.timestamp())
         .run();
+  }
+
+  /**
+   * The correlation id of a raw input, so the dead letter stays on the trace of the record it
+   * replaces. Null when the input is unreadable or the value is not a safe one: never invented.
+   */
+  static String correlationIdOf(String raw) {
+    if (raw == null) {
+      return null;
+    }
+    try {
+      var id = EventJson.mapper().readTree(raw).get("correlationId");
+      String value = id == null || id.isNull() ? null : id.asString();
+      return CorrelationId.isValid(value) ? value : null;
+    } catch (RuntimeException notJson) {
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------- output

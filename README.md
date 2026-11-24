@@ -220,14 +220,16 @@ In Compose, the one-shot `kafka-init` job creates the Kafka topics before journe
 | Topic | Partitions | Retention |
 |---|---|---|
 | `baggage.scan.received.v1` | 6 | 7d |
-| `baggage.risk.changed.v1` | 6 | 7d |
+| `baggage.risk.changed.v1` | 6 | 90d, `compact,delete` (the search rebuild replays it from offset 0) |
 | `baggage.scan.anomaly.v1` | 6 | 7d |
 | `recovery.case.changed.v1` | 6 | 7d |
 | `recovery.capacity.changed.v1` | 6 | 7d |
 | `baggage.dead-letter.v1` | 3 | 30d |
 | `baggage.bag.registered.v1` | 6 | 7d (published by the journey-service, read by the search-service) |
 
-All use `cleanup.policy=delete` and replication factor 1. A topic that already exists (for example auto-created earlier with 1 partition) is not changed: delete it once in Kafka UI to get these settings. `docker-compose-local.yml` has the same `kafka-init` job, so the topics exist with these settings when you run the services from the IDE.
+All use `cleanup.policy=delete` (except `baggage.risk.changed.v1`) and replication factor 1. The job re-applies the `compact,delete` policy of `baggage.risk.changed.v1` on every run. For another topic that already exists (for example auto-created earlier with 1 partition) the partitions are not changed: delete it once in Kafka UI to get these settings. `docker-compose-local.yml` has the same `kafka-init` job, so the topics exist with these settings when you run the services from the IDE.
+
+Kafka tooling (issue #15): `kafka/replay/` holds a replay dataset with a duplicate, an out-of-order and a late scan and `replay.ps1` to publish it; `kafka/dlq/inspect-dlq.ps1` lists `baggage.dead-letter.v1` (read only). The delivery, idempotency and dead-letter rules are in [ADR 0006](docs/adr/0006-exactly-once-business-effects-and-dead-letters.md).
 
 Compose publishes the direct ports. Each service has `/actuator/health` and `/v3/api-docs`. The Postman collection `AeroTrace` is in `postman/`, see [Postman collection](docs/apis/API.md#postman-collection).
 

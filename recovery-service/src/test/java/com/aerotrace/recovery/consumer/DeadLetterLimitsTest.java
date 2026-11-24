@@ -31,4 +31,31 @@ class DeadLetterLimitsTest {
     assertThat(KafkaConsumerConfiguration.capped("EV-1")).isEqualTo("EV-1");
     assertThat(KafkaConsumerConfiguration.capped(null)).isNull();
   }
+
+  @Test
+  @DisplayName("Poison a dead letter keeps the correlation id of the event it replaces")
+  void correlationIdIsKept() {
+    String raw = "{\"eventId\":\"e-1\",\"correlationId\":\"corr-1\"}";
+
+    assertThat(KafkaConsumerConfiguration.correlationIdOf(raw)).isEqualTo("corr-1");
+  }
+
+  @Test
+  @DisplayName("Poison a missing, unsafe or unreadable correlation id is dropped, never invented")
+  void correlationIdIsNotInvented() {
+    assertThat(KafkaConsumerConfiguration.correlationIdOf("{\"eventId\":\"e-1\"}")).isNull();
+    assertThat(KafkaConsumerConfiguration.correlationIdOf("{\"correlationId\":\"a b\nc\"}"))
+        .isNull();
+    assertThat(KafkaConsumerConfiguration.correlationIdOf("not json")).isNull();
+    assertThat(KafkaConsumerConfiguration.correlationIdOf(null)).isNull();
+  }
+
+  @Test
+  @DisplayName("Poison counts one attempt; an exhausted retry counts the configured attempts")
+  void attemptsAreCounted() {
+    assertThat(KafkaConsumerConfiguration.attemptsFor(new PoisonEventException("bad"), 3))
+        .isEqualTo(1);
+    assertThat(KafkaConsumerConfiguration.attemptsFor(new IllegalStateException("db down"), 3))
+        .isEqualTo(3);
+  }
 }

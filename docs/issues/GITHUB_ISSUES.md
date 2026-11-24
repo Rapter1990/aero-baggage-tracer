@@ -350,8 +350,13 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 - Search rebuild support (ADR 0004, #13): `baggage.risk.changed.v1` as `cleanup.policy=compact,delete` with a long retention so the search-service can replay it from offset 0; the new topic `baggage.bag.registered.v1` (key `bagTag`, added to `Topics.ALL`) with partitions, retention and Compose + K8s provisioning; contract/serialization tests for the new payload revisions (`CaseChangedPayload` revision 2, `baggage.bag.registered.v1`).
 
 **Acceptance criteria**
-- [ ] AT-14: stop Kafka mid-transition, restart, committed event is replayed.
-- [ ] Contract/serialization compatibility tests.
+- [x] AT-14: stop Kafka mid-transition, restart, committed event is replayed (`KafkaOutageTest` in the recovery-service, `JourneyKafkaOutageTest` for the journey-service outbox; both against a real paused broker).
+- [x] Contract/serialization compatibility tests (`TopicContractTest` for every topic payload, `CaseChangedRevisionTest`, `BagRegisteredContractTest`, `EventEnvelopeTest`).
+- [x] `baggage.risk.changed.v1` is `compact,delete` with 90 days retention in both Compose files (`kafka-init` also re-applies it to an existing topic).
+- [x] Replay dataset and script: `kafka/replay` (`ReplayDatasetTest` keeps it valid).
+- [x] Dead-letter inspection: `kafka/dlq/inspect-dlq.ps1` (read only, `rawPayload` only with `-Raw`).
+- [x] ADR 0006: exactly-once business effects, retry and dead-letter policy.
+- [ ] Kubernetes topic provisioning: open, it needs the manifests of #18 (the Compose provisioning is done).
 
 ---
 

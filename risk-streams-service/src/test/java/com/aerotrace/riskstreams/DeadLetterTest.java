@@ -24,6 +24,8 @@ class DeadLetterTest {
       assertThat(dead.getFirst().key()).startsWith(Topics.SCAN_RECEIVED + "-0-");
       assertThat(dead.getFirst().payload().originalTopic()).isEqualTo(Topics.SCAN_RECEIVED);
       assertThat(dead.getFirst().payload().originalEventId()).isNull();
+      // Unreadable input has no correlation id to keep, and none is invented.
+      assertThat(dead.getFirst().envelope().correlationId()).isNull();
       assertThat(dead.getFirst().payload().reason())
           .isEqualTo(RiskStreamsTopology.REASON_MALFORMED_JSON);
       assertThat(dead.getFirst().payload().attempts()).isEqualTo(1);
@@ -50,6 +52,8 @@ class DeadLetterTest {
           .isEqualTo(RiskStreamsTopology.REASON_UNSUPPORTED_SCHEMA_VERSION);
       assertThat(dead.getFirst().payload().attempts()).isEqualTo(1);
       assertThat(dead.getFirst().payload().rawPayload()).isEqualTo(old.json());
+      // The dead letter stays on the trace of the record it replaces.
+      assertThat(dead.getFirst().envelope().correlationId()).startsWith("corr-");
       assertThat(h.risk()).isEmpty();
     }
   }
@@ -95,5 +99,15 @@ class DeadLetterTest {
       // A valid scan after the poison one is still processed (HIGH: 10 minutes to departure).
       assertThat(h.risk()).hasSize(1);
     }
+  }
+
+  @Test
+  @DisplayName("an unsafe or missing correlation id is dropped, never invented")
+  void correlationIdIsOnlyKeptWhenSafe() {
+    assertThat(ScanProcessor.correlationIdOf("{\"correlationId\":\"corr-1\"}")).isEqualTo("corr-1");
+    assertThat(ScanProcessor.correlationIdOf("{\"correlationId\":\"a b\nc\"}")).isNull();
+    assertThat(ScanProcessor.correlationIdOf("{\"eventId\":\"e-1\"}")).isNull();
+    assertThat(ScanProcessor.correlationIdOf("{not json")).isNull();
+    assertThat(ScanProcessor.correlationIdOf(null)).isNull();
   }
 }
