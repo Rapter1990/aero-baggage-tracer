@@ -18,7 +18,7 @@ param(
   [string]$OriginalTopic,
   [string]$EventId,
   [int]$Last = 0,
-  [int]$TimeoutMs = 5000,
+  [int]$TimeoutMs = 10000,
   [switch]$Raw
 )
 $ErrorActionPreference = 'Stop'
@@ -26,9 +26,13 @@ $ErrorActionPreference = 'Stop'
 if ($InputFile) {
   $lines = Get-Content -Path $InputFile -Encoding UTF8
 } else {
+  # The console consumer ends with a timeout error on stderr by design (--timeout-ms). Windows PowerShell
+  # turns native stderr into an error record, so stop-on-error is off for this one call.
+  $ErrorActionPreference = 'Continue'
   $lines = docker exec $Container /opt/kafka/bin/kafka-console-consumer.sh `
     --bootstrap-server localhost:9092 --topic $Topic --from-beginning --timeout-ms $TimeoutMs 2>$null
-  if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $null -and $lines.Count -eq 0) {
+  $ErrorActionPreference = 'Stop'
+  if (-not $lines -and $LASTEXITCODE -gt 1) {
     throw "Could not read $Topic from container '$Container' (exit $LASTEXITCODE)"
   }
 }
