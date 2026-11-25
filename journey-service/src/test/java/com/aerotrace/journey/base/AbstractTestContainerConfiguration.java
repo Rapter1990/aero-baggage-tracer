@@ -47,6 +47,11 @@ public abstract class AbstractTestContainerConfiguration {
     }
   }
 
+  /** The shared container, for a test that needs a database of its own inside it. */
+  protected static PostgreSQLContainer postgres() {
+    return POSTGRES;
+  }
+
   @DynamicPropertySource
   static void properties(DynamicPropertyRegistry registry) {
     registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);

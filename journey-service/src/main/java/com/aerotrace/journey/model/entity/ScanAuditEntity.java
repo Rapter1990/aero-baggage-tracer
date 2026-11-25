@@ -25,6 +25,8 @@ import org.hibernate.annotations.UuidGenerator;
 @Table(name = "scan_audit", schema = "journey")
 public class ScanAuditEntity {
 
+  public static final String SOURCE_API = "API";
+
   @Id @GeneratedValue @UuidGenerator private UUID id;
 
   @Column(name = "event_id", nullable = false, updatable = false, length = 128)
@@ -62,6 +64,10 @@ public class ScanAuditEntity {
 
   @Column(nullable = false, updatable = false)
   private boolean applied;
+
+  /** How the scan reached the service. The HTTP API is the only way in today. */
+  @Column(name = "scan_source", nullable = false, updatable = false, length = 20)
+  private String scanSource = SOURCE_API;
 
   public ScanAuditEntity(
       String eventId,

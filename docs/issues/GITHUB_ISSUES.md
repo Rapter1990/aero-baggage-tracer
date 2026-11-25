@@ -371,8 +371,8 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 - ADR: data migration strategy.
 
 **Acceptance criteria**
-- [ ] AT-17 automated with Testcontainers PostgreSQL.
-- [ ] Rollback recipe documented.
+- [x] AT-17 automated with Testcontainers PostgreSQL.
+- [x] Rollback recipe documented.
 
 ---
 
