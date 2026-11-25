@@ -54,6 +54,12 @@ class ScanAcceptanceTest extends AbstractApiTest {
 
     assertThat(count("SELECT count(*) FROM journey.scan_audit WHERE bag_tag = ?", bagTag))
         .isEqualTo(1);
+    // The entity writes the mandatory scan_source column (migration V2/V3): the HTTP API is 'API'.
+    assertThat(
+            count(
+                "SELECT count(*) FROM journey.scan_audit WHERE bag_tag = ? AND scan_source = 'API'",
+                bagTag))
+        .isEqualTo(1);
     String payload = scanEvents(bagTag).getFirst().getPayload();
     EventEnvelope<ScanReceivedPayload> event = EventJson.read(payload, ScanReceivedPayload.class);
     assertThat(event.eventType()).isEqualTo("baggage.scan.received");

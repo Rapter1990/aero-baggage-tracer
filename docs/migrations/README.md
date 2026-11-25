@@ -27,8 +27,17 @@ Every changeset carries a `--rollback`. Roll back with Liquibase against the ser
 2. **Take a backup of the schema.** `pg_dump --schema=journey --format=custom`. Do this even for a rollback that "only drops a column".
 3. **Preview, then roll back, one changeset at a time:**
    ```powershell
-   liquibase rollback-count-sql --count=1
-   liquibase rollback-count --count=1
+   liquibase --defaults-file=liquibase.properties rollback-count-sql --count=1
+   liquibase --defaults-file=liquibase.properties rollback-count --count=1
+   ```
+   `liquibase.properties` holds the connection and the schema settings, for example:
+   ```properties
+   changeLogFile=db/changelog/db.changelog-master.yaml
+   url=jdbc:postgresql://localhost:5432/aerotrace
+   username=<owner of the schema>
+   password=<from the secret store>
+   defaultSchemaName=journey
+   liquibaseSchemaName=journey
    ```
    Roll back V3 first (`006`: `DROP NOT NULL`), then V2 (`005`: `DROP COLUMN scan_source`). Liquibase removes the `databasechangelog` row of each, so a later `update` applies them again.
    The two rollbacks (V3, then V2) are run by `ScanSourceMigrationTest` (rollback, check the old rows, migrate again).

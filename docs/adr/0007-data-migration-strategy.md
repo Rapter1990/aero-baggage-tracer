@@ -13,7 +13,7 @@ A change that adds a mandatory column to a table that already holds rows can go 
 1. **One changelog per service and schema.** `db/changelog/db.changelog-master.yaml` includes numbered SQL files (`001-...sql`, `002-...sql`, one or more changesets each). Liquibase's own tables live in the service's schema (`liquibase-schema` is set in each service's `application.yml`), so no service sees another's history. Running the changelog again applies nothing.
 2. **A changeset is never edited after it has run anywhere.** A change is a new changeset. Liquibase checksums catch an edit, and an edited V1 would give a fresh database a different schema from a running one.
 3. **Expand, then contract.** A mandatory column takes two changesets (called V2 and V3 in the case study; the numbers are the next two files of the service). Against a running system they belong in two releases, so that every replica writes the column before it becomes mandatory. Here both are in the changelog from the start, so a fresh database and the demo get them back to back; a service with live replicas would ship 006 one release after 005:
-   - **V2 (expand):** add the column nullable and without a default, backfill existing rows, then set a default so an old application's inserts still get a value. The application starts writing the column.
+   - **V2 (expand):** add the column nullable and without a default, backfill existing rows, then set a default so an old application's inserts still get a value (nullability alone lets the old insert succeed; the default makes the value valid for V3). The application starts writing the column.
    - **V3 (contract):** a precondition counts the rows that still have no value and **halts** the migration if there is any (`onFail:HALT`), and only then sets `NOT NULL`. Nothing is half applied.
    Because V2 sets the default, an old replica that omits the column still inserts a valid row even in the short window when V3 follows V2 immediately; the V3 precondition then only fails for an explicit `NULL`.
    The default is set after the backfill on purpose: a default given at `ADD COLUMN` makes PostgreSQL report it for old rows without writing them, and there would be nothing left to validate.
@@ -50,6 +50,7 @@ An index exists for one query that the service runs, not for a column that "migh
 
 ## Consequences
 
+- The default stays after V3. A future writer that forgets the column is labelled with it (`API`) instead of failing. Drop the default in a later changeset once the application always sets the column, if a failure is preferred.
 - A mandatory column costs two changesets and, in practice, two releases. This is the price of never refusing an old replica's insert.
 - V2's backfill is one `UPDATE`: it holds a lock on the table and writes every row. For a table of hundreds of millions of rows it must be done in batches by a job, and V3 stays the guard. The demo and the test are sized for the case-study data, not for that.
 - `SET NOT NULL` scans the table once under a lock. PostgreSQL 12+ skips the scan when a validated `CHECK (col IS NOT NULL)` exists; add that first if a table ever gets large enough for the scan to matter.

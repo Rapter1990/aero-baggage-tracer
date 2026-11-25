@@ -23,6 +23,8 @@ param(
   [switch]$Keep
 )
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell 5.1 pipes text to native commands as ASCII unless told otherwise.
+$OutputEncoding = [Text.UTF8Encoding]::new($false)
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $changes = Join-Path $root 'journey-service\src\main\resources\db\changelog\changes'
 $scansPerBag = 3
@@ -35,7 +37,7 @@ function Invoke-Sql([string]$Sql) {
 
 function Invoke-SqlFile([string]$File) {
   Write-Host "  applying $(Split-Path $File -Leaf)"
-  Get-Content -Raw -Encoding UTF8 $File | docker exec -i $Name psql -U postgres -d demo -v ON_ERROR_STOP=1 -q | Out-Null
+  Get-Content -Raw -Encoding UTF8 $File | docker exec -i $Name psql -U postgres -d demo -v ON_ERROR_STOP=1 --single-transaction -q | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "psql failed on $File" }
 }
 
@@ -58,13 +60,15 @@ docker run -d --name $Name -e POSTGRES_PASSWORD=demo -e POSTGRES_DB=demo $Image 
 if ($LASTEXITCODE -ne 0) { throw 'docker run failed' }
 
 try {
-  for ($i = 0; $i -lt 60; $i++) {
-    & { $ErrorActionPreference = 'Continue'; docker exec $Name pg_isready -U postgres -d demo 2>&1 | Out-Null }
-    if ($LASTEXITCODE -eq 0) { break }
+  # The image starts a temporary server for its init scripts, stops it and starts the real one, so a
+  # single successful query is not enough: wait for three in a row.
+  $ok = 0
+  for ($i = 0; $i -lt 90 -and $ok -lt 3; $i++) {
+    & { $ErrorActionPreference = 'Continue'; docker exec $Name psql -U postgres -d demo -At -c 'select 1' 2>&1 | Out-Null }
+    if ($LASTEXITCODE -eq 0) { $ok++ } else { $ok = 0 }
     Start-Sleep -Seconds 1
   }
-  # pg_isready answers during the container's init restart; wait for the real server.
-  Start-Sleep -Seconds 2
+  if ($ok -lt 3) { throw 'PostgreSQL did not become ready' }
 
   Write-Host '== V1: the schema the application ran on before this change'
   Invoke-Sql 'CREATE SCHEMA journey' | Out-Null
