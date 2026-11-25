@@ -11,3 +11,9 @@ databaseChangeLog:
       file: db/changelog/changes/005-scan-source.sql
   - include:
       file: db/changelog/changes/006-scan-source-not-null.sql
+  - include:
+      file: db/changelog/changes/007-scan-source-check.sql
+  - include:
+      file: db/changelog/changes/008-scan-source-check-validate.sql
+  - include:
+      file: db/changelog/changes/009-dev-sample-journeys.sql

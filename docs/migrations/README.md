@@ -19,6 +19,17 @@ The automated proof, with Liquibase itself and its precondition, is AT-17:
 mvn -pl journey-service -am test -Dtest=ScanSourceMigrationTest -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
+## Contexts: delivery order and sample data
+
+The journey-service reads its Liquibase contexts from `JOURNEY_LIQUIBASE_CONTEXTS` (default `expand,contract`; an empty value is treated as the default, never as "everything"). Compose does not pass this variable to the journey-service yet: to start with sample data, add `JOURNEY_LIQUIBASE_CONTEXTS: expand,contract,dev` to the `journey-service` environment (or run the service with that environment variable).
+
+| Value | Applies |
+|-------|---------|
+| `expand,contract` (default) | everything up to `008`; a fresh database gets V2 and V3 together |
+| `expand` | the additive steps only; `006` (`NOT NULL`) is skipped. Use it for the first release of a rollout against live replicas, and do not forget the next step: nothing alerts when a rollout stays on `expand` (the entity says `nullable = false`, the database does not). Check with `SELECT count(*) FROM journey.databasechangelog WHERE id = '006-scan-source-not-null'` that the contract release applied it |
+| `expand,contract` after `expand` | `006` on the next release, once every replica writes `scan_source` |
+| `expand,contract,dev` | also `009`: 20 sample bags (`9000000001`-`9000000020`) with two legs and three scans each, for local work. Never set `dev` in a real deployment |
+
 ## Rollback recipe
 
 Every changeset carries a `--rollback`. Roll back with Liquibase against the service's schema (`default-schema` and `liquibase-schema` are both the service's schema name, for example `journey`).
@@ -39,14 +50,15 @@ Every changeset carries a `--rollback`. Roll back with Liquibase against the ser
    defaultSchemaName=journey
    liquibaseSchemaName=journey
    ```
-   Roll back V3 first (`006`: `DROP NOT NULL`), then V2 (`005`: `DROP COLUMN scan_source`). Liquibase removes the `databasechangelog` row of each, so a later `update` applies them again.
-   The two rollbacks (V3, then V2) are run by `ScanSourceMigrationTest` (rollback, check the old rows, migrate again).
+   Roll back the newest first: the validation (`008`: nothing to undo, the constraint stays), the `CHECK` (`007`: `DROP CONSTRAINT`), V3 (`006`: `DROP NOT NULL`), then V2 (`005`: `DROP COLUMN scan_source`). Sample data (`009`) rolls back first of all. Liquibase removes the `databasechangelog` row of each, so a later `update` applies them again.
+   The rollbacks of `008` to `005`, and of `009`, are run by `ScanSourceMigrationTest` (rollback, check the old rows, migrate again).
 4. **Start the old image** and check `GET /actuator/health`.
 
 ### Limits
 
 | Change | Rollback | Data lost |
 |--------|----------|-----------|
+| `007`/`008` `CHECK` | `DROP CONSTRAINT` (the validation has nothing to undo) | none |
 | V3 `SET NOT NULL` | `DROP NOT NULL` | none |
 | V2 `ADD COLUMN` + backfill | `DROP COLUMN` | the column's values. They were derived (`API` for every row up to now), but any value the new version wrote after the rollout point is gone. Restore from the backup if it matters. |
 | Dropping a column or table (a future contract step) | none that restores data | all of it. Take the backup first, and expect to restore it rather than roll back. |

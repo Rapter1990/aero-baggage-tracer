@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.aerotrace.journey.base.AbstractTestContainerConfiguration;
+import com.aerotrace.journey.constant.ScanSources;
 import jakarta.persistence.EntityManager;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -39,7 +40,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * start-up and driven by the test, so it can stop after V1. The test has a database of its own
  * inside the shared container (the SQL of the changelog names the {@code journey} schema, so
  * another test class's schema cannot be reused), and every test starts from an empty {@code
- * journey} schema. The first four changesets are the V1 baseline; the fifth is V2; the sixth is V3.
+ * journey} schema. The first four changesets are the V1 baseline; the fifth is V2; the sixth is V3;
+ * 007 and 008 add and validate the CHECK on the known sources; 009 is sample data (context dev).
  */
 @SpringBootTest(
     properties = {"spring.liquibase.enabled=false", "spring.jpa.hibernate.ddl-auto=none"})
@@ -48,6 +50,13 @@ class ScanSourceMigrationTest extends AbstractTestContainerConfiguration {
   private static final String CHANGELOG = "db/changelog/db.changelog-master.yaml";
   private static final int V1_CHANGESETS = 4;
   private static final int V2_CHANGESETS = 5;
+
+  /** The changesets that run by default (001 to 008); 009 is sample data for the "dev" context. */
+  private static final int ALL_CHANGESETS = 8;
+
+  /** The default of the service: the additive steps and the steps that make a change mandatory. */
+  private static final String DEFAULT_CONTEXTS = "expand,contract";
+
   private static final int BAGS = 200;
   private static final int SCANS_PER_BAG = 3;
 
@@ -160,8 +169,7 @@ class ScanSourceMigrationTest extends AbstractTestContainerConfiguration {
     migrate(Integer.MAX_VALUE);
 
     assertThat(snapshot()).isEqualTo(afterFirstRun);
-    assertThat(count("SELECT count(*) FROM journey.databasechangelog"))
-        .isEqualTo(V2_CHANGESETS + 1);
+    assertThat(count("SELECT count(*) FROM journey.databasechangelog")).isEqualTo(ALL_CHANGESETS);
   }
 
   @Test
@@ -203,18 +211,26 @@ class ScanSourceMigrationTest extends AbstractTestContainerConfiguration {
   }
 
   @Test
-  @DisplayName("AT-17 the documented rollback (V3, then V2) removes the column and keeps every row")
+  @DisplayName(
+      "AT-17 the documented rollback (check, V3, V2) removes the column and keeps every row")
   void rollbackRestoresV1AndMigrationCanBeRepeated() throws Exception {
     migrate(V1_CHANGESETS);
     preload();
     Map<String, Snapshot> before = snapshot();
     migrate(Integer.MAX_VALUE);
 
-    rollback(1);
+    rollback(1); // the validation of the CHECK: nothing to undo, the constraint stays
+    assertThat(count(constraint("ck_scan_audit_scan_source"))).isEqualTo(1);
+
+    rollback(1); // the CHECK constraint
+    assertThat(count(constraint("ck_scan_audit_scan_source"))).isZero();
+    assertThat(count(scanSourceColumn("NO"))).isEqualTo(1);
+
+    rollback(1); // V3
     assertThat(count(scanSourceColumn("YES"))).isEqualTo(1);
     assertThat(snapshot()).isEqualTo(before);
 
-    rollback(1);
+    rollback(1); // V2
     assertThat(count(scanSourceColumn("YES")) + count(scanSourceColumn("NO"))).isZero();
     assertThat(snapshot()).isEqualTo(before);
     assertThat(count("SELECT count(*) FROM journey.databasechangelog")).isEqualTo(V1_CHANGESETS);
@@ -224,6 +240,72 @@ class ScanSourceMigrationTest extends AbstractTestContainerConfiguration {
     assertThat(count(scanSourceColumn("NO"))).isEqualTo(1);
     assertThat(count("SELECT count(*) FROM journey.scan_audit WHERE scan_source = 'API'"))
         .isEqualTo(BAGS * SCANS_PER_BAG);
+  }
+
+  @Test
+  @DisplayName("AT-17 V3 can wait one release: the expand context leaves the column nullable")
+  void contractStepWaitsForItsContext() throws Exception {
+    migrate(V1_CHANGESETS);
+    preload();
+    Map<String, Snapshot> before = snapshot();
+
+    migrate(Integer.MAX_VALUE, "expand");
+
+    assertThat(count(scanSourceColumn("YES"))).isEqualTo(1);
+    assertThat(changeset("006-scan-source-not-null")).isZero();
+    assertThat(changeset("005-scan-source")).isEqualTo(1);
+    assertThat(snapshot()).isEqualTo(before);
+
+    migrate(Integer.MAX_VALUE, DEFAULT_CONTEXTS);
+
+    assertThat(count(scanSourceColumn("NO"))).isEqualTo(1);
+    assertThat(changeset("006-scan-source-not-null")).isEqualTo(1);
+    assertThat(snapshot()).isEqualTo(before);
+  }
+
+  @Test
+  @DisplayName("AT-17 only a known scan_source is accepted")
+  void unknownScanSourceIsRefused() throws Exception {
+    migrate(V1_CHANGESETS);
+    preload();
+    migrate(Integer.MAX_VALUE);
+
+    assertThat(count(constraint("ck_scan_audit_scan_source") + " AND convalidated")).isEqualTo(1);
+    // The value the code writes is one the constraint lists.
+    insertScan("'" + ScanSources.API + "'", "0000000001", "evt-known-source");
+    assertThatThrownBy(() -> insertScan("'BATCH'", "0000000001", "evt-unknown-source"))
+        .hasStackTraceContaining("ck_scan_audit_scan_source");
+  }
+
+  @Test
+  @DisplayName("AT-17 the sample journeys exist only in the dev context and can be rolled back")
+  void sampleJourneysAreOptIn() throws Exception {
+    migrate(Integer.MAX_VALUE);
+    assertThat(count("SELECT count(*) FROM journey.baggage")).isZero();
+
+    migrate(Integer.MAX_VALUE, DEFAULT_CONTEXTS + ",dev");
+
+    assertThat(count("SELECT count(*) FROM journey.baggage WHERE bag_tag LIKE '90000000__'"))
+        .isEqualTo(20);
+    assertThat(count("SELECT count(*) FROM journey.itinerary_leg")).isEqualTo(40);
+    assertThat(count("SELECT count(*) FROM journey.scan_audit WHERE scan_source = 'API'"))
+        .isEqualTo(60);
+    // The state the application keeps on a bag is that of its newest scan.
+    assertThat(
+            count(
+                "SELECT count(*) FROM journey.baggage WHERE latest_checkpoint = 'LOADED' "
+                    + "AND latest_scan_id IS NOT NULL AND latest_device_sequence = 3"))
+        .isEqualTo(20);
+
+    rollback(1);
+
+    assertThat(count("SELECT count(*) FROM journey.baggage")).isZero();
+    assertThat(count("SELECT count(*) FROM journey.scan_audit")).isZero();
+    assertThat(
+            count(
+                "SELECT count(*) FROM pg_trigger WHERE tgname = 'trg_scan_audit_no_update_delete' "
+                    + "AND tgenabled = 'O'"))
+        .isEqualTo(1);
   }
 
   @Test
@@ -255,10 +337,28 @@ class ScanSourceMigrationTest extends AbstractTestContainerConfiguration {
         .hasStackTraceContaining("append-only");
   }
 
+  @Test
+  @DisplayName("AT-17 the sample journeys are skipped when the database already holds bags")
+  void sampleJourneysNeverMixWithRealData() throws Exception {
+    migrate(Integer.MAX_VALUE);
+    insertBag("9000000007");
+
+    migrate(Integer.MAX_VALUE, DEFAULT_CONTEXTS + ",dev");
+
+    assertThat(count("SELECT count(*) FROM journey.baggage")).isEqualTo(1);
+    assertThat(count("SELECT count(*) FROM journey.itinerary")).isZero();
+    assertThat(changeset("009-dev-sample-journeys")).isEqualTo(1);
+  }
+
   // ---------------------------------------------------------------------------------------------
 
-  /** Applies at most {@code changesets} not yet applied changesets of the real changelog. */
+  /** Applies at most {@code changesets} not yet applied changesets, in the default contexts. */
   private void migrate(int changesets) throws Exception {
+    migrate(changesets, DEFAULT_CONTEXTS);
+  }
+
+  /** Applies at most {@code changesets} not yet applied changesets of the real changelog. */
+  private void migrate(int changesets, String contexts) throws Exception {
     try (Connection connection = dataSource.getConnection()) {
       Database database =
           DatabaseFactory.getInstance()
@@ -267,9 +367,9 @@ class ScanSourceMigrationTest extends AbstractTestContainerConfiguration {
       database.setLiquibaseSchemaName("journey");
       Liquibase liquibase = new Liquibase(CHANGELOG, new ClassLoaderResourceAccessor(), database);
       if (changesets == Integer.MAX_VALUE) {
-        liquibase.update("");
+        liquibase.update(contexts);
       } else {
-        liquibase.update(changesets, "");
+        liquibase.update(changesets, contexts);
       }
     }
   }
@@ -356,6 +456,14 @@ class ScanSourceMigrationTest extends AbstractTestContainerConfiguration {
             + "', 'BARCODE', 'IST', 'CHECK_IN', 1, now(), now(), 'UTC', now(), "
             + source
             + ")");
+  }
+
+  private static String constraint(String name) {
+    return "SELECT count(*) FROM pg_constraint WHERE conname = '" + name + "'";
+  }
+
+  private long changeset(String id) {
+    return count("SELECT count(*) FROM journey.databasechangelog WHERE id = '" + id + "'");
   }
 
   private static String scanSourceColumn(String nullable) {

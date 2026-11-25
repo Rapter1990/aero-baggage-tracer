@@ -151,6 +151,10 @@ public final class RealOwners implements AutoCloseable {
     command.add("--management.tracing.export.otlp.enabled=false");
     command.add("--management.logging.export.otlp.enabled=false");
     command.add("--aerotrace." + module.replace("-service", "") + ".docs.enabled=false");
+    if ("journey-service".equals(module)) {
+      // Whatever JOURNEY_LIQUIBASE_CONTEXTS the developer has exported: no sample data (ADR 0007).
+      command.add("--spring.liquibase.contexts=expand,contract");
+    }
     command.addAll(extra);
     Path log = Path.of("target", "e2e-" + module + ".log").toAbsolutePath();
     Files.createDirectories(log.getParent());

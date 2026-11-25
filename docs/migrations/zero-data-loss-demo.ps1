@@ -111,6 +111,10 @@ INSERT INTO journey.processed_event (event_id) SELECT 'evt-' || bag_tag || '-1' 
   Write-Host '== V3: enforce NOT NULL'
   Invoke-SqlFile (Join-Path $changes '006-scan-source-not-null.sql')
 
+  Write-Host '== Constraint on the known sources'
+  Invoke-SqlFile (Join-Path $changes '007-scan-source-check.sql')
+  Invoke-SqlFile (Join-Path $changes '008-scan-source-check-validate.sql')
+
   $after = Get-Snapshot
   Write-Host '== After (rows|checksum)'
   $after.GetEnumerator() | ForEach-Object { Write-Host ("  {0,-16} {1}" -f $_.Key, $_.Value) }
