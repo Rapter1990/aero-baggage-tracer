@@ -231,6 +231,8 @@ All use `cleanup.policy=delete` (except `baggage.risk.changed.v1`) and replicati
 
 Kafka tooling (issue #15): `kafka/replay/` holds a replay dataset with a duplicate, an out-of-order and a late scan and `replay.ps1` to publish it; `kafka/dlq/inspect-dlq.ps1` lists `baggage.dead-letter.v1` (read only). The delivery, idempotency and dead-letter rules are in [ADR 0006](docs/adr/0006-exactly-once-business-effects-and-dead-letters.md).
 
+Database migrations (issue #16): every service owns one Liquibase changelog for its schema, changed only by new changesets (expand, then contract) as described in [ADR 0007](docs/adr/0007-data-migration-strategy.md). `docs/migrations/zero-data-loss-demo.ps1` shows a migration over legacy rows with equal row counts and checksums before and after, and [docs/migrations/README.md](docs/migrations/README.md) holds the rollback recipe and its limits. The automated proof is `ScanSourceMigrationTest` (AT-17).
+
 Compose publishes the direct ports. Each service has `/actuator/health` and `/v3/api-docs`. The Postman collection `AeroTrace` is in `postman/`, see [Postman collection](docs/apis/API.md#postman-collection).
 
 ## API response format
