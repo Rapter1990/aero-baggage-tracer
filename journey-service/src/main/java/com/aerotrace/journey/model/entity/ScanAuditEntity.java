@@ -1,5 +1,6 @@
 package com.aerotrace.journey.model.entity;
 
+import com.aerotrace.journey.constant.ScanSources;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -24,8 +25,6 @@ import org.hibernate.annotations.UuidGenerator;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "scan_audit", schema = "journey")
 public class ScanAuditEntity {
-
-  public static final String SOURCE_API = "API";
 
   @Id @GeneratedValue @UuidGenerator private UUID id;
 
@@ -67,7 +66,7 @@ public class ScanAuditEntity {
 
   /** How the scan reached the service. The HTTP API is the only way in today. */
   @Column(name = "scan_source", nullable = false, updatable = false, length = 20)
-  private String scanSource = SOURCE_API;
+  private String scanSource = ScanSources.API;
 
   public ScanAuditEntity(
       String eventId,
