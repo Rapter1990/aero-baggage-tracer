@@ -53,7 +53,7 @@ An index exists for one query that the service runs, not for a column that "migh
 
 ## Consequences
 
-- A rollout that stays on `expand` fails nothing: the column stays nullable while the entity says it is not. `ContractStepMonitor` therefore logs a warning at start-up and exports the gauge `journey.migration.contract.pending` (Prometheus `journey_migration_contract_pending`). The alert rule that fires when it stays at 1 belongs to the observability work (#19).
+- A rollout that stays on `expand` fails nothing: the column stays nullable while the entity says it is not. `ContractStepMonitor` therefore logs a warning at start-up and exports the gauge `journey.migration.contract.pending` (Prometheus `journey_migration_contract_pending`). The Prometheus rule `JourneyContractStepPending` (`observability/prometheus-rules.yml`) fires when it has stayed at 1 for 24 hours. There is no Alertmanager yet, so a firing alert shows in Prometheus and notifies nobody; routing it belongs to the observability work (#19).
 - Changeset `006` was edited after its first push (comments and the `contract` context; the SQL is unchanged), which changes its checksum. `--validCheckSum` lists the first version's checksum, so a database that already ran it still validates; a test simulates that database. Do not edit an applied changeset again: add a new one.
 - The default stays after V3. A future writer that forgets the column is labelled with it (`API`) instead of failing. Drop the default in a later changeset once the application always sets the column, if a failure is preferred.
 - A mandatory column costs two changesets and, in practice, two releases. This is the price of never refusing an old replica's insert.

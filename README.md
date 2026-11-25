@@ -348,7 +348,7 @@ Kafka UI starts with Kafka: `docker compose -f docker-compose-local.yml up -d ka
 | Tempo | internal `tempo:3200` | Traces, kept 24 hours |
 | Loki | internal `loki:3100` | Logs with trace ids, kept 24 hours |
 | Pushgateway | http://localhost:9091 | Holds coverage numbers for Prometheus |
-| Prometheus | http://localhost:9090 | Scrapes collector and Pushgateway |
+| Prometheus | http://localhost:9090 | Scrapes collector and Pushgateway; alert rules on `/alerts` (`observability/prometheus-rules.yml`) |
 | Grafana | http://localhost:3000 (`admin` / `grafana`) | Dashboards for all three stores |
 | Kafka UI | http://localhost:8090 | Browse Kafka topics and messages |
 

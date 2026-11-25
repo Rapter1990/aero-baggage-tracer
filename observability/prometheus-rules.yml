@@ -1,0 +1,23 @@
+# Alert rules for local development, loaded by prometheus.yml. There is no Alertmanager: a firing
+# alert shows on http://localhost:9090/alerts and as the ALERTS series, and notifies nobody.
+# Tested by prometheus-rules.test.yml:
+#   docker run --rm --entrypoint promtool -v "${PWD}/observability:/o:ro" -w /o prom/prometheus:latest test rules prometheus-rules.test.yml
+groups:
+  - name: journey-migrations
+    rules:
+      # ADR 0007: with JOURNEY_LIQUIBASE_CONTEXTS=expand, changeset 006 (scan_source NOT NULL) is held
+      # back and nothing else fails. The journey-service gauge is 1 until it has been applied. A staged
+      # rollout expects 1 for one release, so the alert waits a day; raise "for" if a release takes
+      # longer. Every replica reads the same table, hence max. NaN (changelog unreadable) does not fire.
+      - alert: JourneyContractStepPending
+        expr: max by (service_name) (journey_migration_contract_pending) == 1
+        for: 24h
+        labels:
+          severity: warning
+        annotations:
+          summary: "The scan_source contract step (changeset 006) has not been applied for 24 hours"
+          description: >-
+            {{ $labels.service_name }} still runs without the "contract" Liquibase context, so
+            scan_audit.scan_source is nullable although the application treats it as mandatory.
+            Once every replica writes scan_source, set JOURNEY_LIQUIBASE_CONTEXTS=expand,contract
+            and restart (docs/migrations/README.md).
