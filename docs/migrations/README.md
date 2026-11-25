@@ -31,6 +31,7 @@ Every changeset carries a `--rollback`. Roll back with Liquibase against the ser
    liquibase rollback-count --count=1
    ```
    Roll back V3 first (`006`: `DROP NOT NULL`), then V2 (`005`: `DROP COLUMN scan_source`). Liquibase removes the `databasechangelog` row of each, so a later `update` applies them again.
+   The two rollbacks (V3, then V2) are run by `ScanSourceMigrationTest` (rollback, check the old rows, migrate again).
 4. **Start the old image** and check `GET /actuator/health`.
 
 ### Limits

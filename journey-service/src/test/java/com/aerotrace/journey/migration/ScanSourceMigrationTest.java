@@ -202,6 +202,30 @@ class ScanSourceMigrationTest extends AbstractTestContainerConfiguration {
         .isZero();
   }
 
+  @Test
+  @DisplayName("AT-17 the documented rollback (V3, then V2) removes the column and keeps every row")
+  void rollbackRestoresV1AndMigrationCanBeRepeated() throws Exception {
+    migrate(V1_CHANGESETS);
+    preload();
+    Map<String, Snapshot> before = snapshot();
+    migrate(Integer.MAX_VALUE);
+
+    rollback(1);
+    assertThat(count(scanSourceColumn("YES"))).isEqualTo(1);
+    assertThat(snapshot()).isEqualTo(before);
+
+    rollback(1);
+    assertThat(count(scanSourceColumn("YES")) + count(scanSourceColumn("NO"))).isZero();
+    assertThat(snapshot()).isEqualTo(before);
+    assertThat(count("SELECT count(*) FROM journey.databasechangelog")).isEqualTo(V1_CHANGESETS);
+
+    migrate(Integer.MAX_VALUE);
+    assertThat(snapshot()).isEqualTo(before);
+    assertThat(count(scanSourceColumn("NO"))).isEqualTo(1);
+    assertThat(count("SELECT count(*) FROM journey.scan_audit WHERE scan_source = 'API'"))
+        .isEqualTo(BAGS * SCANS_PER_BAG);
+  }
+
   // ---------------------------------------------------------------------------------------------
 
   /** Applies at most {@code changesets} not yet applied changesets of the real changelog. */
@@ -218,6 +242,19 @@ class ScanSourceMigrationTest extends AbstractTestContainerConfiguration {
       } else {
         liquibase.update(changesets, "");
       }
+    }
+  }
+
+  /** Rolls back the last {@code changesets} applied changesets, as the rollback recipe does. */
+  private void rollback(int changesets) throws Exception {
+    try (Connection connection = dataSource.getConnection()) {
+      Database database =
+          DatabaseFactory.getInstance()
+              .findCorrectDatabaseImplementation(new JdbcConnection(connection));
+      database.setDefaultSchemaName("journey");
+      database.setLiquibaseSchemaName("journey");
+      new Liquibase(CHANGELOG, new ClassLoaderResourceAccessor(), database)
+          .rollback(changesets, "");
     }
   }
 
