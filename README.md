@@ -14,7 +14,6 @@ Java 25 / Spring Boot microservices for tracing airport baggage.
 | [Rate limits](#rate-limits-and-lockout-of-the-authentication-endpoints) | Gateway limits and login lockout |
 | [Known limitations](#known-limitations-of-the-identity-service) | Weak spots of identity-service |
 | [Observability](#observability-opentelemetry-collector-tempo-loki-prometheus-grafana) | Traces, metrics, logs, dashboards |
-| [Tests](#running-the-tests) | Run tests and chart coverage |
 
 Work items are in [docs/issues/GITHUB_ISSUES.md](docs/issues/GITHUB_ISSUES.md). Step-by-step commands for implementing one issue are in [docs/issues/IMPLEMENTATION-GUIDE.md](docs/issues/IMPLEMENTATION-GUIDE.md).
 
@@ -435,13 +434,3 @@ powershell -ExecutionPolicy Bypass -File .\observability\push-jacoco.ps1
 | No branches | Shows "n/a" for branch coverage |
 
 If you add a dashboard file while Grafana runs, restart it: `docker restart grafana`.
-
-## Running the tests
-
-Run the tests and chart their coverage in one step, from the project root:
-
-```bash
-powershell -ExecutionPolicy Bypass -File .\observability\push-jacoco.ps1
-```
-
-The script runs `mvn verify` and pushes numbers only if it succeeds. `mvn verify` runs unit tests (`*Test`) and integration tests (`*IT`).
