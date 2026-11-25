@@ -445,16 +445,3 @@ powershell -ExecutionPolicy Bypass -File .\observability\push-jacoco.ps1
 ```
 
 The script runs `mvn verify` and pushes numbers only if it succeeds. `mvn verify` runs unit tests (`*Test`) and integration tests (`*IT`).
-
-| Topic | What to know |
-|---|---|
-| Docker | Integration tests use Testcontainers |
-| api-gateway | Starts a password-protected Redis |
-| identity, journey | Start a PostgreSQL container |
-| journey-service | Also starts Kafka for the relay |
-| recovery-service | Starts PostgreSQL, a password-protected Redis and Kafka, and a stand-in capacity-service on a real port; one class points Redis at a dead port |
-| capacity-service | Starts PostgreSQL only; the Kafka producer is a mock, events are read from the outbox. The 50-for-10 race (AT-11) and the Redis-offline run (AT-19) run against the real database |
-| search-service | Starts Elasticsearch (`9.2.8`, the client's version, security on) and Kafka; the rebuild source is an in-memory stand-in for the export endpoints of #28 and #29; two tests pause Elasticsearch to show the 503 and that no offset is committed while it is down |
-| No Docker | Tests are skipped, not failed |
-| No Docker with `CI` set | Identity and journey fail the build |
-| Coverage check | Includes integration tests |
