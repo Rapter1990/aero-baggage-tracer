@@ -21,7 +21,7 @@ mvn -pl journey-service -am test -Dtest=ScanSourceMigrationTest -Dsurefire.failI
 
 ## Contexts: delivery order and sample data
 
-The journey-service reads its Liquibase contexts from `JOURNEY_LIQUIBASE_CONTEXTS` (default `expand,contract`; an empty value is treated as the default, never as "everything"). Compose does not pass this variable to the journey-service yet: to start with sample data, add `JOURNEY_LIQUIBASE_CONTEXTS: expand,contract,dev` to the `journey-service` environment (or run the service with that environment variable).
+The journey-service reads its Liquibase contexts from `JOURNEY_LIQUIBASE_CONTEXTS` (default `expand,contract`; an empty value is treated as the default, never as "everything"). Docker Compose passes it to the journey-service with the same default: put `JOURNEY_LIQUIBASE_CONTEXTS=expand,contract,dev` in `.env` (or the shell) to start with the sample data, and `docker compose up` it on a fresh database (the sample data is skipped once the database holds bags).
 
 | Value | Applies |
 |-------|---------|

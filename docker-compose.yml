@@ -294,6 +294,11 @@ services:
       DB_USER: ${POSTGRES_USER:-aerotrace}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-aerotrace}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Liquibase contexts (ADR 0007): expand = additive steps, contract = the steps that make a
+      # change mandatory, dev = 20 sample bags (9000000001-9000000020, no events published). The
+      # default has no sample data; set JOURNEY_LIQUIBASE_CONTEXTS=expand,contract,dev in .env to
+      # add them. "expand" alone holds back the NOT NULL step for a staged rollout.
+      JOURNEY_LIQUIBASE_CONTEXTS: ${JOURNEY_LIQUIBASE_CONTEXTS:-expand,contract}
       # Read by the search-service rebuild on the internal bag/case export (never through the gateway).
       SEARCH_EXPORT_SERVICE_TOKEN: ${SEARCH_EXPORT_SERVICE_TOKEN:-aerotrace-local-export-token}
       # Empty: the identity-service development public key bundled in the image is used.

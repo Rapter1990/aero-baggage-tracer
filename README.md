@@ -185,6 +185,8 @@ Compose starts identity-service with `LIQUIBASE_CONTEXTS=dev`. Changeset `003-sa
 
 **Never run a real deployment with the `dev` context.**
 
+The journey-service has its own switch, `JOURNEY_LIQUIBASE_CONTEXTS` (Compose default `expand,contract`: no sample data). `expand,contract,dev` adds 20 sample bags `9000000001`-`9000000020`; see [docs/migrations/README.md](docs/migrations/README.md).
+
 ### First administrator without the dev context
 
 Register a passenger, then give that user the role in the database:
