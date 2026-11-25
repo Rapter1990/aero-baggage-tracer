@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.aerotrace.journey.base.AbstractTestContainerConfiguration;
+import com.aerotrace.journey.config.ContractStepMonitor;
+import com.aerotrace.journey.constant.MetricNames;
 import com.aerotrace.journey.constant.ScanSources;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.persistence.EntityManager;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -68,6 +71,8 @@ class ScanSourceMigrationTest extends AbstractTestContainerConfiguration {
   @Autowired private EntityManager entityManager;
   @Autowired private PlatformTransactionManager transactionManager;
   @Autowired private DataSource dataSource;
+  @Autowired private ContractStepMonitor contractStep;
+  @Autowired private MeterRegistry meters;
 
   /**
    * A database of this class's own in the shared container. It is a {@code DataSource} bean, not a
@@ -255,9 +260,14 @@ class ScanSourceMigrationTest extends AbstractTestContainerConfiguration {
     assertThat(changeset("006-scan-source-not-null")).isZero();
     assertThat(changeset("005-scan-source")).isEqualTo(1);
     assertThat(snapshot()).isEqualTo(before);
+    // A rollout that stays on "expand" is visible: the monitor and its gauge say the step is due.
+    assertThat(contractStep.pending()).isTrue();
+    assertThat(meters.get(MetricNames.MIGRATION_CONTRACT_PENDING).gauge().value()).isEqualTo(1.0);
 
     migrate(Integer.MAX_VALUE, DEFAULT_CONTEXTS);
 
+    assertThat(contractStep.pending()).isFalse();
+    assertThat(meters.get(MetricNames.MIGRATION_CONTRACT_PENDING).gauge().value()).isEqualTo(0.0);
     assertThat(count(scanSourceColumn("NO"))).isEqualTo(1);
     assertThat(changeset("006-scan-source-not-null")).isEqualTo(1);
     assertThat(snapshot()).isEqualTo(before);
@@ -348,6 +358,27 @@ class ScanSourceMigrationTest extends AbstractTestContainerConfiguration {
     assertThat(count("SELECT count(*) FROM journey.baggage")).isEqualTo(1);
     assertThat(count("SELECT count(*) FROM journey.itinerary")).isZero();
     assertThat(changeset("009-dev-sample-journeys")).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("AT-17 a database that ran the first version of 006 still validates")
+  void firstVersionOfTheContractStepStillValidates() throws Exception {
+    migrate(V2_CHANGESETS);
+    // What a database looks like that applied 006 when this file had the checksum below (the
+    // version first pushed on this branch): the NOT NULL is in place and the changelog row exists.
+    execute("ALTER TABLE journey.scan_audit ALTER COLUMN scan_source SET NOT NULL");
+    execute(
+        "INSERT INTO journey.databasechangelog (id, author, filename, dateexecuted, "
+            + "orderexecuted, exectype, md5sum, description, liquibase, contexts) VALUES ("
+            + "'006-scan-source-not-null', 'journey', "
+            + "'db/changelog/changes/006-scan-source-not-null.sql', now(), 6, 'EXECUTED', "
+            + "'9:c9a8f5041f3d892ced8e8065fa06f950', 'sql', '5.0.0', 'contract')");
+
+    migrate(Integer.MAX_VALUE);
+
+    assertThat(count("SELECT count(*) FROM journey.databasechangelog")).isEqualTo(ALL_CHANGESETS);
+    assertThat(changeset("007-scan-source-check")).isEqualTo(1);
+    assertThat(count(scanSourceColumn("NO"))).isEqualTo(1);
   }
 
   // ---------------------------------------------------------------------------------------------

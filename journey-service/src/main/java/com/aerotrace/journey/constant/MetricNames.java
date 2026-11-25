@@ -23,4 +23,7 @@ public final class MetricNames {
 
   /** One relay run that found events; also the name of its trace span. */
   public static final String OUTBOX_RELAY = "journey.outbox.relay";
+
+  /** 1 while the contract step of the scan_source migration has not been applied, else 0. */
+  public static final String MIGRATION_CONTRACT_PENDING = "journey.migration.contract.pending";
 }

@@ -31,7 +31,7 @@ The sample data is created on a fresh database and skipped once the database hol
 | Value | Applies |
 |-------|---------|
 | `expand,contract` (default) | everything up to `008`; a fresh database gets V2 and V3 together |
-| `expand` | the additive steps only; `006` (`NOT NULL`) is skipped. Use it for the first release of a rollout against live replicas, and do not forget the next step: nothing alerts when a rollout stays on `expand` (the entity says `nullable = false`, the database does not). Check with `SELECT count(*) FROM journey.databasechangelog WHERE id = '006-scan-source-not-null'` that the contract release applied it |
+| `expand` | the additive steps only; `006` (`NOT NULL`) is skipped. Use it for the first release of a rollout against live replicas, and do not forget the next step: the service warns at start-up and exports the gauge `journey_migration_contract_pending` (Prometheus name; 1 while `006` has not been applied, 0 once it has, NaN if the changelog table cannot be read). A staged rollout expects 1 for one release; alert when it stays 1 for longer. The SQL check is `SELECT count(*) FROM journey.databasechangelog WHERE id = '006-scan-source-not-null'` |
 | `expand,contract` after `expand` | `006` on the next release, once every replica writes `scan_source` |
 | `expand,contract,dev` | also `009`: 20 sample bags (`9000000001`-`9000000020`) with two legs and three scans each, for local work. Never set `dev` in a real deployment |
 
