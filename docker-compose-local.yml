@@ -3,6 +3,8 @@
 # notification-service (port 1118) needs only Kafka (recovery.case.changed.v1, baggage.dead-letter.v1)
 # and Postgres (its own schema, created on start).
 #   docker compose -f docker-compose-local.yml up -d
+# The journey-service runs outside Compose here, so JOURNEY_LIQUIBASE_CONTEXTS (default
+# expand,contract; add dev for 20 sample bags) is set in its own environment, not in .env.
 # Dev-only credentials; override via env vars. Never reuse them outside local development.
 # One project name for both compose files and every checkout or worktree (it is the name the main
 # checkout already uses, so existing volumes keep working): the containers have fixed names and the

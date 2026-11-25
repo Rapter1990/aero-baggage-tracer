@@ -21,7 +21,12 @@ mvn -pl journey-service -am test -Dtest=ScanSourceMigrationTest -Dsurefire.failI
 
 ## Contexts: delivery order and sample data
 
-The journey-service reads its Liquibase contexts from `JOURNEY_LIQUIBASE_CONTEXTS` (default `expand,contract`; an empty value is treated as the default, never as "everything"). Docker Compose passes it to the journey-service with the same default: put `JOURNEY_LIQUIBASE_CONTEXTS=expand,contract,dev` in `.env` (or the shell) to start with the sample data, and `docker compose up` it on a fresh database (the sample data is skipped once the database holds bags).
+The journey-service reads its Liquibase contexts from `JOURNEY_LIQUIBASE_CONTEXTS` (default `expand,contract`; an empty value is treated as the default, never as "everything"). How to set it depends on how the service runs:
+
+- **`docker-compose.yml`** (the whole stack) passes it to the journey-service with the same default. Put `JOURNEY_LIQUIBASE_CONTEXTS=expand,contract,dev` in `.env` or the shell before `docker compose up`. The image must be built from this branch: an older image ignores the variable and does not have the changesets.
+- **`docker-compose-local.yml`** starts only the infrastructure; the journey-service runs from the IDE or Maven and reads the variable from its own environment, not from `.env`. Set it in the run configuration, or in the shell (`$env:JOURNEY_LIQUIBASE_CONTEXTS = 'expand,contract,dev'` in PowerShell) before starting the service.
+
+The sample data is created on a fresh database and skipped once the database holds bags, so to get it on an existing local database, drop the `journey` schema first.
 
 | Value | Applies |
 |-------|---------|
