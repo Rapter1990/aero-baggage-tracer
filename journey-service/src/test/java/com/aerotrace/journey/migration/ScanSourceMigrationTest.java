@@ -226,6 +226,35 @@ class ScanSourceMigrationTest extends AbstractTestContainerConfiguration {
         .isEqualTo(BAGS * SCANS_PER_BAG);
   }
 
+  @Test
+  @DisplayName("AT-17 a backfill that fails leaves no column and the append-only trigger enabled")
+  void failedBackfillIsRolledBackAsAWhole() throws Exception {
+    migrate(V1_CHANGESETS);
+    preload();
+    // A second UPDATE trigger that always refuses, so the backfill fails after the append-only
+    // trigger was switched off (the changeset disables it first).
+    execute(
+        "CREATE TRIGGER trg_test_fail_backfill BEFORE UPDATE ON journey.scan_audit "
+            + "FOR EACH ROW EXECUTE FUNCTION journey.reject_scan_audit_change()");
+    Map<String, Snapshot> before = snapshot();
+
+    assertThatThrownBy(() -> migrate(V2_CHANGESETS)).hasStackTraceContaining("append-only");
+
+    assertThat(
+            count(
+                "SELECT count(*) FROM pg_trigger WHERE tgname = 'trg_scan_audit_no_update_delete' "
+                    + "AND tgenabled = 'O'"))
+        .isEqualTo(1);
+    assertThat(count(scanSourceColumn("YES")) + count(scanSourceColumn("NO"))).isZero();
+    assertThat(
+            count(
+                "SELECT count(*) FROM journey.databasechangelog " + "WHERE id = '005-scan-source'"))
+        .isZero();
+    assertThat(snapshot()).isEqualTo(before);
+    assertThatThrownBy(() -> execute("UPDATE journey.scan_audit SET checkpoint = 'X'"))
+        .hasStackTraceContaining("append-only");
+  }
+
   // ---------------------------------------------------------------------------------------------
 
   /** Applies at most {@code changesets} not yet applied changesets of the real changelog. */
@@ -342,8 +371,13 @@ class ScanSourceMigrationTest extends AbstractTestContainerConfiguration {
     Map<String, Snapshot> result = new LinkedHashMap<>();
     for (String table : TABLES) {
       String order = "processed_event".equals(table) ? "event_id" : "id";
+      // V2 rewrites scan_audit by design; every other table must not even have been touched, so
+      // the transaction id that last wrote each row (xmin) is part of its checksum.
+      String touched = "scan_audit".equals(table) ? "" : " || '#' || t.xmin::text";
       String sql =
-          "SELECT count(*), coalesce(md5(string_agg((to_jsonb(t) - 'scan_source')::text, '|' "
+          "SELECT count(*), coalesce(md5(string_agg((to_jsonb(t) - 'scan_source')::text"
+              + touched
+              + ", '|' "
               + "ORDER BY "
               + order
               + ")), '') FROM journey."
