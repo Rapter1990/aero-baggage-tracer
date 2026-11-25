@@ -1,5 +1,6 @@
-# Alert rules for local development, loaded by prometheus.yml. There is no Alertmanager: a firing
-# alert shows on http://localhost:9090/alerts and as the ALERTS series, and notifies nobody.
+# Alert rules for local development, loaded by prometheus.yml. A firing alert shows on
+# http://localhost:9090/alerts, as the ALERTS series, and in the Alertmanager (alertmanager.yml),
+# whose local receiver notifies nobody.
 # Tested by prometheus-rules.test.yml:
 #   docker run --rm --entrypoint promtool -v "${PWD}/observability:/o:ro" -w /o prom/prometheus:latest test rules prometheus-rules.test.yml
 groups:

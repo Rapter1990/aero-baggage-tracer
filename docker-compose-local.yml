@@ -213,6 +213,25 @@ services:
     networks:
       - aerotrace
 
+  # Receives the alerts of Prometheus. Its UI and API have no login and can silence alerts, so the
+  # port is published on the loopback interface only.
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    restart: unless-stopped
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager"]
+    volumes:
+      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "127.0.0.1:9093:9093"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - aerotrace
+
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus

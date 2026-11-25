@@ -1,0 +1,12 @@
+apiVersion: 1
+
+datasources:
+  # Alerts, groups and silences of the local Alertmanager, in Grafana under Alerting.
+  - name: Alertmanager
+    uid: alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    editable: false
+    jsonData:
+      implementation: prometheus

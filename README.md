@@ -349,6 +349,7 @@ Kafka UI starts with Kafka: `docker compose -f docker-compose-local.yml up -d ka
 | Loki | internal `loki:3100` | Logs with trace ids, kept 24 hours |
 | Pushgateway | http://localhost:9091 | Holds coverage numbers for Prometheus |
 | Prometheus | http://localhost:9090 | Scrapes collector and Pushgateway; alert rules on `/alerts` (`observability/prometheus-rules.yml`) |
+| Alertmanager | http://localhost:9093 (this machine only) | Groups and silences Prometheus alerts; notifies nobody until `observability/alertmanager.yml` has an integration |
 | Grafana | http://localhost:3000 (`admin` / `grafana`) | Dashboards for all three stores |
 | Kafka UI | http://localhost:8090 | Browse Kafka topics and messages |
 
@@ -378,6 +379,7 @@ They are in the AeroTrace folder, provisioned from `observability/grafana`.
 | **AeroTrace - Kafka Topics** | Messages, errors, send time per topic |
 | **AeroTrace - Kafka Streams** | Streams state, HIGH-risk bags, lag, risk/anomaly/dead-letter events, state stores |
 | **AeroTrace - Outbox** | Outbox backlog, delay, failures, relay runs |
+| **AeroTrace - Alerts** | Pending and firing alerts, Alertmanager state, the pending contract migration step |
 | **AeroTrace - Elasticsearch** | Search indexing lag, outcomes and rebuilds (search-service); cluster health, heap, index sizes and search/indexing rates (`elasticsearch-exporter`) |
 
 | Dashboard | How to use it |
