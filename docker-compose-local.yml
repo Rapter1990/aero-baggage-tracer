@@ -214,18 +214,18 @@ services:
       - aerotrace
 
   # The test inbox for the alert emails (http://localhost:8025). It accepts SMTP from the Compose
-  # network only and forwards nothing. The UI has no login, so it is published on loopback only.
+  # network only and forwards nothing. The UI has no login: local development only.
   mailpit:
     image: axllent/mailpit:latest
     container_name: mailpit
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8025:8025"
+      - "8025:8025"
     networks:
       - aerotrace
 
-  # Receives the alerts of Prometheus. Its UI and API have no login and can silence alerts, so the
-  # port is published on the loopback interface only.
+  # Receives the alerts of Prometheus. Its UI and API have no login and can silence alerts: local
+  # development only.
   alertmanager:
     image: prom/alertmanager:latest
     container_name: alertmanager
@@ -237,7 +237,7 @@ services:
     depends_on:
       - mailpit
     ports:
-      - "127.0.0.1:9093:9093"
+      - "9093:9093"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
       interval: 10s
