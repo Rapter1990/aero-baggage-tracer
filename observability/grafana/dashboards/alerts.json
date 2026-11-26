@@ -42,7 +42,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "Prometheus evaluates the rules in `observability/prometheus-rules.yml` and sends firing alerts to the **Alertmanager**, which groups and silences them. A rule is *pending* while its condition holds but its waiting time (`for`) has not passed, then *firing*.\n\n* [Alert groups in Grafana](/alerting/groups?alertmanager=Alertmanager) and [silences](/alerting/silences?alertmanager=Alertmanager) - read from the Alertmanager.\n* [Alertmanager](http://localhost:9093) and [Prometheus rules](http://localhost:9090/alerts).\n\nThe local receiver has **no integration**: nobody is notified. See `observability/alertmanager.yml` to add one."
+        "content": "Prometheus evaluates the rules in `observability/prometheus-rules.yml` and sends firing alerts to the **Alertmanager**, which groups and silences them. A rule is *pending* while its condition holds but its waiting time (`for`) has not passed, then *firing*.\n\n* [Alert groups in Grafana](/alerting/groups?alertmanager=Alertmanager) and [silences](/alerting/silences?alertmanager=Alertmanager) - read from the Alertmanager.\n* [Alertmanager](http://localhost:9093) and [Prometheus rules](http://localhost:9090/alerts).\n\nFiring and resolved alerts are emailed to the local test inbox [Mailpit](http://localhost:8025); no real person receives them. See `observability/alertmanager.yml` to use a real mail server."
       }
     },
     {
@@ -362,7 +362,7 @@
       "id": 9,
       "type": "timeseries",
       "title": "Notifications failed",
-      "description": "Failed deliveries per integration; only integrations with failures are drawn. The local receiver has no integration, so this stays empty.",
+      "description": "Failed deliveries per integration; only integrations with failures are drawn. The local receiver emails Mailpit, so a failure here means Mailpit cannot be reached.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"

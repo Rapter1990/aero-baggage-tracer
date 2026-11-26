@@ -665,15 +665,29 @@ services:
     networks:
       - aerotrace
 
+  # The test inbox for the alert emails (http://localhost:8025). It accepts SMTP from the Compose
+  # network only and forwards nothing. The UI has no login, so it is published on loopback only.
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailpit
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"
+    networks:
+      - aerotrace
+
   # Receives the alerts of Prometheus. Its UI and API have no login and can silence alerts, so the
   # port is published on the loopback interface only.
   alertmanager:
     image: prom/alertmanager:latest
     container_name: alertmanager
     restart: unless-stopped
-    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager"]
+    # The external URL makes the links in the alert emails open from this machine.
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager", "--web.external-url=http://localhost:9093"]
     volumes:
       - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    depends_on:
+      - mailpit
     ports:
       - "127.0.0.1:9093:9093"
     healthcheck:
@@ -688,6 +702,9 @@ services:
     image: prom/prometheus:latest
     container_name: prometheus
     restart: unless-stopped
+    # The first two arguments are the image's own defaults; the external URL is what the "source" links
+    # of alerts (in Alertmanager and its emails) start with.
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--web.external-url=http://localhost:9090"]
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./observability/prometheus-rules.yml:/etc/prometheus/rules.yml:ro

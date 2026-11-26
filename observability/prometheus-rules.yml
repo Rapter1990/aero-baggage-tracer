@@ -1,7 +1,8 @@
 # Alert rules for local development, loaded by prometheus.yml. A firing alert shows on
 # http://localhost:9090/alerts, as the ALERTS series, and in the Alertmanager (alertmanager.yml),
-# whose local receiver notifies nobody.
-# Check the syntax after a change:
+# which emails it to the local test inbox Mailpit (http://localhost:8025).
+# When the alert fires is tested by ContractStepAlertRuleTest (journey-service, part of mvn verify):
+# change that test together with this file. To check only the syntax:
 #   docker run --rm --entrypoint promtool -v "${PWD}/observability:/o:ro" prom/prometheus:latest check rules /o/prometheus-rules.yml
 groups:
   - name: journey-migrations
