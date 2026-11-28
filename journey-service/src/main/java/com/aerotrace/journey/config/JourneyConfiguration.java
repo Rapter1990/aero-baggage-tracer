@@ -1,6 +1,7 @@
 package com.aerotrace.journey.config;
 
 import java.time.Clock;
+import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,5 +16,11 @@ class JourneyConfiguration {
   @Bean
   Clock clock() {
     return Clock.systemUTC();
+  }
+
+  /** Keeps an empty Liquibase contexts setting from running the dev sample data. */
+  @Bean
+  static BeanPostProcessor liquibaseContextsGuard() {
+    return new LiquibaseContextsGuard();
   }
 }

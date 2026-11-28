@@ -14,7 +14,6 @@ Java 25 / Spring Boot microservices for tracing airport baggage.
 | [Rate limits](#rate-limits-and-lockout-of-the-authentication-endpoints) | Gateway limits and login lockout |
 | [Known limitations](#known-limitations-of-the-identity-service) | Weak spots of identity-service |
 | [Observability](#observability-opentelemetry-collector-tempo-loki-prometheus-grafana) | Traces, metrics, logs, dashboards |
-| [Tests](#running-the-tests) | Run tests and chart coverage |
 
 Work items are in [docs/issues/GITHUB_ISSUES.md](docs/issues/GITHUB_ISSUES.md). Step-by-step commands for implementing one issue are in [docs/issues/IMPLEMENTATION-GUIDE.md](docs/issues/IMPLEMENTATION-GUIDE.md).
 
@@ -185,6 +184,8 @@ Compose starts identity-service with `LIQUIBASE_CONTEXTS=dev`. Changeset `003-sa
 
 **Never run a real deployment with the `dev` context.**
 
+The journey-service has its own switch, `JOURNEY_LIQUIBASE_CONTEXTS` (Compose default `expand,contract`: no sample data). `expand,contract,dev` adds 20 sample bags `9000000001`-`9000000020`; see [docs/migrations/README.md](docs/migrations/README.md).
+
 ### First administrator without the dev context
 
 Register a passenger, then give that user the role in the database:
@@ -230,6 +231,8 @@ In Compose, the one-shot `kafka-init` job creates the Kafka topics before journe
 All use `cleanup.policy=delete` (except `baggage.risk.changed.v1`) and replication factor 1. The job re-applies the `compact,delete` policy of `baggage.risk.changed.v1` on every run. For another topic that already exists (for example auto-created earlier with 1 partition) the partitions are not changed: delete it once in Kafka UI to get these settings. `docker-compose-local.yml` has the same `kafka-init` job, so the topics exist with these settings when you run the services from the IDE.
 
 Kafka tooling (issue #15): `kafka/replay/` holds a replay dataset with a duplicate, an out-of-order and a late scan and `replay.ps1` to publish it; `kafka/dlq/inspect-dlq.ps1` lists `baggage.dead-letter.v1` (read only). The delivery, idempotency and dead-letter rules are in [ADR 0006](docs/adr/0006-exactly-once-business-effects-and-dead-letters.md).
+
+Database migrations (issue #16): every service owns one Liquibase changelog for its schema, changed only by new changesets (expand, then contract) as described in [ADR 0007](docs/adr/0007-data-migration-strategy.md). `docs/migrations/zero-data-loss-demo.ps1` shows a migration over legacy rows with equal row counts and checksums before and after, and [docs/migrations/README.md](docs/migrations/README.md) holds the rollback recipe and its limits. The automated proof is `ScanSourceMigrationTest` (AT-17). The journey-service reads its Liquibase contexts from `JOURNEY_LIQUIBASE_CONTEXTS` (default `expand,contract`; add `dev` for 20 sample bags, `expand` alone to hold back the `NOT NULL` step for one release; an empty value counts as the default).
 
 Compose publishes the direct ports. Each service has `/actuator/health` and `/v3/api-docs`. The Postman collection `AeroTrace` is in `postman/`, see [Postman collection](docs/apis/API.md#postman-collection).
 
@@ -345,7 +348,9 @@ Kafka UI starts with Kafka: `docker compose -f docker-compose-local.yml up -d ka
 | Tempo | internal `tempo:3200` | Traces, kept 24 hours |
 | Loki | internal `loki:3100` | Logs with trace ids, kept 24 hours |
 | Pushgateway | http://localhost:9091 | Holds coverage numbers for Prometheus |
-| Prometheus | http://localhost:9090 | Scrapes collector and Pushgateway |
+| Prometheus | http://localhost:9090 | Scrapes collector and Pushgateway; alert rules on `/alerts` (`observability/prometheus-rules.yml`) |
+| Alertmanager | http://localhost:9093 (no login) | Groups and silences Prometheus alerts and emails them to Mailpit |
+| Mailpit | http://localhost:8025 (no login) | Test inbox for the alert emails; forwards nothing, so no real person is notified |
 | Grafana | http://localhost:3000 (`admin` / `grafana`) | Dashboards for all three stores |
 | Kafka UI | http://localhost:8090 | Browse Kafka topics and messages |
 
@@ -375,6 +380,7 @@ They are in the AeroTrace folder, provisioned from `observability/grafana`.
 | **AeroTrace - Kafka Topics** | Messages, errors, send time per topic |
 | **AeroTrace - Kafka Streams** | Streams state, HIGH-risk bags, lag, risk/anomaly/dead-letter events, state stores |
 | **AeroTrace - Outbox** | Outbox backlog, delay, failures, relay runs |
+| **AeroTrace - Alerts** | Pending and firing alerts, Alertmanager state, the pending contract migration step |
 | **AeroTrace - Elasticsearch** | Search indexing lag, outcomes and rebuilds (search-service); cluster health, heap, index sizes and search/indexing rates (`elasticsearch-exporter`) |
 
 | Dashboard | How to use it |
@@ -431,26 +437,3 @@ powershell -ExecutionPolicy Bypass -File .\observability\push-jacoco.ps1
 | No branches | Shows "n/a" for branch coverage |
 
 If you add a dashboard file while Grafana runs, restart it: `docker restart grafana`.
-
-## Running the tests
-
-Run the tests and chart their coverage in one step, from the project root:
-
-```bash
-powershell -ExecutionPolicy Bypass -File .\observability\push-jacoco.ps1
-```
-
-The script runs `mvn verify` and pushes numbers only if it succeeds. `mvn verify` runs unit tests (`*Test`) and integration tests (`*IT`).
-
-| Topic | What to know |
-|---|---|
-| Docker | Integration tests use Testcontainers |
-| api-gateway | Starts a password-protected Redis |
-| identity, journey | Start a PostgreSQL container |
-| journey-service | Also starts Kafka for the relay |
-| recovery-service | Starts PostgreSQL, a password-protected Redis and Kafka, and a stand-in capacity-service on a real port; one class points Redis at a dead port |
-| capacity-service | Starts PostgreSQL only; the Kafka producer is a mock, events are read from the outbox. The 50-for-10 race (AT-11) and the Redis-offline run (AT-19) run against the real database |
-| search-service | Starts Elasticsearch (`9.2.8`, the client's version, security on) and Kafka; the rebuild source is an in-memory stand-in for the export endpoints of #28 and #29; two tests pause Elasticsearch to show the 503 and that no offset is committed while it is down |
-| No Docker | Tests are skipped, not failed |
-| No Docker with `CI` set | Identity and journey fail the build |
-| Coverage check | Includes integration tests |

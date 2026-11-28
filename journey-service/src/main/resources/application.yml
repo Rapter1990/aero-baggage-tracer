@@ -39,6 +39,8 @@ spring:
     change-log: classpath:db/changelog/db.changelog-master.yaml
     default-schema: journey
     liquibase-schema: journey
+    # expand: additive steps. contract: steps that make a change mandatory (ADR 0007). dev: sample data.
+    contexts: ${JOURNEY_LIQUIBASE_CONTEXTS:expand,contract}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     template:

@@ -1,0 +1,29 @@
+# Alertmanager for local development: groups, deduplicates and silences the alerts Prometheus sends,
+# and emails them. Browse it on http://localhost:9093, or in Grafana (Alerting, with the
+# "Alertmanager" data source, and the "AeroTrace - Alerts" dashboard).
+#
+# The email goes to Mailpit, a test inbox in the same Compose file: open http://localhost:8025.
+# Mailpit delivers nothing further, so no real person receives anything.
+#
+# To email real people, change smtp_smarthost, smtp_from and the receiver's "to", remove
+# "smtp_require_tls: false" (keep TLS on for a real server), and set smtp_auth_username with
+# smtp_auth_password_file pointing at a mounted file. Never commit a password here.
+global:
+  smtp_smarthost: mailpit:1025
+  smtp_from: alertmanager@aerotrace.local
+  # Mailpit speaks plain SMTP inside the Compose network.
+  smtp_require_tls: false
+
+route:
+  receiver: local-email
+  group_by: [alertname, service_name]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: local-email
+    email_configs:
+      - to: aerotrace-ops@aerotrace.local
+        # A second email when the alert is over.
+        send_resolved: true

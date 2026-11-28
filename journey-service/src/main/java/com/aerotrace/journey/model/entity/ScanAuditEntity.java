@@ -1,5 +1,6 @@
 package com.aerotrace.journey.model.entity;
 
+import com.aerotrace.journey.constant.ScanSources;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -62,6 +63,10 @@ public class ScanAuditEntity {
 
   @Column(nullable = false, updatable = false)
   private boolean applied;
+
+  /** How the scan reached the service. The HTTP API is the only way in today. */
+  @Column(name = "scan_source", nullable = false, updatable = false, length = 20)
+  private String scanSource = ScanSources.API;
 
   public ScanAuditEntity(
       String eventId,

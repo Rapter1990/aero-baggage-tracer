@@ -365,14 +365,14 @@ Idempotent in-app notifications and delivery status; external provider mocked.
 
 **Scope**
 - One changelog per service/schema; safe to re-run; index choices documented.
-- **V1** base tables + seed; **V2** add nullable `scan_source` + backfill; **V3** enforce NOT NULL after validation.
-- Unique constraints: `bag_tag`, source `event_id`, active recovery case natural key; `version` columns.
+- **V1** base tables + seed; **V2** add nullable `scan_source` (journey-service scan table) + backfill; **V3** enforce NOT NULL after validation.
+- Unique constraints: `bag_tag`, source `event_id`, active recovery case natural key (BR-01, BR-07), notification `(recipient, event_id, template)` (BR-08); `version` columns.
 - Demo script: legacy rows → V2/V3 → compare checksums + row counts; document rollback strategy and limits for destructive changes.
 - ADR: data migration strategy.
 
 **Acceptance criteria**
-- [ ] AT-17 automated with Testcontainers PostgreSQL.
-- [ ] Rollback recipe documented.
+- [x] AT-17 automated with Testcontainers PostgreSQL.
+- [x] Rollback recipe documented.
 
 ---
 

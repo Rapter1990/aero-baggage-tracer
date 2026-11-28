@@ -2,8 +2,24 @@
 # and the span-derived request metrics of every service that exports to it.
 global:
   scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Alert rules (shown on /alerts and sent to the Alertmanager below). Relative to this file's directory.
+rule_files:
+  - rules.yml
+
+# Firing alerts go to the Alertmanager (alertmanager.yml), which groups and silences them.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
 
 scrape_configs:
+  # The Alertmanager's own metrics (alerts held, notifications sent and failed).
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+
   - job_name: otel-collector
     static_configs:
       - targets: ["otel-collector:8889"]
